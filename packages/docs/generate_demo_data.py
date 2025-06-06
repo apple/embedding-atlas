@@ -1,13 +1,15 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["click", "datasets", "pandas", "sentence-transformers", "umap-learn"]
+# dependencies = ["click", "datasets", "pandas", "sentence-transformers", "umap-learn", "duckdb"]
 # ///
 
 import json
 import os
 import shutil
+from pathlib import Path
 
 import click
+import duckdb
 import numpy as np
 import pandas as pd
 from datasets import load_dataset
@@ -45,8 +47,9 @@ def add_embedding_projection(df: pd.DataFrame, text: str):
 @click.command()
 @click.option("--output", default="demo-data")
 def main(output: str):
-    shutil.rmtree(output, ignore_errors=True)
-    os.makedirs(output, exist_ok=True)
+    output_path = Path(output)
+    shutil.rmtree(output_path, ignore_errors=True)
+    output_path.mkdir(parents=True, exist_ok=True)
 
     name = "spawn99/wine-reviews"
     columns = [
@@ -66,7 +69,26 @@ def main(output: str):
 
     add_embedding_projection(df, text="description")
 
-    df.to_parquet(os.path.join(output, "dataset.parquet"), index=False)
+    # Setup DuckDB with Hilbert support
+    # See https://duckdb.org/2025/06/06/advanced-sorting-for-fast-selective-queries.html
+    conn = duckdb.connect()
+
+    conn.execute("INSTALL lindel FROM community;")
+    conn.execute("LOAD lindel;")
+
+    conn.register("wine_data", df)
+
+    # Sort data using Hilbert curve encoding of the projection.
+    conn.execute(f"""
+    COPY (
+        SELECT *
+        FROM wine_data
+        ORDER BY hilbert_encode([
+            projection_x,
+            projection_y
+        ]::FLOAT[2])
+    ) TO '{output_path / "dataset.parquet"}' (FORMAT PARQUET)
+    """)
 
     metadata = {
         "columns": {
@@ -79,7 +101,7 @@ def main(output: str):
         "database": {"type": "wasm", "load": True},
     }
 
-    with open(os.path.join(output, "metadata.json"), "wb") as f:
+    with open(output_path / "metadata.json", "wb") as f:
         f.write(json.dumps(metadata).encode("utf-8"))
 
 
