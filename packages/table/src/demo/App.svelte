@@ -5,9 +5,14 @@
   import { onMount } from "svelte";
 
   import { createCustomCellClass, type CustomCellsConfig } from "../lib/api/custom-cells.js";
+  import {
+    createAdditionalHeaderContentClass,
+    type AdditionalHeaderContentsConfig,
+  } from "../lib/api/custom-headers.js";
   import type { Theme } from "../lib/api/style.js";
   import type { ColumnConfigChangeCallback, ColumnConfigs } from "../lib/context/config.svelte.js";
   import Table from "../lib/Table.svelte";
+  import AdditionalHeaderContentExample from "./AdditionalHeaderContentExample.svelte";
   import CustomCellExample from "./CustomCellExample.svelte";
 
   let ready = $state(false);
@@ -74,6 +79,7 @@
   let colorScheme: "light" | "dark" = $state("light");
   let theme: Theme = $state({});
   let customCellsConfig: CustomCellsConfig = $state({});
+  let additionalHeaderContentsConfig: AdditionalHeaderContentsConfig = $state({});
   let showRowNumber: boolean = $state(true);
   let headerHeight: number | null = $state(null);
   let highlightedRows: number[] | null = $state([]);
@@ -148,6 +154,14 @@
     </button>
     <button
       onclick={() => {
+        additionalHeaderContentsConfig["entry_type"] =
+          createAdditionalHeaderContentClass(AdditionalHeaderContentExample);
+      }}
+    >
+      Additional Header Content
+    </button>
+    <button
+      onclick={() => {
         headerHeight = 32;
       }}
     >
@@ -176,6 +190,7 @@
         lineHeight={20}
         numLines={1}
         customCells={customCellsConfig}
+        additionalHeaderContents={additionalHeaderContentsConfig}
         headerHeight={headerHeight}
         onRowClick={(rowId) => {
           console.log("clicked row:", rowId);

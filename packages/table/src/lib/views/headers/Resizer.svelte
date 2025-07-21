@@ -49,7 +49,7 @@
 
   .pill {
     width: 2px;
-    height: 80%;
+    height: 100%;
     background-color: var(--secondary-text-color);
     opacity: 0.3;
     border-radius: 2px;

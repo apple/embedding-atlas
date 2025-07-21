@@ -100,10 +100,12 @@
     position: absolute;
     z-index: 20;
     left: 0px;
+    box-sizing: border-box;
     height: 100%;
     display: flex;
     flex-direction: row;
-    align-items: center;
+    align-items: end;
+    padding-bottom: 0.25rem;
   }
 
   .column-toggle {

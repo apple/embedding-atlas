@@ -14,6 +14,7 @@
   import { Context } from "./context/context.svelte";
   import { CoordinatorContext } from "./context/coordinator.svelte";
   import { CustomCellsContext } from "./context/custom-cells.svelte";
+  import { CustomHeadersContext } from "./context/custom-headers.svelte";
   import { StyleContext } from "./context/style.svelte";
   import { OID } from "./mosaic-clients/RowsClient.js";
   import { add, diff, remove } from "./util.js";
@@ -35,6 +36,7 @@
     lineHeight,
     numLines,
     customCells,
+    additionalHeaderContents,
     headerHeight,
     onRowClick,
     highlightedRows,
@@ -155,6 +157,14 @@
       CustomCellsContext.config = customCells;
     } else {
       CustomCellsContext.config = {};
+    }
+  });
+
+  $effect(() => {
+    if (additionalHeaderContents != null) {
+      CustomHeadersContext.config = additionalHeaderContents;
+    } else {
+      CustomHeadersContext.config = {};
     }
   });
 

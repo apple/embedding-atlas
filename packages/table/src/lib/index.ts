@@ -6,6 +6,7 @@ import { createClassComponent } from "svelte/legacy";
 import Component from "./Table.svelte";
 
 import type { CustomCell, CustomCellsConfig } from "./api/custom-cells";
+import type { AdditionalHeaderContent, AdditionalHeaderContentsConfig } from "./api/custom-headers";
 import type { Theme } from "./api/style";
 import type { ColumnConfigChangeCallback, ColumnConfigs, RowClickCallback } from "./context/config.svelte";
 
@@ -25,6 +26,7 @@ export interface TableProps {
   lineHeight?: number | null;
   numLines?: number | null;
   customCells?: CustomCellsConfig | null;
+  additionalHeaderContents?: AdditionalHeaderContentsConfig | null;
   headerHeight?: number | null;
   onRowClick?: RowClickCallback | null;
   highlightedRows?: any[] | null;
@@ -56,4 +58,4 @@ export class Table {
   }
 }
 
-export type { CustomCell };
+export type { CustomCell, AdditionalHeaderContent as CustomHeader };

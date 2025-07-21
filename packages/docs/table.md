@@ -154,6 +154,10 @@ When provided, these all other rows will be dimmed in the table.
 
 You can use this to designate custom renderers for columns. A `CustomCellsConfig` is a `{ [column: string]: CustomCell }`. See [Custom Cells](#custom-cells) for more info.
 
+### additionalHeaderContents? `AdditionalHeaderContentsConfig`
+
+You can use this to designate additional content for column headers. Additional header content is rendered above the title of the header, and can be used to add helpful content such as summaries and visualizations to headers. A `AdditionalHeaderContentsConfig` is a `{ [column: string]: AdditionalHeaderContent }`. See [Additional Header Contents](#additional-header-contents) for more info.
+
 ## Custom Cells
 
 To use custom cell rendering, first create a class for the custom cell renderer:
@@ -184,6 +188,39 @@ Then specify the `customCells` property to the component for the desired column:
   ...
   customCells={{
     columnA: CustomCellRenderer,
+  }}
+/>
+```
+
+## Additional Header Contents
+
+Similar to custom cells, to add additional header content, first create a class for the additional header content:
+
+```ts
+interface AdditionalHeaderContentProps {
+  column: string;
+}
+
+class AdditionalHeaderContentRenderer {
+  constructor(target, props: AdditionalHeaderContentProps) {
+    // Create the cell component and mount it to the target element.
+  }
+  update(props: AdditionalHeaderContentProps) {
+    // Update the component with new props.
+  }
+  destroy() {
+    // Destroy the component.
+  }
+}
+```
+
+Then specify the `additionalHeaderContents` property to the component for the desired column:
+
+```svelte
+<EmbeddingViewMosaic
+  ...
+  additionalHeaderContents={{
+    columnA: AdditionalHeaderContentRenderer,
   }}
 />
 ```
