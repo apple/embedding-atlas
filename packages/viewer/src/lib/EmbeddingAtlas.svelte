@@ -713,7 +713,6 @@
                     coordinator={coordinator}
                     table={table}
                     rowKey={idColumn}
-                    headerHeight={30}
                     columns={columns.map((x) => x.name)}
                     filter={crossFilter}
                     scrollTo={tableScrollTo}

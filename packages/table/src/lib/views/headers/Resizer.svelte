@@ -36,7 +36,7 @@
     z-index: 2;
     box-sizing: border-box;
     width: 12px;
-    height: calc(100% - 6px);
+    height: calc(100% - 0.25rem);
     margin: 2px;
     cursor: col-resize;
     justify-content: center;
@@ -49,9 +49,11 @@
 
   .pill {
     width: 2px;
-    height: 100%;
+    height: calc(100% - 4px);
+    margin-top: 2px;
+    margin-bottom: 2px;
     background-color: var(--secondary-text-color);
-    opacity: 0.3;
+    opacity: 0.2;
     border-radius: 2px;
   }
 </style>

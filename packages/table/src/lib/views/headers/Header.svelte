@@ -68,10 +68,10 @@
     align-items: end;
 
     width: var(--width);
-    height: var(--height);
+    min-height: var(--height);
     flex-shrink: 0;
     box-sizing: border-box;
-    padding: 0.25rem;
+    padding: 0.25em;
     padding-right: calc(calc(var(--padding-x) / 2) + var(--extra-padding-right));
     padding-left: calc(calc(var(--padding-x) / 2) + var(--extra-padding-left));
 
@@ -82,7 +82,6 @@
 
   .header-cell.number {
     justify-content: end;
-    /* flex-direction: row-reverse; */
   }
 
   .header-content {
@@ -92,6 +91,8 @@
   }
 
   .header-title {
+    height: 1.5em;
+    align-items: center;
     display: flex;
     flex-direction: row;
     flex-shrink: 0;

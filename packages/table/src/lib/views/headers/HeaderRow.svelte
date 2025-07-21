@@ -45,37 +45,39 @@
 
 <div class="header-row" bind:this={headerElement}>
   <div class="scroll-container" bind:this={scrollContainer}>
-    <div class="dropdown-label-container" bind:this={dropdownLabelContainer}>
-      <Dropdown label="⋮" relativeTo={headerElement}>
-        <ul
-          class="column-toggle"
-          style:--max-height={controller.viewHeight - 48 + "px"}
-          style:--max-width={controller.viewWidth - 48 + "px"}
-        >
-          {#each model.columns as col}
-            <li class="column-entry">
-              <label class="column-label">
-                {col === OID ? "row #" : (config.columnConfigs[col]?.title ?? col)}
-                <input
-                  type="checkbox"
-                  id="{col}-checkbox"
-                  style:float="right"
-                  checked={col === OID ? config.showRowNumber !== false : !config.columnConfigs[col]?.hidden}
-                  onchange={(e) => {
-                    const target = e.target as HTMLInputElement;
-                    const checked = target.checked;
-                    if (checked) {
-                      controller.showColumn(col);
-                    } else {
-                      controller.hideColumn(col);
-                    }
-                  }}
-                />
-              </label>
-            </li>
-          {/each}
-        </ul>
-      </Dropdown>
+    <div class="dropdown-label-container">
+      <div class="dropdown-label" bind:this={dropdownLabelContainer}>
+        <Dropdown label="⋮" relativeTo={headerElement}>
+          <ul
+            class="column-toggle"
+            style:--max-height={controller.viewHeight - 48 + "px"}
+            style:--max-width={controller.viewWidth - 48 + "px"}
+          >
+            {#each model.columns as col}
+              <li class="column-entry">
+                <label class="column-label">
+                  {col === OID ? "row #" : (config.columnConfigs[col]?.title ?? col)}
+                  <input
+                    type="checkbox"
+                    id="{col}-checkbox"
+                    style:float="right"
+                    checked={col === OID ? config.showRowNumber !== false : !config.columnConfigs[col]?.hidden}
+                    onchange={(e) => {
+                      const target = e.target as HTMLInputElement;
+                      const checked = target.checked;
+                      if (checked) {
+                        controller.showColumn(col);
+                      } else {
+                        controller.hideColumn(col);
+                      }
+                    }}
+                  />
+                </label>
+              </li>
+            {/each}
+          </ul>
+        </Dropdown>
+      </div>
     </div>
     {#each columns as col (col)}
       <Header col={col} />
@@ -102,10 +104,16 @@
     left: 0px;
     box-sizing: border-box;
     height: 100%;
+    padding: 0.25em;
     display: flex;
     flex-direction: row;
     align-items: end;
-    padding-bottom: 0.25rem;
+  }
+
+  .dropdown-label {
+    height: 1.5em;
+    align-items: center;
+    display: flex;
   }
 
   .column-toggle {
