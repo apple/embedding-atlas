@@ -8,6 +8,7 @@
   import FileUpload from "./FileUpload.svelte";
   import EmbeddingAtlas from "./lib/EmbeddingAtlas.svelte";
 
+  import { computeEmbedding } from "./embedding/index.js";
   import { systemDarkMode } from "./lib/dark_mode_store.js";
   import { initializeDatabase } from "./lib/database_utils.js";
   import { exportMosaicSelection, type ExportFormat } from "./lib/mosaic_exporter.js";
@@ -66,6 +67,28 @@
 
       if (spec.embedding != null && "precomputed" in spec.embedding) {
         projectionColumns = { x: spec.embedding.precomputed.x, y: spec.embedding.precomputed.y };
+      }
+
+      if (spec.embedding != null && "compute" in spec.embedding) {
+        let input = spec.embedding.compute.column;
+        let type = spec.embedding.compute.type;
+        let model = spec.embedding.compute.model;
+        let x = input + "_proj_x";
+        let y = input + "_proj_y";
+        await computeEmbedding({
+          coordinator: coordinator,
+          table: "dataset",
+          idColumn: "__row_index__",
+          dataColumn: input,
+          type: type,
+          xColumn: x,
+          yColumn: y,
+          model: model,
+          callback: (message, progress) => {
+            log(`Embedding: ${message}`, progress);
+          },
+        });
+        projectionColumns = { x, y };
       }
     } catch (e: any) {
       logError(e.message);

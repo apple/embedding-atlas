@@ -18,6 +18,8 @@ from embedding_atlas.widget import EmbeddingAtlasWidget
 EmbeddingAtlasWidget(df)
 
 # Compute text embedding and projection of the embedding
+from embedding_atlas.projection import compute_text_projection
+
 compute_text_projection(df, text="description",
     x="projection_x", y="projection_y", neighbors="neighbors"
 )

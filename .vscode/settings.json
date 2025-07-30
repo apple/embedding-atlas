@@ -1,5 +1,6 @@
 {
   "python.analysis.typeCheckingMode": "standard",
+  "python.defaultInterpreterPath": "packages/backend/.venv/bin/python",
   "files.trimTrailingWhitespace": true,
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",

@@ -3,6 +3,7 @@
   import { untrack } from "svelte";
 
   import Button from "./lib/widgets/Button.svelte";
+  import ComboBox from "./lib/widgets/ComboBox.svelte";
   import Select from "./lib/widgets/Select.svelte";
 
   import { jsTypeFromDBType } from "./lib/database_utils.js";
@@ -116,7 +117,7 @@
       embedding and its 2D projection.
     </p>
     <div class="flex rounded overflow-hidden size-fit gap-[1px] bg-slate-100 dark:bg-slate-800 mb-2">
-      {#each [["precomputed", "Precomputed"], ["none", "Disabled"]] as [mode, label]}
+      {#each [["precomputed", "Precomputed"], ["from-text", "From Text"], ["from-image", "From Image"], ["none", "Disabled"]] as [mode, label]}
         <button
           class="bg-slate-200 dark:bg-slate-700 dark:text-slate-400 px-2 py-1"
           class:!bg-slate-500={mode == embeddingMode}
@@ -152,6 +153,58 @@
           ]}
         />
       </div>
+    {:else if embeddingMode == "from-text"}
+      <div class="w-full flex flex-row items-center">
+        <div class="w-[4rem] dark:text-slate-400">Text</div>
+        <Select
+          class="flex-1"
+          value={embeddingTextColumn}
+          onChange={(v) => (embeddingTextColumn = v)}
+          options={[
+            { value: null, label: "(none)" },
+            ...stringColumns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${x.column_type})` })),
+          ]}
+        />
+      </div>
+      <div class="w-full flex flex-row items-center">
+        <div class="w-[4rem] dark:text-slate-400">Model</div>
+        <ComboBox
+          className="flex-1"
+          value={embeddingTextModel}
+          placeholder="(default {textModels[0]})"
+          onChange={(v) => (embeddingTextModel = v)}
+          options={textModels}
+        />
+      </div>
+      <p class="text-sm text-slate-400 dark:text-slate-600">
+        Computing the embedding and 2D projection in browser may take a while.
+      </p>
+    {:else if embeddingMode == "from-image"}
+      <div class="w-full flex flex-row items-center">
+        <div class="w-[4rem] dark:text-slate-400">Image</div>
+        <Select
+          class="flex-1"
+          value={embeddingImageColumn}
+          onChange={(v) => (embeddingImageColumn = v)}
+          options={[
+            { value: null, label: "(none)" },
+            ...columns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${x.column_type})` })),
+          ]}
+        />
+      </div>
+      <div class="w-full flex flex-row items-center">
+        <div class="w-[4rem] dark:text-slate-400">Model</div>
+        <ComboBox
+          className="flex-1"
+          value={embeddingImageModel}
+          placeholder="(default {imageModels[0]})"
+          onChange={(v) => (embeddingImageModel = v)}
+          options={imageModels}
+        />
+      </div>
+      <p class="text-sm text-slate-400 dark:text-slate-600">
+        Computing the embedding and 2D projection in browser may take a while.
+      </p>
     {/if}
   </div>
   <div class="w-full flex flex-row items-center mt-4">
