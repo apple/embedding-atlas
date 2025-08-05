@@ -1,6 +1,6 @@
 # Algorithms
 
-The `embedding-atlas` package contains some useful algorithms regarding embeddings and clustering.
+The `embedding-atlas` package contains some useful algorithms for computing embeddings and clustering.
 
 ## UMAP
 
