@@ -15,7 +15,7 @@
     "check-format": "prettier -c ."
   },
   "devDependencies": {
-    "prettier": "^3.2.5",
-    "prettier-plugin-svelte": "^3.2.3"
+    "prettier": "^3.6.2",
+    "prettier-plugin-svelte": "^3.4.0"
   }
 }

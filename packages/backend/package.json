@@ -8,8 +8,8 @@
   },
   "devDependencies": {
     "@embedding-atlas/viewer": "*",
-    "anywidget": "^0.9.13",
+    "anywidget": "^0.9.18",
     "streamlit-component-lib": "^2.0.0",
-    "vite": "^6.1.0"
+    "vite": "^7.0.6"
   }
 }

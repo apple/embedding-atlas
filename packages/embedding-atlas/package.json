@@ -78,9 +78,9 @@
     "@embedding-atlas/viewer": "*",
     "@embedding-atlas/table": "*",
     "@embedding-atlas/umap-wasm": "*",
-    "tslib": "^2.6.2",
-    "typescript": "^5.2.2",
-    "vite": "^6.1.0",
-    "vite-plugin-dts": "^4.3.0"
+    "tslib": "^2.8.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.0.6",
+    "vite-plugin-dts": "^4.5.4"
   }
 }

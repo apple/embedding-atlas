@@ -6,7 +6,7 @@
     "generate_assets": "./generate_assets.sh"
   },
   "devDependencies": {
-    "vitepress": "^1.1.4",
-    "gh-pages": "^6.1.1"
+    "vitepress": "^1.6.3",
+    "gh-pages": "^6.3.0"
   }
 }
