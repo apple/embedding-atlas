@@ -8,9 +8,9 @@ export interface EmbeddingRendererProps {
   mode: RenderMode;
   colorScheme: "light" | "dark";
 
-  x: Float32Array;
-  y: Float32Array;
-  category: Uint8Array | null;
+  x: Float32Array<ArrayBuffer>;
+  y: Float32Array<ArrayBuffer>;
+  category: Uint8Array<ArrayBuffer> | null;
 
   categoryCount: number;
   categoryColors: string[] | null;

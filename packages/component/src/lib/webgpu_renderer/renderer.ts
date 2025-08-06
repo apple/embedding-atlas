@@ -181,9 +181,9 @@ export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
 export interface RenderInputs {
   mode: ValueNode<RenderMode>;
   colorScheme: ValueNode<"light" | "dark">;
-  xData: ValueNode<Float32Array>;
-  yData: ValueNode<Float32Array>;
-  categoryData: ValueNode<Uint8Array | null>;
+  xData: ValueNode<Float32Array<ArrayBuffer>>;
+  yData: ValueNode<Float32Array<ArrayBuffer>>;
+  categoryData: ValueNode<Uint8Array<ArrayBuffer> | null>;
   categoryCount: ValueNode<number>;
   categoryColors: ValueNode<string[] | null>;
   pointSize: ValueNode<number>;
