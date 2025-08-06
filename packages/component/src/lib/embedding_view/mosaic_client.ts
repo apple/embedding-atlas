@@ -1,5 +1,6 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import type { Table } from "@uwdata/flechette";
 import type { Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 
@@ -107,7 +108,7 @@ export async function queryApproximateDensity(
 }> {
   let { x, y, table } = source;
   // Find the view transform that fits all data points in a square view.
-  let r = await coordinator.query(
+  let r = (await coordinator.query(
     SQL.Query.from(table).select({
       centerX: SQL.sql`MEDIAN(${SQL.column(x)})`,
       centerY: SQL.sql`MEDIAN(${SQL.column(y)})`,
@@ -119,7 +120,7 @@ export async function queryApproximateDensity(
           }
         : {}),
     }),
-  );
+  )) as Table;
   let { centerX, centerY, stdX, stdY, maxCategory } = r.get(0);
   let scaler = 1.0 / (Math.max(stdX, stdY, 1e-3) * 3);
 
@@ -139,7 +140,7 @@ export async function queryApproximateDensity(
     maxCount: SQL.sql`MAX(count)::INT`,
   });
 
-  r = await coordinator.query(q);
+  r = (await coordinator.query(q)) as Table;
   let { maxCount, totalCount } = r.get(0);
   let maxDensity = maxCount / (binWidth * binWidth);
 
@@ -232,7 +233,7 @@ export class DataPointQuery {
         q = q.where(predicate);
       }
       q = q.orderby(SQL.sql`(x - (${px}))**2 + (y - (${py}))**2`).limit(1);
-      let result = await this.coordinator.query(q);
+      let result = (await this.coordinator.query(q)) as Table;
       let point = result.get(0);
       if (point) {
         this.lastDistance = Math.max(Math.abs(point.x - px), Math.abs(point.y - py)) * 4;
@@ -254,7 +255,7 @@ export class DataPointQuery {
         identifiers.map((x) => SQL.literal(x)),
       ),
     );
-    let result = Array.from(await this.coordinator.query(q));
+    let result = Array.from((await this.coordinator.query(q)) as Table);
     return result.map((row) => this._convertToDataPoint(row));
   }
 }
