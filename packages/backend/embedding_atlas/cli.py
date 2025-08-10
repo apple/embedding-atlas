@@ -90,6 +90,25 @@ def prompt_for_column(df: pd.DataFrame, message: str) -> str | None:
         text = None
     return text
 
+def prompt_for_model() -> str:
+    """Prompt user to select or enter a text embedding model"""
+    models = [
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "sentence-transformers/all-MiniLM-L12-v2",
+        "sentence-transformers/all-mpnet-base-v2",
+        "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+        "Custom model from Hugging Face"
+    ]
+    
+    question = [inquirer.List("model", message="Select text embedding model", choices=models)]
+    r = inquirer.prompt(question)
+    
+    if r["model"] == "Custom model from Hugging Face":
+        custom = inquirer.prompt([inquirer.Text("custom", message="Enter Hugging Face model (e.g. sentence-transformers/all-MiniLM-L6-v2)")])
+        return custom["custom"]
+    
+    return r["model"]
+
 
 def find_available_port(start_port: int, max_attempts: int = 10, host="localhost"):
     """Find the next available port starting from start_port."""
@@ -233,6 +252,11 @@ def main(
             text = prompt_for_column(
                 df, "Select a column you want to run the embedding on"
             )
+
+        # Prompt for model if not specified and we have text data
+        if model is None and text is not None:
+            model = prompt_for_model()
+        
         umap_args = {}
         if umap_min_dist is not None:
             umap_args["min_dist"] = umap_min_dist
