@@ -104,7 +104,9 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
 @click.argument("inputs", nargs=-1, required=True)
 @click.option("--text", default=None, help="Column containing text data.")
 @click.option("--image", default=None, help="Column containing image data.")
-@click.option("--vector", default=None, help="Column containing pre-computed vector embeddings.")
+@click.option(
+    "--vector", default=None, help="Column containing pre-computed vector embeddings."
+)
 @click.option(
     "--split",
     default=[],
@@ -112,10 +114,10 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
     help="Dataset split name(s) to load from Hugging Face datasets. Can be specified multiple times for multiple splits.",
 )
 @click.option(
-    "--embedding/--no-embedding",
-    "enable_embedding",
+    "--enable-projection/--disable-projection",
+    "enable_projection",
     default=True,
-    help="Whether to compute embeddings for the data. Disable if embeddings are pre-computed or if you do not want an embedding view.",
+    help="Compute embedding projections from text/image/vector data. If disabled without pre-computed projections, the embedding view will be unavailable.",
 )
 @click.option(
     "--model",
@@ -141,7 +143,7 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
 @click.option(
     "--neighbors",
     "neighbors_column",
-    help='Column containing pre-computed nearest neighbors in format: {"ids": [n1, n2, ...], "distances": [d1, d2, ...]}.',
+    help='Column containing pre-computed nearest neighbors in format: {"ids": [n1, n2, ...], "distances": [d1, d2, ...]}. IDs should be zero-based row indices.',
 )
 @click.option(
     "--sample",
@@ -202,7 +204,7 @@ def main(
     image: str | None,
     vector: str | None,
     split: list[str] | None,
-    enable_embedding: bool,
+    enable_projection: bool,
     model: str | None,
     trust_remote_code: bool,
     x_column: str | None,
@@ -229,7 +231,7 @@ def main(
 
     print(df)
 
-    if enable_embedding and (x_column is None or y_column is None):
+    if enable_projection and (x_column is None or y_column is None):
         # No x, y column selected, first see if text/image/vectors column is specified, if not, ask for it
         if text is None and image is None and vector is None:
             text = prompt_for_column(
@@ -246,7 +248,11 @@ def main(
             umap_args["metric"] = umap_metric
         # Run embedding and projection
         if text is not None or image is not None or vector is not None:
-            from .projection import compute_image_projection, compute_text_projection, compute_vector_projection
+            from .projection import (
+                compute_image_projection,
+                compute_text_projection,
+                compute_vector_projection,
+            )
 
             x_column = find_column_name(df.columns, "projection_x")
             y_column = find_column_name(df.columns, "projection_y")
