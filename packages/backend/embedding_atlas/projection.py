@@ -248,6 +248,64 @@ def compute_text_projection(
         ]
 
 
+def compute_vector_projection(
+    data_frame: pd.DataFrame,
+    vector: str,
+    x: str = "projection_x",
+    y: str = "projection_y",
+    neighbors: str | None = "neighbors",
+    umap_args: dict = {},
+):
+    """
+    Generate 2D projections from pre-existing vector embeddings using UMAP.
+
+    This function takes pre-computed vector embeddings and reduces their dimensionality
+    to 2D coordinates using UMAP for visualization purposes.
+
+    Args:
+        data_frame: pandas DataFrame containing the vector data to process.
+        vector: str, column name containing the pre-computed vector embeddings.
+                Each entry should be a list or numpy array of numbers.
+        x: str, column name where the UMAP X coordinates will be stored.
+        y: str, column name where the UMAP Y coordinates will be stored.
+        neighbors: str, column name where the nearest neighbor indices will be stored.
+        umap_args: dict, additional keyword arguments to pass to the UMAP algorithm
+            (e.g., n_neighbors, min_dist, metric).
+
+    Returns:
+        The input DataFrame with added columns for X, Y coordinates and nearest neighbors.
+    """
+    # Convert vector column to numpy array
+    vector_series = data_frame[vector]
+
+    # Convert each vector entry to numpy array and stack them
+    vector_list = []
+    for vector in vector_series:
+        if isinstance(vector, list):
+            vector_array = np.array(vector)
+        elif isinstance(vector, np.ndarray):
+            vector_array = vector
+        else:
+            # Try to convert to numpy array
+            vector_array = np.array(vector)
+        vector_list.append(vector_array)
+
+    # Stack all vectors into a single numpy array
+    hidden_vectors = np.stack(vector_list)
+
+    # Run UMAP on the pre-existing vectors
+    proj = _run_umap(hidden_vectors, umap_args)
+
+    # Add projection results to dataframe
+    data_frame[x] = proj.projection[:, 0]
+    data_frame[y] = proj.projection[:, 1]
+    if neighbors is not None:
+        data_frame[neighbors] = [
+            {"distances": b, "ids": a}  # ID is always the same as the row index.
+            for a, b in zip(proj.knn_indices, proj.knn_distances)
+        ]
+
+
 def compute_image_projection(
     data_frame: pd.DataFrame,
     image: str,

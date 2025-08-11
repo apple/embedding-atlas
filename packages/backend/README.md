@@ -47,6 +47,16 @@ embedding-atlas path_to_dataset.parquet --x projection_x --y projection_y
 
 You may use the [SentenceTransformers](https://sbert.net/) package to compute high-dimensional embeddings from text data, and then use the [UMAP](https://umap-learn.readthedocs.io/en/latest/index.html) package to compute 2D projections.
 
+### Using Pre-computed Vectors
+
+If you already have pre-computed embedding vectors (but not the 2D projections), you can specify the column containing the vectors with `--vector`:
+
+```bash
+embedding-atlas path_to_dataset.parquet --vector embedding_vectors
+```
+
+This will apply UMAP dimensionality reduction to your pre-existing vectors without recomputing embeddings. The vectors should be stored as lists or numpy arrays in your dataset.
+
 You may also specify a column for pre-computed nearest neighbors:
 
 ```bash

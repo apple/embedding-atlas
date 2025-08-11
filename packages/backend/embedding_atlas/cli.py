@@ -104,6 +104,7 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
 @click.argument("inputs", nargs=-1, required=True)
 @click.option("--text", default=None, help="Column containing text data.")
 @click.option("--image", default=None, help="Column containing image data.")
+@click.option("--vector", default=None, help="Column containing pre-computed vector embeddings.")
 @click.option(
     "--split",
     default=[],
@@ -199,6 +200,7 @@ def main(
     inputs,
     text: str | None,
     image: str | None,
+    vector: str | None,
     split: list[str] | None,
     enable_embedding: bool,
     model: str | None,
@@ -228,8 +230,8 @@ def main(
     print(df)
 
     if enable_embedding and (x_column is None or y_column is None):
-        # No x, y column selected, first see if text column is specified, if not, ask for it
-        if text is None and image is None:
+        # No x, y column selected, first see if text/image/vectors column is specified, if not, ask for it
+        if text is None and image is None and vector is None:
             text = prompt_for_column(
                 df, "Select a column you want to run the embedding on"
             )
@@ -243,8 +245,8 @@ def main(
         if umap_metric is not None:
             umap_args["metric"] = umap_metric
         # Run embedding and projection
-        if text is not None or image is not None:
-            from .projection import compute_image_projection, compute_text_projection
+        if text is not None or image is not None or vector is not None:
+            from .projection import compute_image_projection, compute_text_projection, compute_vector_projection
 
             x_column = find_column_name(df.columns, "projection_x")
             y_column = find_column_name(df.columns, "projection_y")
@@ -254,7 +256,16 @@ def main(
             else:
                 # If neighbors_column is already specified, don't overwrite it.
                 new_neighbors_column = None
-            if text is not None:
+            if vector is not None:
+                compute_vector_projection(
+                    df,
+                    vector,
+                    x=x_column,
+                    y=y_column,
+                    neighbors=new_neighbors_column,
+                    umap_args=umap_args,
+                )
+            elif text is not None:
                 compute_text_projection(
                     df,
                     text,
