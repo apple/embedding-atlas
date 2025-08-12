@@ -92,6 +92,7 @@ def _projection_for_texts(
     texts: list[str],
     model: str | None = None,
     trust_remote_code: bool = False,
+    batch_size: int = 32,
     umap_args: dict = {},
 ) -> Projection:
     if model is None:
@@ -102,6 +103,7 @@ def _projection_for_texts(
             "version": 1,
             "texts": texts,
             "model": model,
+            "batch_size": batch_size,
             "umap_args": umap_args,
         }
     )
@@ -118,8 +120,8 @@ def _projection_for_texts(
     logger.info("Loading model %s...", model)
     transformer = SentenceTransformer(model, trust_remote_code=trust_remote_code)
 
-    logger.info("Running embedding for %d texts...", len(texts))
-    hidden_vectors = transformer.encode(texts)
+    logger.info("Running embedding for %d texts with batch size %d...", len(texts), batch_size)
+    hidden_vectors = transformer.encode(texts, batch_size=batch_size)
 
     result = _run_umap(hidden_vectors, umap_args)
     Projection.save(cpath, result)
@@ -207,6 +209,7 @@ def compute_text_projection(
     neighbors: str | None = "neighbors",
     model: str | None = None,
     trust_remote_code: bool = False,
+    batch_size: int = 32,
     umap_args: dict = {},
 ):
     """
@@ -225,6 +228,8 @@ def compute_text_projection(
         model: str, name or path of the SentenceTransformer model to use for embedding.
         trust_remote_code: bool, whether to trust and execute remote code when loading
             the model from HuggingFace Hub. Default is False.
+        batch_size: int, batch size for processing embeddings. Larger values use more 
+            memory but may be faster. Default is 32.
         umap_args: dict, additional keyword arguments to pass to the UMAP algorithm
             (e.g., n_neighbors, min_dist, metric).
 
@@ -237,6 +242,7 @@ def compute_text_projection(
         list(text_series),
         model=model,
         trust_remote_code=trust_remote_code,
+        batch_size=batch_size,
         umap_args=umap_args,
     )
     data_frame[x] = proj.projection[:, 0]

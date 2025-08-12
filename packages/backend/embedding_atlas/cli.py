@@ -131,6 +131,12 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
     help="Allow execution of remote code when loading models from Hugging Face Hub.",
 )
 @click.option(
+    "--batch-size",
+    type=int,
+    default=32,
+    help="Batch size for processing embeddings. Larger values use more memory but may be faster. Smaller values use less memory.",
+)
+@click.option(
     "--x",
     "x_column",
     help="Column containing pre-computed X coordinates for the embedding view.",
@@ -207,6 +213,7 @@ def main(
     enable_projection: bool,
     model: str | None,
     trust_remote_code: bool,
+    batch_size: int,
     x_column: str | None,
     y_column: str | None,
     neighbors_column: str | None,
@@ -280,6 +287,7 @@ def main(
                     neighbors=new_neighbors_column,
                     model=model,
                     trust_remote_code=trust_remote_code,
+                    batch_size=batch_size,
                     umap_args=umap_args,
                 )
             elif image is not None:
