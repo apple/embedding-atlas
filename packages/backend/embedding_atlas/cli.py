@@ -133,8 +133,8 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
 @click.option(
     "--batch-size",
     type=int,
-    default=32,
-    help="Batch size for processing embeddings. Larger values use more memory but may be faster. Smaller values use less memory.",
+    default=None,
+    help="Batch size for processing embeddings (default: 32 for text, 16 for images). Larger values use more memory but may be faster.",
 )
 @click.option(
     "--x",
@@ -213,7 +213,7 @@ def main(
     enable_projection: bool,
     model: str | None,
     trust_remote_code: bool,
-    batch_size: int,
+    batch_size: int | None,
     x_column: str | None,
     y_column: str | None,
     neighbors_column: str | None,
@@ -299,6 +299,7 @@ def main(
                     neighbors=new_neighbors_column,
                     model=model,
                     trust_remote_code=trust_remote_code,
+                    batch_size=batch_size,
                     umap_args=umap_args,
                 )
             else:
