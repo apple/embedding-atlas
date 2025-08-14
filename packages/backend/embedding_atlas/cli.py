@@ -13,7 +13,6 @@ import inquirer
 import numpy as np
 import pandas as pd
 import uvicorn
-import uvloop
 
 from .data_source import DataSource
 from .server import make_server
@@ -346,9 +345,8 @@ def main(
             logging.info(f"Port {port} is not available, using {new_port}")
     else:
         new_port = port
-    uvicorn.run(app, port=new_port, host=host, loop="uvloop", access_log=False)
+    uvicorn.run(app, port=new_port, host=host, access_log=False)
 
 
 if __name__ == "__main__":
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     main()

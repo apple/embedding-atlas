@@ -21,7 +21,7 @@ dependencies = [
   "sentence-transformers >= 3.3.0",
   "fastapi >= 0.115.0",
   "uvicorn >= 0.32.0",
-  "uvloop >= 0.21.0",
+  'uvloop >= 0.21.0 ; platform_system != "Windows"',
   "pyarrow >= 18.0.0",
   "duckdb >= 1.1.0",
   "inquirer >= 3.0.0",

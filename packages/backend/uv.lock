@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -817,7 +817,7 @@ dependencies = [
     { name = "tqdm" },
     { name = "umap-learn" },
     { name = "uvicorn" },
-    { name = "uvloop" },
+    { name = "uvloop", marker = "sys_platform != 'win32'" },
 ]
 
 [package.dev-dependencies]
@@ -844,7 +844,7 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.60.0" },
     { name = "umap-learn", specifier = ">=0.5.0" },
     { name = "uvicorn", specifier = ">=0.32.0" },
-    { name = "uvloop", specifier = ">=0.21.0" },
+    { name = "uvloop", marker = "sys_platform != 'win32'", specifier = ">=0.21.0" },
 ]
 
 [package.metadata.requires-dev]
