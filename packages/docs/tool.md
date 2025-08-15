@@ -24,6 +24,7 @@ To avoid package installation issues, we recommend using the [uv package manager
 uvx embedding-atlas
 ```
 
+On Windows, you may install the package on either the [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install) or directly on Windows. To use NVIDIA GPUs, you'll need to install a PyTorch version that supports CUDA, see [here](https://pytorch.org/get-started/locally/) for more details.
 :::
 
 ## Loading Data
