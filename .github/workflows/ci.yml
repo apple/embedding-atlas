@@ -38,14 +38,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: npm install
-
-      - name: Check if package-lock.json changed
-        run: |
-          if ! git diff --exit-code package-lock.json; then
-            echo "❌ package-lock.json was modified after npm install. Please commit updated lockfile."
-            exit 1
-          fi
+        run: npm ci
 
       - uses: actions/cache@v4
         id: cache-demo-data
