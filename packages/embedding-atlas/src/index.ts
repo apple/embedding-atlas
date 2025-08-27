@@ -4,4 +4,5 @@ export * from "./component.js";
 export * from "./table.js";
 export * from "./viewer.js";
 
+export * from "./density_clustering.js";
 export * from "./umap.js";

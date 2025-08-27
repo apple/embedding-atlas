@@ -7,13 +7,7 @@ export {
   type EmbeddingViewProps,
 } from "@embedding-atlas/component";
 
-export {
-  defaultCategoryColors,
-  findClusters,
-  maxDensityModeCategories,
-  type Cluster,
-  type FindClustersOptions,
-} from "@embedding-atlas/component";
+export { defaultCategoryColors, maxDensityModeCategories } from "@embedding-atlas/component";
 
 export type {
   AutomaticLabelsConfig,

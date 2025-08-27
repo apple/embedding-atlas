@@ -24,6 +24,7 @@ export default defineConfig({
         "@embedding-atlas/table",
         "@embedding-atlas/viewer",
         "@embedding-atlas/umap-wasm",
+        "@embedding-atlas/density-clustering",
       ],
     }),
     fixAbsoluteImport(),

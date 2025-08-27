@@ -5,6 +5,7 @@
     "packages/viewer",
     "packages/table",
     "packages/umap-wasm",
+    "packages/density-clustering",
     "packages/embedding-atlas",
     "packages/examples",
     "packages/backend",

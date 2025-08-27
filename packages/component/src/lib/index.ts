@@ -8,8 +8,6 @@ export {
   type EmbeddingViewProps,
 } from "./embedding_view/api.js";
 
-export { findClusters, type Cluster, type FindClustersOptions } from "./density_clustering/find_clusters.js";
-
 export { defaultCategoryColors } from "./colors.js";
 
 export type { Theme } from "./embedding_view/theme.js";

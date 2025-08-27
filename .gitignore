@@ -6,7 +6,6 @@ build/
 dist/
 distlib/
 target/
-pkg/
 .svelte-kit/
 .env
 .env.*
