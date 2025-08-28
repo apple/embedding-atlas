@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Build all JavaScript and Python packages
+
 set -euxo pipefail
 
 pushd packages/component

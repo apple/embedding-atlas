@@ -69,5 +69,5 @@ download https://github.com/nmslib/hnswlib.git v0.8.0 hnswlib
 # BSD-2-Clause License
 download https://github.com/brj0/nndescent.git 514275f263be010712530a95e56ffc9b81b9110b nndescent
 pushd nndescent
-git apply ../nndescent.patch
+git apply ../nndescent.patch || true
 popd

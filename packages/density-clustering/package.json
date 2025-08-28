@@ -7,7 +7,7 @@
   "module": "density_clustering_wasm/js/index.js",
   "type": "module",
   "scripts": {
-    "build": "npx wasm-pack build --release --target web density_clustering_wasm && rm density_clustering_wasm/pkg/.gitignore density_clustering_wasm/pkg/package.json"
+    "build": "npx -y wasm-pack build --release --target web density_clustering_wasm && rm density_clustering_wasm/pkg/.gitignore density_clustering_wasm/pkg/package.json"
   },
   "files": [
     "density_clustering_wasm/js/index.js",
