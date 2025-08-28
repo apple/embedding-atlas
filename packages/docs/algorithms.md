@@ -96,7 +96,7 @@ To run the algorithm, use `findClusters`.
 import { findClusters } from "embedding-atlas";
 
 // A density map of width * height floating point numbers.
-let density_map: Float32Array;
+let densityMap: Float32Array;
 
-clusters = await findClusters(density_map, width, height);
+clusters = await findClusters(densityMap, width, height);
 ```

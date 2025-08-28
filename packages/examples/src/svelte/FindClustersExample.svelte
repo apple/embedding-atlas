@@ -24,7 +24,7 @@
         amplitude: randomUniform(0.1, 1, rng),
       });
     }
-    let density_map = new Float32Array(width * height);
+    let densityMap = new Float32Array(width * height);
     for (let y = 0; y < width; y++) {
       for (let x = 0; x < width; x++) {
         let d = 0;
@@ -37,20 +37,20 @@
           ry /= g.s2;
           d += Math.exp(-(rx ** 2 + ry ** 2)) * g.amplitude;
         }
-        density_map[y * width + x] = d * 80;
+        densityMap[y * width + x] = d * 80;
       }
     }
-    return density_map;
+    return densityMap;
   }
 
   async function run() {
-    const density_map = generateDensity(width, height);
-    clusters = await findClusters(density_map, width, height);
+    const densityMap = generateDensity(width, height);
+    clusters = await findClusters(densityMap, width, height);
 
     let ctx = canvas.getContext("2d")!;
     let data = ctx.getImageData(0, 0, width, height);
     for (let i = 0; i < width * height; i++) {
-      let value = density_map[i];
+      let value = densityMap[i];
       data.data[i * 4 + 0] = value;
       data.data[i * 4 + 1] = value;
       data.data[i * 4 + 2] = value;
@@ -67,7 +67,7 @@
   <svg style:position="absolute" width={width} height={height}>
     {#each clusters as c}
       <g>
-        {#each c.boundary_rect_approximation ?? [] as [x1, y1, x2, y2]}
+        {#each c.boundaryRectApproximation ?? [] as [x1, y1, x2, y2]}
           <rect x={x1} y={y1} width={x2 - x1} height={y2 - y1} style:stroke="rgba(255,0,0,0.1)" style:fill="none" />
         {/each}
         {#each c.boundary ?? [] as boundary}
@@ -77,7 +77,7 @@
             style:fill="rgba(255,127,14,0.1)"
           />
         {/each}
-        <circle cx={c.mean_x} cy={c.mean_y} r={2} style:fill="rgba(255,127,14,1)" />
+        <circle cx={c.meanX} cy={c.meanY} r={2} style:fill="rgba(255,127,14,1)" />
       </g>
     {/each}
   </svg>

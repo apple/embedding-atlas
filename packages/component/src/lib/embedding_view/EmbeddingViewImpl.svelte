@@ -36,7 +36,7 @@
   interface Cluster {
     x: number;
     y: number;
-    sum_density: number;
+    sumDensity: number;
     rects: Rectangle[];
     bandwidth: number;
     label?: string | null;
@@ -548,12 +548,12 @@
     viewport: ViewportState,
   ): Promise<Cluster[]> {
     let map = await renderer.densityMap(1000, 1000, bandwidth, viewport);
-    let cs = await findClusters(map.data, map.width, map.height, { union_threshold: bandwidth });
-    let collectedClusters = [];
+    let cs = await findClusters(map.data, map.width, map.height);
+    let collectedClusters: Cluster[] = [];
     for (let idx = 0; idx < cs.length; idx++) {
       let c = cs[idx];
-      let coord = map.coordinateAtPixel(c.mean_x, c.mean_y);
-      let rects: Rectangle[] = c.boundary_rect_approximation!.map(([x1, y1, x2, y2]) => {
+      let coord = map.coordinateAtPixel(c.meanX, c.meanY);
+      let rects: Rectangle[] = c.boundaryRectApproximation!.map(([x1, y1, x2, y2]) => {
         let p1 = map.coordinateAtPixel(x1, y1);
         let p2 = map.coordinateAtPixel(x2, y2);
         return {
@@ -566,14 +566,14 @@
       collectedClusters.push({
         x: coord.x,
         y: coord.y,
-        sum_density: c.sum_density,
+        sumDensity: c.sumDensity,
         rects: rects,
         bandwidth: bandwidth,
       });
     }
-    let maxDensity = collectedClusters.reduce((a, b) => Math.max(a, b.sum_density), 0);
+    let maxDensity = collectedClusters.reduce((a, b) => Math.max(a, b.sumDensity), 0);
     let threshold = maxDensity * 0.005;
-    return collectedClusters.filter((x) => x.sum_density > threshold);
+    return collectedClusters.filter((x) => x.sumDensity > threshold);
   }
 
   async function generateLabels(viewport: ViewportState): Promise<InitialLabel[]> {
@@ -610,7 +610,7 @@
         text: x.label!,
         x: x.x,
         y: x.y,
-        priority: x.sum_density,
+        priority: x.sumDensity,
         level: x.bandwidth == 10 ? 0 : 1,
       }));
 
