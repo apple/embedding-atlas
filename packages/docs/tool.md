@@ -49,7 +49,9 @@ embedding-atlas huggingface_org/dataset_name
 
 ## Visualizing Embeddings
 
-The script will use [SentenceTransformers](https://sbert.net/) to compute embedding vectors for the specified column containing the text data. The script will then project the high-dimensional embedding vectors to 2D with [UMAP](https://umap-learn.readthedocs.io/en/latest/index.html).
+The script will use [SentenceTransformers](https://sbert.net/) to compute embedding vectors for the specified column containing the text or image data. You may use the `--model` option to specify an embedding model. If not specified, a default model will be used. The current defaults are `all-MiniLM-L6-v2` for text and `google/vit-base-patch16-384` for images, but these are subject to change in future releases.
+
+After embedding vectors are computed, the script will then project the high-dimensional vectors to 2D with [UMAP](https://umap-learn.readthedocs.io/en/latest/index.html).
 
 ::: tip
 Optionally, if you know what column your text data is in beforehand, you can specify which column to use with the `--text` flag, for example:
@@ -73,6 +75,20 @@ The IDs should be zero-based row indices.
 If this column is specified, you'll be able to see nearest neighbors for a selected point in the tool.
 
 Once this script completes, it will print out a URL like `http://localhost:5055/`. Open the URL in a web browser to view the embedding.
+
+## Reproducibility
+
+For reproducible embedding visualizations, we recommend pre-computing both the embedding vectors and their UMAP projections, and storing them with your dataset. This ensures consistency since the default embedding model may change over time, floating-point precision may vary across different devices, and UMAP introduces randomness through both its default random initialization and its use of parallelism (see [here](https://umap-learn.readthedocs.io/en/latest/reproducibility.html)).
+
+The `embedding_atlas` package provides utility functions to compute the embedding projections:
+
+```python
+from embedding_atlas.projection import compute_text_projection
+
+compute_text_projection(df, text="text_column",
+    x="projection_x", y="projection_y", neighbors="neighbors"
+)
+```
 
 ## Usage
 
