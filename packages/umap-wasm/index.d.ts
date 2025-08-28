@@ -4,23 +4,23 @@ export interface UMAPOptions {
   metric?: "euclidean" | "cosine";
 
   /** The nearest neighbor method. By default we use HNSW with its default parameters. */
-  knn_method?: "hnsw" | "nndescent" | "vptree";
+  knnMethod?: "hnsw" | "nndescent" | "vptree";
 
   /** The initialization method. By default we use spectral initialization. */
-  initialize_method?: "spectral" | "random" | "none";
+  initializeMethod?: "spectral" | "random" | "none";
 
-  local_connectivity?: number;
+  localConnectivity?: number;
   bandwidth?: number;
-  mix_ratio?: number;
+  mixRatio?: number;
   spread?: number;
-  min_dist?: number;
+  minDist?: number;
   a?: number;
   b?: number;
-  repulsion_strength?: number;
-  n_epochs?: number;
-  learning_rate?: number;
-  negative_sample_rate?: number;
-  n_neighbors?: number;
+  repulsionStrength?: number;
+  nEpochs?: number;
+  learningRate?: number;
+  negativeSampleRate?: number;
+  nNeighbors?: number;
   /** The random seed. */
   seed?: number;
 }
@@ -30,10 +30,10 @@ export interface UMAP {
   get epoch(): number;
 
   /** The input dimension */
-  get input_dim(): number;
+  get inputDim(): number;
 
   /** The output dimension */
-  get output_dim(): number;
+  get outputDim(): number;
 
   /**
    * Get the current embedding.
@@ -45,11 +45,11 @@ export interface UMAP {
   get embedding(): Float32Array;
 
   /**
-   * Run the UMAP algorithm until reaching `epoch_limit` epochs,
-   * or to completion if `epoch_limit` is not specified.
-   * @param epoch_limit the epoch number to run to
+   * Run the UMAP algorithm until reaching `epochLimit` epochs,
+   * or to completion if `epochLimit` is not specified.
+   * @param epochLimit the epoch number to run to
    */
-  run(epoch_limit?: number): void;
+  run(epochLimit?: number): void;
 
   /** Destroy the instance and release resources */
   destroy(): void;
@@ -58,15 +58,15 @@ export interface UMAP {
 /**
  * Initialize a UMAP instance.
  * @param count the number of data points
- * @param input_dim the input dimension
- * @param output_dim the output dimension
- * @param data the data array. Must be a Float32Array with count * input_dim elements.
+ * @param inputDim the input dimension
+ * @param outputDim the output dimension
+ * @param data the data array. Must be a Float32Array with count * inputDim elements.
  * @param options options
  */
 export function createUMAP(
   count: number,
-  input_dim: number,
-  output_dim: number,
+  inputDim: number,
+  outputDim: number,
   data: Float32Array,
   options?: UMAPOptions,
 ): Promise<UMAP>;
@@ -86,9 +86,9 @@ export interface KNNQueryResult {
 }
 
 export interface KNN {
-  query_by_index(index: number, k: number): KNNQueryResult;
-  query_by_vector(data: Float32Array, k: number): KNNQueryResult;
+  queryByIndex(index: number, k: number): KNNQueryResult;
+  queryByVector(data: Float32Array, k: number): KNNQueryResult;
   destroy(): void;
 }
 
-export function createKNN(count: number, input_dim: number, data: Float32Array, options?: KNNOptions): Promise<KNN>;
+export function createKNN(count: number, inputDim: number, data: Float32Array, options?: KNNOptions): Promise<KNN>;

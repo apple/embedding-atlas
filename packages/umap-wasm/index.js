@@ -29,7 +29,7 @@ function set_options(ctx, ptr, setters, options) {
   function set_str_buffer(buf, value) {
     const encoded = new TextEncoder().encode(value);
     if (encoded.length + 1 > buffer_length) {
-      throw new Error("invalid parameter " + name);
+      throw new Error("invalid parameter " + value);
     }
     const array = ctx.u8_array(buf, 64);
     array.fill(0);
@@ -38,7 +38,10 @@ function set_options(ctx, ptr, setters, options) {
   }
 
   for (const name in options) {
-    set_str_buffer(str_buffer_1, name);
+    // Convert camel case to snake case (expected by the C++ code)
+    let name_snake_case = name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+    set_str_buffer(str_buffer_1, name_snake_case);
+    // Set the value
     const value = options[name];
     if (typeof value == "number") {
       const r = setters.number(ptr, str_buffer_1, value);
@@ -85,17 +88,17 @@ export async function createUMAP(count, input_dim, output_dim, data, options = {
       assertValid();
       return ctx.umap_context_epoch(ptr_umap);
     },
-    get n_epochs() {
+    get nEpochs() {
       assertValid();
       return ctx.umap_context_n_epochs(ptr_umap);
     },
     get count() {
       return count;
     },
-    get output_dim() {
+    get outputDim() {
       return output_dim;
     },
-    get input_dim() {
+    get inputDim() {
       return input_dim;
     },
     get embedding() {
@@ -145,7 +148,7 @@ export async function createKNN(count, input_dim, data, options) {
   }
 
   return {
-    query_by_index(index, k) {
+    queryByIndex(index, k) {
       let [ptr_i, ptr_d] = get_buffers(k);
       let rk = ctx.knn_context_query_by_index(ptr_knn, index, k, ptr_i, ptr_d);
       return {
@@ -153,7 +156,7 @@ export async function createKNN(count, input_dim, data, options) {
         distances: ctx.f32_array(ptr_d, rk).slice(),
       };
     },
-    query_by_vector(data, k) {
+    queryByVector(data, k) {
       let [ptr_i, ptr_d] = get_buffers(k);
       ctx.f32_array(ptr_q, input_dim).set(data);
       let rk = ctx.knn_context_query_by_index(ptr_knn, ptr_q, k, ptr_i, ptr_d);

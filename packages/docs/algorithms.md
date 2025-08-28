@@ -16,11 +16,11 @@ To initialize the UMAP algorithm, use `createUMAP`:
 import { createUMAP } from "embedding-atlas";
 
 let count = 2000;
-let input_dim = 100;
-let output_dim = 2;
+let inputDim = 100;
+let outputDim = 2;
 
-// The data must be a Float32Array with count * input_dim elements.
-let data = new Float32Array(count * input_dim);
+// The data must be a Float32Array with count * inputDim elements.
+let data = new Float32Array(count * inputDim);
 // ... fill in the data
 
 let options = {
@@ -28,7 +28,7 @@ let options = {
 };
 
 // Use `createUMAP` to initialize the algorithm.
-let umap = await createUMAP(count, input_dim, output_dim, data, options);
+let umap = await createUMAP(count, inputDim, outputDim, data, options);
 ```
 
 After initialization, use the `run` method to update the embedding coordinates:
@@ -48,7 +48,7 @@ for (let i = 0; i < 100; i++) {
 At any time, you can get the current embedding by calling the `embedding` method.
 
 ```js
-// The result is a Float32Array with count * output_dim elements.
+// The result is a Float32Array with count * outputDim elements.
 let embedding = umap.embedding();
 ```
 
@@ -66,10 +66,10 @@ In addition, you can also use the `createKNN` function to perform approximate ne
 import { createKNN } from "embedding-atlas";
 
 let count = 2000;
-let input_dim = 100;
+let inputDim = 100;
 
-// The data must be a Float32Array with count * input_dim elements.
-let data = new Float32Array(count * input_dim);
+// The data must be a Float32Array with count * inputDim elements.
+let data = new Float32Array(count * inputDim);
 // ... fill in the data
 
 let options = {
@@ -77,11 +77,11 @@ let options = {
 };
 
 // Create the KNN instance
-let knn = await createKNN(count, input_dim, data, options);
+let knn = await createKNN(count, inputDim, data, options);
 
 // Perform queries
-let query = new Float32Array(input_dim);
-knn.query_by_vector(query, k);
+let query = new Float32Array(inputDim);
+knn.queryByVector(query, k);
 
 // Destroy the instance
 knn.destroy();

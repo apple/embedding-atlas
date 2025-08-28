@@ -30,16 +30,16 @@ function makeEmbeddingComputer(runBatch: (data: any[]) => Promise<any>): Embeddi
     },
     async finalize() {
       let count = batches.reduce((a, b) => a + b.dims[0], 0);
-      let input_dim = batches[0].dims[1];
-      let output_dim = 2;
-      let data = new Float32Array(count * input_dim);
+      let inputDim = batches[0].dims[1];
+      let outputDim = 2;
+      let data = new Float32Array(count * inputDim);
       let offset = 0;
       for (let i = 0; i < batches.length; i++) {
-        let length = batches[i].dims[0] * input_dim;
+        let length = batches[i].dims[0] * inputDim;
         data.set(batches[i].data.subarray(0, length), offset);
         offset += length;
       }
-      let umap = await createUMAP(count, input_dim, output_dim, data, {
+      let umap = await createUMAP(count, inputDim, outputDim, data, {
         metric: "cosine",
       });
       umap.run();
