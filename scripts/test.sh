@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Build WASM modules
+# Run tests
 
 set -euxo pipefail
 
