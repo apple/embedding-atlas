@@ -159,7 +159,7 @@ export async function createKNN(count, input_dim, data, options) {
     queryByVector(data, k) {
       let [ptr_i, ptr_d] = get_buffers(k);
       ctx.f32_array(ptr_q, input_dim).set(data);
-      let rk = ctx.knn_context_query_by_index(ptr_knn, ptr_q, k, ptr_i, ptr_d);
+      let rk = ctx.knn_context_query_by_vector(ptr_knn, ptr_q, k, ptr_i, ptr_d);
       return {
         indices: ctx.i32_array(ptr_i, rk).slice(),
         distances: ctx.f32_array(ptr_d, rk).slice(),

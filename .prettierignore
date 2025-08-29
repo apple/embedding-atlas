@@ -12,6 +12,5 @@ packages/docs/demo-data/
 packages/umap-wasm/runtime.js
 packages/umap-wasm/notebooks/data/
 packages/umap-wasm/third_party/
-packages/component/src/lib/density_clustering/wasm/
-packages/density-clustering/comparisons/supercluster-result.json
+packages/density-clustering/density_clustering_wasm/pkg/
 packages/backend/embedding_atlas/static/

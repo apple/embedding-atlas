@@ -82,7 +82,7 @@ export interface KNNOptions {
 
 export interface KNNQueryResult {
   indices: Int32Array;
-  distnaces: Float32Array;
+  distances: Float32Array;
 }
 
 export interface KNN {
