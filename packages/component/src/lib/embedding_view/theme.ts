@@ -31,7 +31,7 @@ const defaultThemeConfig: { light: ThemeConfig; dark: ThemeConfig } = {
   },
   dark: {
     fontFamily: "system-ui,sans-serif",
-    clusterLabelColor: "#fff",
+    clusterLabelColor: "#ccc",
     clusterLabelOutlineColor: "rgba(0,0,0,0.8)",
     clusterLabelOpacity: 0.8,
     statusBar: true,

@@ -191,8 +191,8 @@ of a single pixel in data domain. You can use this to determine the distance thr
 
 ### queryClusterLabels `Function | null`
 
-An async function of type `(rects: Rectangle[]) => Promise<string | null>`, that returns a cluster label
-for the points covered by the given set of rectangles.
+An async function of type `(clusters: Rectangle[][]) => Promise<(string | null)[]>`,
+that returns labels for a list of clusters. Each cluster is given as a list of rectangles that approximately cover the region.
 
 ## Custom Tooltip
 

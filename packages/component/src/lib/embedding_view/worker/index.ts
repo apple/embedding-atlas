@@ -40,10 +40,26 @@ function invokeWorker(name: string, payload: any, transfer: Transferable[] = [])
 
 type PromiseReturn<F extends (...args: any) => any> = (...args: Parameters<F>) => Promise<ReturnType<F>>;
 
-export let findClusters: PromiseReturn<typeof Functions.findClusters> = (density_map, width, height, options) => {
-  return invokeWorker("findClusters", { density_map, width, height, options: options }, [density_map.buffer]);
+export let findClusters: PromiseReturn<typeof Functions.findClusters> = (densityMap, width, height, options) => {
+  return invokeWorker("findClusters", [densityMap, width, height, options], [densityMap.buffer]);
 };
 
-export let dynamicLabelPlacement: PromiseReturn<typeof Functions.dynamicLabelPlacement> = (labels, options) => {
-  return invokeWorker("dynamicLabelPlacement", { labels, options });
+export let dynamicLabelPlacement: PromiseReturn<typeof Functions.dynamicLabelPlacement> = (...args) => {
+  return invokeWorker("dynamicLabelPlacement", args);
+};
+
+export let textSummarizerCreate: PromiseReturn<typeof Functions.textSummarizerCreate> = (...args) => {
+  return invokeWorker("textSummarizerCreate", args);
+};
+
+export let textSummarizerDestroy: PromiseReturn<typeof Functions.textSummarizerDestroy> = (...args) => {
+  return invokeWorker("textSummarizerDestroy", args);
+};
+
+export let textSummarizerAdd: PromiseReturn<typeof Functions.textSummarizerAdd> = (...args) => {
+  return invokeWorker("textSummarizerAdd", args);
+};
+
+export let textSummarizerSummarize: PromiseReturn<typeof Functions.textSummarizerSummarize> = (...args) => {
+  return invokeWorker("textSummarizerSummarize", args);
 };
