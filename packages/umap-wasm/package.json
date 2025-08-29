@@ -7,10 +7,14 @@
   "module": "index.js",
   "type": "module",
   "scripts": {
-    "build": "make"
+    "build": "make",
+    "test": "vitest run"
   },
   "files": [
     "index.js",
     "runtime.js"
-  ]
+  ],
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
 }

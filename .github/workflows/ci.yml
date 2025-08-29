@@ -61,6 +61,9 @@ jobs:
       - name: Build JavaScript and Python packages
         run: ./scripts/build.sh
 
+      - name: Run tests
+        run: ./scripts/test.sh
+
       - name: Upload node package artifact
         uses: actions/upload-artifact@v4
         with:
