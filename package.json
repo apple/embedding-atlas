@@ -1,4 +1,5 @@
 {
+  "name": "@embedding-atlas/workspace",
   "private": true,
   "workspaces": [
     "packages/component",

@@ -66,8 +66,8 @@ export interface EmbeddingViewProps {
   /** A function to query selected point given (x, y) location, and a unit distance (distance of 1pt in data units). */
   querySelection?: ((x: number, y: number, unitDistance: number) => Promise<DataPoint | null>) | null;
 
-  /** A function that returns a summary label for points covered by the union of the given rectangles. */
-  queryClusterLabels?: ((rects: Rectangle[]) => Promise<string | null>) | null;
+  /** A function that returns summary labels for clusters. Each cluster is given by a list of rectangles that approximate its shape. */
+  queryClusterLabels?: ((clusters: Rectangle[][]) => Promise<(string | null)[]>) | null;
 
   /** A callback for when viewportState changes. */
   onViewportState?: ((value: ViewportState) => void) | null;

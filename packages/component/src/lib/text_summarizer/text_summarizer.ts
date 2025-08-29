@@ -1,98 +1,135 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import { column, literal, sql } from "@uwdata/mosaic-sql";
+import { stemmer } from "stemmer";
 
 import type { Rectangle } from "../utils.js";
-import { stopWords } from "./stop_words.js";
+import { stopWords as defaultStopWords } from "./stop_words.js";
 
-/** A text summarizer based on c-TF-IDF, all implemented as SQL queries. */
-export class TextSummarizer {
-  private coordinator: any;
-  private tableName: string;
-  private xColumn: string;
-  private yColumn: string;
-  private textColumn: string;
-  private derivedTableDF: string;
-  private derivedTableBins: string;
-  private initialized: boolean;
-  private xBinSize: number;
-  private yBinSize: number;
-  private x0: number;
-  private y0: number;
+/** A text summarizer based on c-TF-IDF (https://arxiv.org/pdf/2203.05794) */
+export class TFIDFSummarizer {
+  private segmenter: Intl.Segmenter;
+  private binning: XYBinning;
+  private stopWords: Set<string>;
+  private key2RegionIndices: Map<number, number[]>;
+  private frequencyPerClass: Map<string, number>[];
+  private frequencyAll: Map<string, number>;
 
-  constructor(options: { coordinator: any; table: string; text: string; x: string; y: string }) {
-    this.coordinator = options.coordinator;
-    this.tableName = options.table;
-    this.xColumn = options.x;
-    this.yColumn = options.y;
-    this.textColumn = options.text;
+  /** Create a new TFIDFSummarizer */
+  constructor(options: {
+    binning: { xMin: number; xStep: number; yMin: number; yStep: number };
+    regions: Rectangle[][];
+    stopWords?: string[];
+  }) {
+    this.binning = new XYBinning(
+      options.binning.xMin,
+      options.binning.yMin,
+      options.binning.xStep,
+      options.binning.yStep,
+    );
+    this.segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+    this.stopWords = new Set(options.stopWords ?? defaultStopWords);
 
-    this.derivedTableDF = this.tableName + "_df";
-    this.derivedTableBins = this.tableName + "_bt";
-    this.initialized = false;
-    this.xBinSize = 1;
-    this.yBinSize = 1;
-    this.x0 = 0;
-    this.y0 = 0;
-  }
+    this.frequencyPerClass = options.regions.map(() => new Map());
+    this.frequencyAll = new Map();
 
-  private async initialize(): Promise<void> {
-    if (this.initialized) {
-      return;
+    // Generate key2RegionIndices, a map from xy key to region index
+    this.key2RegionIndices = new Map();
+    for (let i = 0; i < options.regions.length; i++) {
+      let keys = this.binning.keys(options.regions[i]);
+      for (let k of keys) {
+        let v = this.key2RegionIndices.get(k);
+        if (v != null) {
+          v.push(i);
+        } else {
+          this.key2RegionIndices.set(k, [i]);
+        }
+      }
     }
-    let xColumn = column(this.xColumn);
-    let yColumn = column(this.yColumn);
-    let textColumn = column(this.textColumn);
-
-    let r = await this.coordinator.query(sql`
-      SELECT
-        MIN(${xColumn}) AS xMin, QUANTILE_CONT(${xColumn}, 0.99) - QUANTILE_CONT(${xColumn}, 0.01) AS xDiff,
-        MIN(${yColumn}) AS yMin, QUANTILE_CONT(${yColumn}, 0.99) - QUANTILE_CONT(${yColumn}, 0.01) AS yDiff,
-        COUNT(*) AS count
-      FROM ${this.tableName}
-    `);
-    let { xMin, yMin, xDiff, yDiff, count } = r.get(0);
-
-    this.x0 = xMin;
-    this.y0 = yMin;
-    this.xBinSize = xDiff / 200;
-    this.yBinSize = yDiff / 200;
-    let minCount = count < 10000 ? 1 : 5;
-    await this.coordinator.exec(sql`
-
-    `);
-    await this.coordinator.exec(sql`
-      CREATE OR REPLACE TEMP MACRO embedding_view_tokenize(s) AS
-        unnest(string_split_regex(regexp_replace(lower(s), '[^a-z0-9'']', ' ', 'g'), '\\s+'));
-
-      CREATE OR REPLACE TABLE ${this.derivedTableBins} AS (
-        WITH tokens_all AS (
-          SELECT
-            floor((${xColumn} - ${this.x0}) / ${this.xBinSize})::INT + 32768 * (floor((${yColumn} - ${this.y0}) / ${this.yBinSize})::INT) as xykey,
-            embedding_view_tokenize(${textColumn}) AS token
-          FROM ${this.tableName}
-        )
-        SELECT xykey, token, COUNT(*) AS count
-        FROM tokens_all
-        WHERE token NOT IN ('',${stopWords.map((x) => literal(x)).join(",")}) AND LENGTH(token) >= 3
-        GROUP BY xykey, token
-        HAVING count >= ${minCount}
-      );
-      CREATE OR REPLACE TABLE ${this.derivedTableDF} AS (
-        SELECT sum(count) AS count, stem(token, 'english') AS stem_token
-        FROM ${this.derivedTableBins} GROUP BY stem_token
-      );
-    `);
-    this.initialized = true;
   }
 
-  private indices(rects: Rectangle[]): number[] {
+  /** Add data to the summarizer */
+  add(data: { x: ArrayLike<number>; y: ArrayLike<number>; text: ArrayLike<string> }) {
+    for (let i = 0; i < data.text.length; i++) {
+      let key = this.binning.key(data.x[i], data.y[i]);
+      let indices = this.key2RegionIndices.get(key);
+      if (indices == null) {
+        continue;
+      }
+      for (let s of this.segmenter.segment(data.text[i])) {
+        let word = s.segment.toLowerCase().trim();
+        if (word.length > 1) {
+          for (let idx of indices) {
+            incrementMap(this.frequencyPerClass[idx], word);
+          }
+          incrementMap(this.frequencyAll, word);
+        }
+      }
+    }
+  }
+
+  isStopWord(word: string) {
+    // Consider words in the stop words list or pure numbers as stop words.
+    return this.stopWords.has(word) || /^[0-9]+$/.test(word);
+  }
+
+  summarize(limit: number = 4): string[][] {
+    // Aggregate the frequencies by stemmed words
+    let frequencyAllStem = aggregateByStem(this.frequencyAll);
+    let frequencyPerClassStem = this.frequencyPerClass.map(aggregateByStem);
+
+    // Average number of words per class
+    let averageWords =
+      frequencyPerClassStem.map((x) => x.values().reduce((a, b) => a + b[1], 0)).reduce((a, b) => a + b, 0) /
+      frequencyPerClassStem.length;
+
+    return frequencyPerClassStem.map((wordMap) => {
+      // Compute TF-IDF
+      let entries = Array.from(
+        wordMap.entries().map(([key, [word, tf]]) => {
+          let df = frequencyAllStem.get(key)?.[1] ?? 1;
+          let idf = Math.log(1 + averageWords / df);
+          return {
+            word: word,
+            tf: tf,
+            df: df,
+            idf: idf,
+            tfIDF: tf * idf,
+          };
+        }),
+      );
+      entries = entries.filter((x) => !this.isStopWord(x.word) && x.df >= 2);
+      entries = entries.sort((a, b) => b.tfIDF - a.tfIDF);
+      return entries.slice(0, limit).map((x) => x.word);
+    });
+  }
+}
+
+class XYBinning {
+  private xMin: number;
+  private yMin: number;
+  private xStep: number;
+  private yStep: number;
+
+  constructor(xMin: number, yMin: number, xStep: number, yStep: number) {
+    this.xMin = xMin;
+    this.yMin = yMin;
+    this.xStep = xStep;
+    this.yStep = yStep;
+  }
+
+  key(x: number, y: number) {
+    let ix = Math.floor((x - this.xMin) / this.xStep);
+    let iy = Math.floor((y - this.yMin) / this.yStep);
+    return ix + iy * 32768;
+  }
+
+  keys(rects: Rectangle[]): number[] {
     let keys = new Set<number>();
     for (let { xMin, yMin, xMax, yMax } of rects) {
-      let xiLowerBound = Math.floor((xMin - this.x0) / this.xBinSize);
-      let xiUpperBound = Math.floor((xMax - this.x0) / this.xBinSize);
-      let yiLowerBound = Math.floor((yMin - this.y0) / this.yBinSize);
-      let yiUpperBound = Math.floor((yMax - this.y0) / this.yBinSize);
+      let xiLowerBound = Math.floor((xMin - this.xMin) / this.xStep);
+      let xiUpperBound = Math.floor((xMax - this.xMin) / this.xStep);
+      let yiLowerBound = Math.floor((yMin - this.yMin) / this.yStep);
+      let yiUpperBound = Math.floor((yMax - this.yMin) / this.yStep);
       for (let xi = xiLowerBound; xi <= xiUpperBound; xi++) {
         for (let yi = yiLowerBound; yi <= yiUpperBound; yi++) {
           let p = yi * 32768 + xi;
@@ -102,34 +139,28 @@ export class TextSummarizer {
     }
     return Array.from(keys);
   }
+}
 
-  async summarize(rects: Rectangle[], limit: number = 4): Promise<string[]> {
-    await this.initialize();
-    let indices = this.indices(rects);
-    let q = sql`
-      WITH tokens_tf AS (
-        SELECT token, sum(count) AS count
-        FROM ${this.derivedTableBins}
-        WHERE xykey IN (${indices.join(",")})
-        GROUP BY token
-      ),
-      tokens_tf_stem AS (
-        SELECT sum(count) AS count, stem(token, 'english') AS stem_token, ARG_MAX(token, count) AS token
-        FROM tokens_tf
-        GROUP BY stem_token
-      )
-      SELECT
-        tokens_tf_stem.count AS tf,
-        ${this.derivedTableDF}.count AS df,
-        tf * log(1 + (SELECT sum(count) FROM tokens_tf_stem) / df) AS tfidf,
-        tokens_tf_stem.token AS token
-      FROM ${this.derivedTableDF}, tokens_tf_stem
-      WHERE ${this.derivedTableDF}.stem_token == tokens_tf_stem.stem_token
-      ORDER BY tfidf DESC limit ${limit}
-    `;
-    // TODO: try to directly call the DuckDB instance to see if perf is better.
-    let result = await this.coordinator.query(q);
-    let list = result.getChild("token").toArray();
-    return list;
+function incrementMap<K>(map: Map<K, number>, key: K) {
+  let c = map.get(key) ?? 0;
+  map.set(key, c + 1);
+}
+
+/** Aggregate words by their stems and track the most frequent version.
+ * Returns a map with stemmed words as keys, and the most frequent version and total count as values. */
+function aggregateByStem(inputMap: Map<string, number>): Map<string, [string, number]> {
+  const result = new Map();
+  for (const [word, count] of inputMap.entries()) {
+    const s = stemmer(word);
+    if (result.has(s)) {
+      const value = result.get(s);
+      value[1] += count;
+      if ((inputMap.get(value[0]) ?? 0) < count) {
+        value[0] = word;
+      }
+    } else {
+      result.set(s, [word, count]);
+    }
   }
+  return result;
 }

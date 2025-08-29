@@ -47,6 +47,7 @@
     "publint": "^0.3.12",
     "quickselect": "^3.0.0",
     "simplify-js": "^1.2.4",
+    "stemmer": "^2.0.1",
     "svelte": "^5.37.3",
     "typescript": "^5.9.2",
     "vite": "^7.0.6",

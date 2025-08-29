@@ -18,7 +18,7 @@
     totalCount: number | null;
     maxDensity: number | null;
     automaticLabels: AutomaticLabelsConfig | boolean;
-    queryClusterLabels: ((rects: Rectangle[]) => Promise<string | null>) | null;
+    queryClusterLabels: ((clusters: Rectangle[][]) => Promise<(string | null)[]>) | null;
     tooltip: Selection | null;
     selection: Selection[] | null;
     querySelection: ((x: number, y: number, unitDistance: number) => Promise<Selection | null>) | null;
@@ -595,12 +595,11 @@
     let newClusters = await generateClusters(renderer, 10, viewport);
     newClusters = newClusters.concat(await generateClusters(renderer, 5, viewport));
 
-    statusMessage = "Generating labels (initializing)...";
+    statusMessage = "Generating labels...";
     if (queryClusterLabels) {
+      let labels = await queryClusterLabels(newClusters.map((x) => x.rects));
       for (let i = 0; i < newClusters.length; i++) {
-        let label = await queryClusterLabels(newClusters[i].rects);
-        newClusters[i].label = label;
-        statusMessage = `Generating labels (${(((i + 1) / newClusters.length) * 100).toFixed(0)}%)...`;
+        newClusters[i].label = labels[i];
       }
     }
 

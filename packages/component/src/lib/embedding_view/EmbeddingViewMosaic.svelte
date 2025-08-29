@@ -6,7 +6,6 @@
 
   import EmbeddingViewImpl from "./EmbeddingViewImpl.svelte";
 
-  import { TextSummarizer } from "../text_summarizer/text_summarizer.js";
   import { deepEquals, type Point, type Rectangle, type ViewportState } from "../utils.js";
   import type { EmbeddingViewMosaicProps } from "./embedding_view_mosaic_api.js";
   import {
@@ -17,6 +16,12 @@
   } from "./mosaic_client.js";
   import { makeClient } from "./mosaic_helper.js";
   import type { DataPoint, DataPointID } from "./types.js";
+  import {
+    textSummarizerAdd,
+    textSummarizerCreate,
+    textSummarizerDestroy,
+    textSummarizerSummarize,
+  } from "./worker/index.js";
 
   let {
     coordinator = defaultCoordinator(),
@@ -328,20 +333,63 @@
   }
 
   // Cluster Labels
-  let textSummarizer = $derived(
-    text != null ? new TextSummarizer({ coordinator: coordinator, table: table, x: x, y: y, text: text }) : null,
-  );
+  async function queryClusterLabels(clusters: Rectangle[][]): Promise<(string | null)[]> {
+    if (text == null) {
+      return clusters.map(() => null);
+    }
+    // Infer binning parameters
+    let result: any = await coordinator.query(
+      SQL.Query.from(table).select({
+        xMin: SQL.min(SQL.column(x)),
+        yMin: SQL.min(SQL.column(y)),
+        xDiff: SQL.sub(SQL.quantile(SQL.column(x), 0.99), SQL.quantile(SQL.column(x), 0.01)),
+        yDiff: SQL.sub(SQL.quantile(SQL.column(y), 0.99), SQL.quantile(SQL.column(y), 0.01)),
+      }),
+    );
+    let { xMin, yMin, xDiff, yDiff } = result.get(0);
+    let binning = { xMin: xMin, yMin: yMin, xStep: xDiff / 200, yStep: yDiff / 200 };
+    // Create text summarizer (in the worker)
+    let summarizer = await textSummarizerCreate({ binning: binning, regions: clusters });
+    // Add text data to the summarizer
+    let start = 0;
+    let chunkSize = 10000;
+    let lastAdd: Promise<unknown> | null = null;
+    while (true) {
+      let r: any = await coordinator.query(
+        SQL.Query.from(table)
+          .select({ x: SQL.column(x), y: SQL.column(y), text: SQL.column(text) })
+          .offset(start)
+          .limit(chunkSize),
+      );
+      let data = {
+        x: r.getChild("x").toArray(),
+        y: r.getChild("y").toArray(),
+        text: r.getChild("text").toArray(),
+      };
+      if (lastAdd != null) {
+        await lastAdd;
+      }
+      lastAdd = textSummarizerAdd(summarizer, data);
+      if (r.getChild("text").length < chunkSize) {
+        break;
+      }
+      start += chunkSize;
+    }
+    if (lastAdd != null) {
+      await lastAdd;
+    }
+    let summarizeResult = await textSummarizerSummarize(summarizer);
+    await textSummarizerDestroy(summarizer);
 
-  async function queryClusterLabels(rects: Rectangle[]): Promise<string | null> {
-    if (textSummarizer == null) {
-      return null;
-    }
-    let list = await textSummarizer.summarize(rects, 4);
-    if (list.length > 0) {
-      return list.slice(0, 2).join("-") + "-\n" + list.slice(2).join("-");
-    } else {
-      return null;
-    }
+    return summarizeResult.map((words) => {
+      if (words.length == 0) {
+        return null;
+      } else if (words.length > 2) {
+        return words.slice(0, 2).join("-") + "-\n" + words.slice(2).join("-");
+      } else {
+        return words.join("-");
+      }
+    });
   }
 </script>
 
