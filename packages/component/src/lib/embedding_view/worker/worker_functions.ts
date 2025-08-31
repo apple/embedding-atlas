@@ -2,20 +2,16 @@
 
 import { findClusters } from "@embedding-atlas/density-clustering";
 import { dynamicLabelPlacement } from "../../dynamic_label_placement/dynamic_label_placement.js";
-import { TFIDFSummarizer } from "../../text_summarizer/text_summarizer.js";
+import { TextSummarizer } from "../../text_summarizer/text_summarizer.js";
 import type { Rectangle } from "../../utils.js";
 
 export { dynamicLabelPlacement, findClusters };
 
-let textSummarizers = new Map<string, TFIDFSummarizer>();
+let textSummarizers = new Map<string, TextSummarizer>();
 
-export function textSummarizerCreate(options: {
-  binning: { xMin: number; xStep: number; yMin: number; yStep: number };
-  regions: Rectangle[][];
-  stopWords?: string[];
-}) {
+export function textSummarizerCreate(options: { regions: Rectangle[][]; stopWords?: string[] }) {
   let key = new Date().getTime() + "-" + Math.random();
-  textSummarizers.set(key, new TFIDFSummarizer(options));
+  textSummarizers.set(key, new TextSummarizer(options));
   return key;
 }
 
@@ -25,7 +21,7 @@ export function textSummarizerDestroy(key: string) {
 
 export function textSummarizerAdd(
   key: string,
-  data: { x: ArrayLike<number>; y: ArrayLike<number>; text: ArrayLike<string> },
+  data: { x: ArrayLike<number>; y: ArrayLike<number>; text: ArrayLike<string> }
 ) {
   textSummarizers.get(key)?.add(data);
 }

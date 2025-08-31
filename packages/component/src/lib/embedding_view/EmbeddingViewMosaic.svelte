@@ -337,19 +337,8 @@
     if (text == null) {
       return clusters.map(() => null);
     }
-    // Infer binning parameters
-    let result: any = await coordinator.query(
-      SQL.Query.from(table).select({
-        xMin: SQL.min(SQL.column(x)),
-        yMin: SQL.min(SQL.column(y)),
-        xDiff: SQL.sub(SQL.quantile(SQL.column(x), 0.99), SQL.quantile(SQL.column(x), 0.01)),
-        yDiff: SQL.sub(SQL.quantile(SQL.column(y), 0.99), SQL.quantile(SQL.column(y), 0.01)),
-      }),
-    );
-    let { xMin, yMin, xDiff, yDiff } = result.get(0);
-    let binning = { xMin: xMin, yMin: yMin, xStep: xDiff / 200, yStep: yDiff / 200 };
     // Create text summarizer (in the worker)
-    let summarizer = await textSummarizerCreate({ binning: binning, regions: clusters });
+    let summarizer = await textSummarizerCreate({ regions: clusters });
     // Add text data to the summarizer
     let start = 0;
     let chunkSize = 10000;

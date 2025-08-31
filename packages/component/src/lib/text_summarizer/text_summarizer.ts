@@ -6,7 +6,7 @@ import type { Rectangle } from "../utils.js";
 import { stopWords as defaultStopWords } from "./stop_words.js";
 
 /** A text summarizer based on c-TF-IDF (https://arxiv.org/pdf/2203.05794) */
-export class TFIDFSummarizer {
+export class TextSummarizer {
   private segmenter: Intl.Segmenter;
   private binning: XYBinning;
   private stopWords: Set<string>;
@@ -14,18 +14,9 @@ export class TFIDFSummarizer {
   private frequencyPerClass: Map<string, number>[];
   private frequencyAll: Map<string, number>;
 
-  /** Create a new TFIDFSummarizer */
-  constructor(options: {
-    binning: { xMin: number; xStep: number; yMin: number; yStep: number };
-    regions: Rectangle[][];
-    stopWords?: string[];
-  }) {
-    this.binning = new XYBinning(
-      options.binning.xMin,
-      options.binning.yMin,
-      options.binning.xStep,
-      options.binning.yStep,
-    );
+  /** Create a new TextSummarizer */
+  constructor(options: { regions: Rectangle[][]; stopWords?: string[] }) {
+    this.binning = XYBinning.inferFromRegions(options.regions);
     this.segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
     this.stopWords = new Set(options.stopWords ?? defaultStopWords);
 
@@ -55,27 +46,27 @@ export class TFIDFSummarizer {
       if (indices == null) {
         continue;
       }
+      let words = [];
       for (let s of this.segmenter.segment(data.text[i])) {
-        let word = s.segment.toLowerCase().trim();
+        let word = s.segment.trim();
         if (word.length > 1) {
-          for (let idx of indices) {
-            incrementMap(this.frequencyPerClass[idx], word);
-          }
-          incrementMap(this.frequencyAll, word);
+          words.push(word);
         }
+      }
+      let inc = 1 / words.length;
+      for (let word of words) {
+        for (let idx of indices) {
+          incrementMap(this.frequencyPerClass[idx], word, inc);
+        }
+        incrementMap(this.frequencyAll, word, inc);
       }
     }
   }
 
-  isStopWord(word: string) {
-    // Consider words in the stop words list or pure numbers as stop words.
-    return this.stopWords.has(word) || /^[0-9]+$/.test(word);
-  }
-
   summarize(limit: number = 4): string[][] {
     // Aggregate the frequencies by stemmed words
-    let frequencyAllStem = aggregateByStem(this.frequencyAll);
-    let frequencyPerClassStem = this.frequencyPerClass.map(aggregateByStem);
+    let frequencyAllStem = aggregateByStem(this.frequencyAll, this.stopWords);
+    let frequencyPerClassStem = this.frequencyPerClass.map((m) => aggregateByStem(m, this.stopWords));
 
     // Average number of words per class
     let averageWords =
@@ -97,7 +88,7 @@ export class TFIDFSummarizer {
           };
         }),
       );
-      entries = entries.filter((x) => !this.isStopWord(x.word) && x.df >= 2);
+      entries = entries.filter((x) => x.df >= 2);
       entries = entries.sort((a, b) => b.tfIDF - a.tfIDF);
       return entries.slice(0, limit).map((x) => x.word);
     });
@@ -117,13 +108,39 @@ class XYBinning {
     this.yStep = yStep;
   }
 
+  static inferFromRegions(regions: Rectangle[][]): XYBinning {
+    let xMin = Number.POSITIVE_INFINITY;
+    let yMin = Number.POSITIVE_INFINITY;
+    let xMax = Number.NEGATIVE_INFINITY;
+    let yMax = Number.NEGATIVE_INFINITY;
+    for (let region of regions) {
+      for (let rect of region) {
+        if (rect.xMin < xMin) {
+          xMin = rect.xMin;
+        } else if (rect.xMax > xMax) {
+          xMax = rect.xMax;
+        }
+        if (rect.yMin < yMin) {
+          yMin = rect.yMin;
+        } else if (rect.yMax > yMax) {
+          yMax = rect.yMax;
+        }
+      }
+    }
+    if (xMin < xMax && yMin < yMax) {
+      return new XYBinning(xMin, yMin, (xMax - xMin) / 200, (yMax - yMin) / 200);
+    } else {
+      return new XYBinning(0, 0, 1, 1);
+    }
+  }
+
   key(x: number, y: number) {
     let ix = Math.floor((x - this.xMin) / this.xStep);
     let iy = Math.floor((y - this.yMin) / this.yStep);
     return ix + iy * 32768;
   }
 
-  keys(rects: Rectangle[]): number[] {
+  keys(rects: Rectangle[]): Set<number> {
     let keys = new Set<number>();
     for (let { xMin, yMin, xMax, yMax } of rects) {
       let xiLowerBound = Math.floor((xMin - this.xMin) / this.xStep);
@@ -137,23 +154,27 @@ class XYBinning {
         }
       }
     }
-    return Array.from(keys);
+    return keys;
   }
 }
 
-function incrementMap<K>(map: Map<K, number>, key: K) {
+function incrementMap<K>(map: Map<K, number>, key: K, value: number) {
   let c = map.get(key) ?? 0;
-  map.set(key, c + 1);
+  map.set(key, c + value);
 }
 
 /** Aggregate words by their stems and track the most frequent version.
  * Returns a map with stemmed words as keys, and the most frequent version and total count as values. */
-function aggregateByStem(inputMap: Map<string, number>): Map<string, [string, number]> {
-  const result = new Map();
-  for (const [word, count] of inputMap.entries()) {
-    const s = stemmer(word);
+function aggregateByStem(inputMap: Map<string, number>, stopWords: Set<string>): Map<string, [string, number]> {
+  let result = new Map();
+  for (let [word, count] of inputMap.entries()) {
+    let lower = word.toLowerCase();
+    if (stopWords.has(lower) || /^[0-9]+$/.test(lower)) {
+      continue;
+    }
+    let s = stemmer(lower);
     if (result.has(s)) {
-      const value = result.get(s);
+      let value = result.get(s);
       value[1] += count;
       if ((inputMap.get(value[0]) ?? 0) < count) {
         value[0] = word;
