@@ -16,7 +16,6 @@
     "density_clustering_wasm/pkg/density_clustering_wasm_bg.wasm"
   ],
   "devDependencies": {
-    "vitest": "^3.2.4",
-    "wasm-pack": "^0.13.1"
+    "vitest": "^3.2.4"
   }
 }
