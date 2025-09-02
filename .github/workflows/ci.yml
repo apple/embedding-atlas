@@ -39,8 +39,10 @@ jobs:
         with:
           version: 4.0.13
 
-      - name: Setup wasm-bindgen-cli
-        run: cargo install -f wasm-bindgen-cli --version 0.2.100
+      - name: Setup Rust for WebAssembly
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install -f wasm-bindgen-cli --version 0.2.100
 
       - name: Set up uv package manager
         uses: astral-sh/setup-uv@v5
