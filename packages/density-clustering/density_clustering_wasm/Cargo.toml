@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-wasm-bindgen = "0.2.84"
+wasm-bindgen = "0.2.100"
 js-sys = "0.3.69"
 serde = { version = "1.0.197", features = ["derive"] }
 serde-wasm-bindgen = "0.4"
