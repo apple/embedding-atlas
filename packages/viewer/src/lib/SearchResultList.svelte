@@ -2,19 +2,23 @@
 <script lang="ts">
   import Mark from "mark.js";
 
-  import { IconClose } from "./icons";
-  import type { SearchResultItem } from "./search";
+  import TooltipContent from "./TooltipContent.svelte";
+
+  import { IconClose } from "./icons.js";
+  import type { ColumnStyle } from "./renderers/index.js";
+  import type { SearchResultItem } from "./search.js";
 
   interface Props {
     items: SearchResultItem[];
     label: string;
     highlight: string;
     limit?: number;
+    columnStyles?: Record<string, ColumnStyle>;
     onClick?: (item: SearchResultItem) => void;
     onClose?: () => void;
   }
 
-  let { items, label, highlight, limit = 100, onClick, onClose }: Props = $props();
+  let { items, label, highlight, limit = 100, columnStyles, onClick, onClose }: Props = $props();
 
   function markHighlight(element: HTMLElement, highlight: string) {
     let m = new Mark(element);
@@ -53,20 +57,13 @@
   <div class="flex flex-col overflow-x-hidden overflow-y-scroll">
     {#each items as item (item)}
       <button
-        class="m-1 p-2 text-left rounded-md hover:bg-slate-300 dark:hover:bg-slate-500"
+        class="m-1 p-2 text-left rounded-md hover:outline outline-slate-500"
         onclick={() => {
           onClick?.(item);
         }}
       >
-        <div
-          class="overflow-hidden text-ellipsis line-clamp-4 leading-5"
-          title={item.text}
-          use:markHighlight={highlight}
-        >
-          {item.text}
-        </div>
         {#if item.distance != null}
-          <div class="flex pt-1 text-sm">
+          <div class="flex pb-1 text-sm">
             <span class="px-2 flex gap-2 bg-slate-200 text-slate-500 dark:bg-slate-600 dark:text-slate-300 rounded-md">
               <div class="text-slate-400 dark:text-slate-400 font-medium">Distance</div>
               <div class="text-ellipsis whitespace-nowrap overflow-hidden max-w-72">
@@ -75,6 +72,9 @@
             </span>
           </div>
         {/if}
+        <div class="overflow-hidden text-ellipsis line-clamp-4 leading-5" use:markHighlight={highlight}>
+          <TooltipContent values={item.fields} columnStyles={columnStyles ?? {}} />
+        </div>
       </button>
       <hr class="border-slate-300 dark:border-slate-600" />
     {/each}

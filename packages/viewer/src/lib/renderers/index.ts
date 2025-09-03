@@ -3,9 +3,19 @@
 import type { CustomCell } from "@embedding-atlas/table";
 
 import { ImageRenderer } from "./image.js";
-import { JSONRenderer } from "./json.js";
+import { JSONRenderer, safeJSONStringify } from "./json.js";
 import { MarkdownRenderer } from "./markdown.js";
 import { URLRenderer } from "./url.js";
+
+/** A type describing how to display a column in the table, tooltip, and search results */
+export interface ColumnStyle {
+  /** The renderer type */
+  renderer?: string;
+  /** Props passed to the renderer class */
+  rendererOptions?: any;
+  /** Display style */
+  display?: "full" | "badge" | "hidden";
+}
 
 export let textRendererClasses: Record<string, any> = {
   markdown: MarkdownRenderer,
@@ -21,8 +31,8 @@ export let renderersList = [
   { renderer: "json", label: "JSON" },
 ];
 
-function resolveRenderer(value: string | CustomCell | null | undefined) {
-  if (value == null || value == "plain") {
+export function getRenderer(value: string | CustomCell | null | undefined) {
+  if (value == null) {
     return undefined;
   }
   if (typeof value == "string") {
@@ -31,20 +41,37 @@ function resolveRenderer(value: string | CustomCell | null | undefined) {
   return value; // value is a CustomCell
 }
 
-export function makeCustomCellRenderers(
-  renderers: Record<string, string>,
-  tableCellRenderers: Record<string, string | CustomCell> | null | undefined,
-) {
-  let result: Record<string, any> = {};
-  if (tableCellRenderers != null) {
-    for (let column in tableCellRenderers) {
-      result[column] = resolveRenderer(tableCellRenderers[column]);
-    }
+export function isLink(value: any): boolean {
+  return typeof value == "string" && (value.startsWith("http://") || value.startsWith("https://"));
+}
+
+export function isImage(value: any): boolean {
+  if (value == null) {
+    return false;
   }
-  for (let column in renderers) {
-    if (renderers[column] != null) {
-      result[column] = resolveRenderer(renderers[column]);
-    }
+  if (typeof value == "string" && value.startsWith("data:image/")) {
+    return true;
   }
-  return result;
+  if (value.bytes && value.bytes instanceof Uint8Array) {
+    // TODO: check if the bytes are actually an image.
+    return true;
+  }
+  return false;
+}
+
+export function stringify(value: any): string {
+  if (value == null) {
+    return "(null)";
+  } else if (typeof value == "string") {
+    return value.toString();
+  } else if (typeof value == "number") {
+    return value.toLocaleString();
+  } else if (Array.isArray(value)) {
+    return "[" + value.map((x) => stringify(x)).join(", ") + "]";
+  }
+  try {
+    return safeJSONStringify(value);
+  } catch (e) {
+    return value.toString();
+  }
 }

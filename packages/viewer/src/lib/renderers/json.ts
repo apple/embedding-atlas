@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-function safeJSONStringify(value: any, space?: number): string {
+export function safeJSONStringify(value: any, space?: number): string {
   try {
     return JSON.stringify(
       value,
@@ -27,7 +27,9 @@ export class JSONRenderer {
 
   update(props: { value: any }) {
     let pre = document.createElement("pre");
-    pre.innerText = safeJSONStringify(props.value);
+    pre.style.whiteSpace = "pre-wrap";
+    pre.style.wordBreak = "break-all";
+    pre.innerText = safeJSONStringify(props.value, 2);
     this.element.replaceChildren(pre);
   }
 }

@@ -5,11 +5,11 @@
     min?: number;
     max?: number;
     step?: number | null | undefined;
+    width?: number;
   }
 
-  let { value = $bindable(0), min = 0, max = 100, step = undefined }: Props = $props();
+  let { value = $bindable(0), min = 0, max = 100, step = undefined, width = 100 }: Props = $props();
 
-  let width: number = 100;
   let height: number = 28;
 
   let trackHeight: number = 4;

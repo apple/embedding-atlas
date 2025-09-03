@@ -29,8 +29,6 @@ function createCustomComponentClass<Props extends {}>(Component: Component<Props
 
 export const CustomTooltip = createCustomComponentClass<{
   tooltip: DataPoint;
-  textField: string | null;
-  textRenderer: string;
   darkMode: boolean;
   onNearestNeighborSearch?: (id: any) => void;
 }>(Tooltip);

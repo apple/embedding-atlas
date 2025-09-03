@@ -2,6 +2,9 @@
 <script lang="ts">
   import type { JSType } from "@uwdata/mosaic-core";
 
+  import BigIntContent from "./cell-contents/BigIntContent.svelte";
+  import CustomCellContents from "./cell-contents/CustomCellContents.svelte";
+  import ImageContent from "./cell-contents/ImageContent.svelte";
   import LinkContent from "./cell-contents/LinkContent.svelte";
   import NumberContent from "./cell-contents/NumberContent.svelte";
   import TextContent from "./cell-contents/TextContent.svelte";
@@ -9,8 +12,6 @@
   import { ConfigContext } from "../../context/config.svelte";
   import { Context } from "../../context/context.svelte";
   import { CustomCellsContext } from "../../context/custom-cells.svelte";
-  import BigIntContent from "./cell-contents/BigIntContent.svelte";
-  import CustomCellContents from "./cell-contents/CustomCellContents.svelte";
 
   interface Props {
     row: string;
@@ -34,6 +35,24 @@
   const content: string | null = model.getContent({ row, col });
   const type: JSType = schema.dataType[col] ?? "string";
   const sqlType: string = schema.sqlType[col] ?? "TEXT";
+
+  function isLink(value: any): boolean {
+    return typeof value == "string" && (value.startsWith("http://") || value.startsWith("https://"));
+  }
+
+  function isImage(value: any): boolean {
+    if (value == null) {
+      return false;
+    }
+    if (typeof value == "string" && value.startsWith("data:image/")) {
+      return true;
+    }
+    if (value.bytes && value.bytes instanceof Uint8Array) {
+      // TODO: check if the bytes are actually an image.
+      return true;
+    }
+    return false;
+  }
 </script>
 
 <div
@@ -45,7 +64,7 @@
   {#if customCellsConfig[col]}
     <CustomCellContents row={row} col={col} customCell={customCellsConfig[col]} bind:height={contentHeight} />
   {:else if type === "string"}
-    {#if content && content.startsWith("http")}
+    {#if content && isLink(content)}
       <LinkContent url={content} bind:height={contentHeight} />
     {:else}
       <TextContent text={content} bind:height={contentHeight} clamped={clamped} parentHeight={height} />
@@ -56,6 +75,8 @@
     {:else}
       <NumberContent number={content as number | null} bind:height={contentHeight} />
     {/if}
+  {:else if isImage(content)}
+    <ImageContent image={content} bind:height={contentHeight} />
   {:else}
     <TextContent text={content} bind:height={contentHeight} clamped={clamped} parentHeight={height} />
   {/if}

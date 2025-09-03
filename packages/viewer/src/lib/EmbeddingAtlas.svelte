@@ -1,21 +1,22 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
+  import * as SQL from "@uwdata/mosaic-sql";
+  import * as vg from "@uwdata/vgplot";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { Tween } from "svelte/motion";
   import { slide } from "svelte/transition";
 
   import { maxDensityModeCategories } from "@embedding-atlas/component";
+  import type { CustomCell } from "@embedding-atlas/table";
   import { Table } from "@embedding-atlas/table/svelte";
-  import * as SQL from "@uwdata/mosaic-sql";
-  import * as vg from "@uwdata/vgplot";
 
+  import ColumnStylePicker from "./ColumnStylePicker.svelte";
   import EmbeddingView from "./EmbeddingView.svelte";
   import PlotList from "./PlotList.svelte";
   import FilteredCount from "./plots/FilteredCount.svelte";
   import SearchResultList from "./SearchResultList.svelte";
   import Spinner from "./Spinner.svelte";
-  import TextStylePicker from "./TextStylePicker.svelte";
   import ActionButton from "./widgets/ActionButton.svelte";
   import Button from "./widgets/Button.svelte";
   import Input from "./widgets/Input.svelte";
@@ -43,10 +44,10 @@
   import { TableInfo, type ColumnDesc, type EmbeddingLegend } from "./database_utils.js";
   import type { Plot } from "./plots/plot.js";
   import { PlotStateStoreManager } from "./plots/plot_state_store.js";
-  import { makeCustomCellRenderers } from "./renderers/index.js";
+  import { getRenderer, type ColumnStyle } from "./renderers/index.js";
   import { querySearchResultItems, resolveSearcher, type SearchResultItem } from "./search.js";
-  import { tableTheme } from "./tableTheme";
-  import { debounce, getDefaults, setDefaults, startDrag } from "./utils.js";
+  import { tableTheme } from "./table_theme.js";
+  import { debounce, startDrag } from "./utils.js";
 
   const searchLimit = 500;
 
@@ -152,14 +153,44 @@
     sidebarTween.set(showSidebar ? 1 : 0);
   });
 
-  // Text Renderers
+  // Column styles
+  let columnStyles: Record<string, ColumnStyle> = $state.raw({});
 
-  let textRenderers: Record<string, string> = $state(getDefaults("textRenderers", {}));
-  let customCellRenderers = $derived(makeCustomCellRenderers(textRenderers, tableCellRenderers));
-  $effect(() => {
-    // Save the text renderers to a state.
-    setDefaults("textRenderers", textRenderers);
-  });
+  export function resolveCustomCellRenderers(
+    columns: ColumnDesc[],
+    columnStyles: Record<string, ColumnStyle>,
+    tableCellRenderers: Record<string, string | CustomCell> | null | undefined,
+  ) {
+    let result: Record<string, any> = {};
+    for (let column of columns) {
+      if (tableCellRenderers?.[column.name] != null) {
+        result[column.name] = getRenderer(tableCellRenderers[column.name]);
+      }
+      if (columnStyles[column.name]?.renderer != null) {
+        result[column.name] = getRenderer(columnStyles[column.name]?.renderer);
+      }
+    }
+    return result;
+  }
+
+  function resolveColumnStyles(
+    columns: ColumnDesc[],
+    styles: Record<string, ColumnStyle>,
+  ): Record<string, ColumnStyle> {
+    let result: Record<string, ColumnStyle> = {};
+    for (let column of columns) {
+      let style = styles[column.name];
+      if (style == null) {
+        // Default display style
+        style = { display: textColumn == column.name ? "full" : "badge" };
+      }
+      result[column.name] = style;
+    }
+    return result;
+  }
+
+  let resolvedCustomCellRenderers = $derived(resolveCustomCellRenderers(columns, columnStyles, tableCellRenderers));
+  let resolvedColumnStyles = $derived(resolveColumnStyles(columns, columnStyles));
 
   // Search
 
@@ -250,6 +281,7 @@
       coordinator,
       table,
       { id: idColumn, x: projectionColumns?.x, y: projectionColumns?.y, text: textColumn },
+      additionalFields,
       predicate,
       searcherResult,
     );
@@ -276,11 +308,6 @@
   // Category column
 
   let selectedCategoryColumn: string | null = $state(null);
-  let selectedTooltipTextColumn: string | null = $state(null);
-  let effectiveTooltipTextColumn = $derived(selectedTooltipTextColumn ?? textColumn);
-  let tooltipTextRenderer = $derived(
-    effectiveTooltipTextColumn != null ? (textRenderers[effectiveTooltipTextColumn] ?? "plain") : "plain",
-  );
   let categoryLegend: EmbeddingLegend | null = $state.raw(null);
 
   async function setCategoryColumn(column: string | null) {
@@ -316,10 +343,11 @@
 
   // Animation
 
-  async function animateEmbeddingViewToPoint(identifier?: any, x?: number, y?: number) {
+  async function animateEmbeddingViewToPoint(identifier?: any, x?: number, y?: number): Promise<void> {
     if (defaultViewportScale == null) {
       return;
     }
+
     let scale = (await defaultViewportScale) * 2;
     if (x == null || y == null) {
       if (projectionColumns == null) {
@@ -342,6 +370,7 @@
       y: y,
       scale: scale,
     });
+    embeddingView?.showTooltip(identifier);
   }
 
   // Filter
@@ -358,15 +387,6 @@
     let fields: any = {};
     fields.id = idColumn;
     for (let c of columns) {
-      if (
-        c.name == textColumn ||
-        c.name == projectionColumns?.x ||
-        c.name == projectionColumns?.y ||
-        c.name == idColumn
-      ) {
-        continue;
-      }
-
       fields[c.name] = c.name;
     }
     return fields;
@@ -393,7 +413,7 @@
     load("showEmbedding", (x) => (showEmbedding = x));
     load("showTable", (x) => (showTable = x));
     load("showSidebar", (x) => (showSidebar = x));
-    load("textRenderers", (x) => (textRenderers = x));
+    load("columnStyles", (x) => (columnStyles = x));
     load("selectedCategoryColumn", (x) => (selectedCategoryColumn = x));
     load("embeddingViewMode", (x) => (embeddingViewMode = x));
     load("minimumDensityExpFactor", (x) => (minimumDensityExpFactor = x));
@@ -417,7 +437,7 @@
         showEmbedding: showEmbedding,
         showTable: showTable,
         showSidebar: showSidebar,
-        textRenderers: textRenderers,
+        columnStyles: columnStyles,
         selectedCategoryColumn: selectedCategoryColumn,
         embeddingViewMode: embeddingViewMode,
         minimumDensityExpFactor: minimumDensityExpFactor,
@@ -478,7 +498,7 @@
 
                 {#if searchResultVisible}
                   <div
-                    class="absolute w-96 left-0 top-[32px] rounded-md right-0 z-20 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 overflow-hidden resize shadow-lg"
+                    class="absolute w-96 left-0 top-[32px] rounded-md right-0 z-20 border border-slate-300 dark:border-slate-600 overflow-hidden resize shadow-lg bg-white/75 dark:bg-slate-800/75 backdrop-blur-sm"
                     style:height="48em"
                   >
                     {#if searchResult != null}
@@ -490,9 +510,10 @@
                         onClick={async (item) => {
                           scrollTableTo(item.id);
                           searchResultHighlight = item;
-                          animateEmbeddingViewToPoint(item.id, item.x, item.y);
+                          await animateEmbeddingViewToPoint(item.id, item.x, item.y);
                         }}
                         onClose={clearSearch}
+                        columnStyles={resolvedColumnStyles}
                       />
                     {:else if searcherStatus != null}
                       <div class="p-2">
@@ -571,27 +592,15 @@
       <div class="w-3"></div>
       <div class="flex flex-row gap-0.5">
         <PopupButton icon={IconSettings} title="Options">
-          <div class="min-w-96">
-            <!-- Tooltip settings -->
-            <h4 class="text-slate-500 dark:text-slate-400 mb-2 select-none">Tooltip</h4>
-            <Select
-              class="w-full"
-              value={selectedTooltipTextColumn}
-              onChange={(v) => (selectedTooltipTextColumn = v)}
-              options={[
-                { value: null, label: textColumn ?? "(none)" },
-                "---",
-                ...Object.keys(additionalFields).map((c) => ({ value: c, label: c })),
-              ]}
-            />
+          <div class="min-w-[420px]">
+            <!-- Text style settings -->
             {#if columns.length > 0}
-              <!-- Text style settings -->
-              <h4 class="text-slate-500 dark:text-slate-400 my-2 select-none">Text Style</h4>
-              <TextStylePicker
+              <h4 class="text-slate-500 dark:text-slate-400 mb-2 select-none">Column Styles</h4>
+              <ColumnStylePicker
                 columns={columns}
-                styles={textRenderers}
+                styles={resolvedColumnStyles}
                 onStylesChange={(value) => {
-                  textRenderers = value;
+                  columnStyles = value;
                 }}
               />
             {/if}
@@ -671,9 +680,8 @@
                 customTooltip={{
                   class: CustomTooltip,
                   props: {
-                    textRenderer: tooltipTextRenderer,
-                    textField: selectedTooltipTextColumn,
                     darkMode: $darkMode,
+                    columnStyles: resolvedColumnStyles,
                     onNearestNeighborSearch: allowNearestNeighborSearch
                       ? async (id: any) => {
                           doSearch(id, "neighbors");
@@ -718,12 +726,11 @@
                     scrollTo={tableScrollTo}
                     onRowClick={async (identifier) => {
                       await animateEmbeddingViewToPoint(identifier);
-                      embeddingView?.showTooltip(identifier);
                     }}
                     numLines={3}
                     colorScheme={$darkMode ? "dark" : "light"}
                     theme={tableTheme}
-                    customCells={customCellRenderers}
+                    customCells={resolvedCustomCellRenderers}
                     highlightHoveredRow={true}
                   />
                 {/key}

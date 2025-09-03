@@ -95,7 +95,7 @@
   });
 </script>
 
-<div class="absolute right-0 top-0 p-2 m-2 rounded-md bg-opacity-90 bg-slate-100 dark:bg-slate-800">
+<div class="absolute right-0 top-0 p-2 m-2 rounded-md bg-slate-100/75 dark:bg-slate-800/75 backdrop-blur-sm">
   <table>
     <tbody>
       {#each items as item}

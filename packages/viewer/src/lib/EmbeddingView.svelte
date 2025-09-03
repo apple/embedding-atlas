@@ -101,9 +101,14 @@
     currentViewportAnimation = requestAnimationFrame(callback);
   }
 
-  export function showTooltip(id: any) {
-    selection = [id];
-    tooltip = id;
+  export function showTooltip(id: any | null) {
+    if (id == null) {
+      selection = [];
+      tooltip = null;
+    } else {
+      selection = [id];
+      tooltip = id;
+    }
   }
 
   function clearViewportAnimation() {

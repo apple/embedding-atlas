@@ -3,7 +3,7 @@
 import type { Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 
-import type { Searcher } from "./api";
+import type { Searcher } from "./api.js";
 
 class SearchWorkerAPI {
   worker: Worker;
@@ -112,6 +112,7 @@ export class FullTextSearcher implements Searcher {
 
 export interface SearchResultItem {
   id: any;
+  fields: Record<string, any>;
   distance?: number;
   x?: number;
   y?: number;
@@ -122,9 +123,30 @@ export async function querySearchResultItems(
   coordinator: Coordinator,
   table: string,
   columns: { id: string; x?: string | null; y?: string | null; text?: string | null },
+  additionalFields: Record<string, any> | null,
   predicate: string | null,
   items: { id: any; distance?: number }[],
 ): Promise<SearchResultItem[]> {
+  let fieldExpressions: string[] = [`${SQL.column(columns.id, table)} AS id`];
+  if (columns.x) {
+    fieldExpressions.push(`${SQL.column(columns.x, table)} AS x`);
+  }
+  if (columns.y) {
+    fieldExpressions.push(`${SQL.column(columns.y, table)} AS y`);
+  }
+  if (columns.text) {
+    fieldExpressions.push(`${SQL.column(columns.text, table)} AS text`);
+  }
+  let fields = additionalFields ?? {};
+  for (let key in fields) {
+    let spec = fields[key];
+    if (typeof spec == "string") {
+      fieldExpressions.push(`${SQL.column(spec, table)} AS "field_${key}"`);
+    } else {
+      fieldExpressions.push(`${SQL.sql(spec.sql)} AS "field_${key}"`);
+    }
+  }
+
   let ids = items.map((x) => x.id);
   let id2order = new Map<any, number>();
   let id2item = new Map<any, { id: any; distance?: number }>();
@@ -132,13 +154,9 @@ export async function querySearchResultItems(
     id2order.set(ids[i], i);
     id2item.set(ids[i], items[i]);
   }
-
   let r = await coordinator.query(`
     SELECT
-      ${SQL.column(columns.id, table)} AS id,
-      ${columns.x ? `${SQL.column(columns.x, table)} AS x,` : ``}
-      ${columns.y ? `${SQL.column(columns.y, table)} AS y,` : ``}
-      ${columns.text ? `${SQL.column(columns.text, table)} AS text,` : ``}
+      ${fieldExpressions.join(", ")}
     FROM (
       SELECT ${SQL.column(columns.id, table)} AS __search_result_id__
       FROM ${table}
@@ -148,7 +166,18 @@ export async function querySearchResultItems(
     )
     LEFT JOIN ${table} ON ${SQL.column(columns.id, table)} = __search_result_id__
   `);
-  let result = Array.from(r).map((x: any) => ({ ...x, distance: id2item.get(x.id)?.distance }));
+
+  let result = Array.from(r).map((x: any): any => {
+    let r: Record<string, any> = { id: x.id, distance: id2item.get(x.id)?.distance, fields: {} };
+    for (let key in x) {
+      if (key.startsWith("field_")) {
+        r.fields[key.substring(6)] = x[key];
+      } else {
+        r[key] = x[key];
+      }
+    }
+    return r;
+  });
   result = result.sort((a, b) => (id2order.get(a.id) ?? 0) - (id2order.get(b.id) ?? 0));
   return result;
 }
