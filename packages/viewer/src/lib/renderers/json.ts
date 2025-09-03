@@ -27,6 +27,7 @@ export class JSONRenderer {
 
   update(props: { value: any }) {
     let pre = document.createElement("pre");
+    pre.className = "text-sm";
     pre.style.whiteSpace = "pre-wrap";
     pre.style.wordBreak = "break-all";
     pre.innerText = safeJSONStringify(props.value, 2);
