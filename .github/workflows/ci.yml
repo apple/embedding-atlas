@@ -64,13 +64,13 @@ jobs:
         run: ./scripts/build_wasm.sh
 
       - name: Build JavaScript and Python packages
-        run: ./scripts/build.sh
+        run: npm run build
 
       - name: Run type checks
-        run: ./scripts/check.sh
+        run: npm run check
 
       - name: Run tests
-        run: ./scripts/test.sh
+        run: npm run test
 
       - name: Upload node package artifact
         uses: actions/upload-artifact@v4
