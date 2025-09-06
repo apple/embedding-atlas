@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "check": "svelte-check",
     "package": "npm run build && publint",
     "preview": "vite preview"
   },

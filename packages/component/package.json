@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "check": "svelte-check",
     "package": "npm run build && publint",
     "preview": "vite preview"
   },
@@ -49,6 +50,7 @@
     "simplify-js": "^1.2.4",
     "stemmer": "^2.0.1",
     "svelte": "^5.37.3",
+    "svelte-check": "^4.3.1",
     "typescript": "^5.9.2",
     "vite": "^7.0.6",
     "vite-plugin-dts": "^4.5.4",

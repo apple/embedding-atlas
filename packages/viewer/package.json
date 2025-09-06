@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && vite build --config vite.config.lib.js",
+    "check": "svelte-check",
     "package": "npm run build && publint",
     "preview": "vite preview"
   },
@@ -54,6 +55,7 @@
     "prism-code-editor": "^4.1.0",
     "publint": "^0.3.12",
     "svelte": "^5.37.3",
+    "svelte-check": "^4.3.1",
     "svelte-spa-router": "^4.0.1",
     "tailwindcss": "^4.1.11",
     "tslib": "^2.8.1",

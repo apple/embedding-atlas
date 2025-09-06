@@ -15,6 +15,7 @@
   "scripts": {
     "build": "./scripts/build.sh",
     "test": "./scripts/test.sh",
+    "check": "./scripts/check.sh",
     "check-format": "prettier -c ."
   },
   "devDependencies": {
