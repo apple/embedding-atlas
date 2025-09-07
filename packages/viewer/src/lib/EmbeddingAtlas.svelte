@@ -128,7 +128,7 @@
   const crossFilter = vg.Selection.crossfilter();
 
   function currentPredicate(): string | null {
-    let predicate = crossFilter.predicate(null);
+    let predicate: any = crossFilter.predicate(null as any);
     if (predicate == null || predicate.length == 0) {
       return null;
     }
@@ -354,7 +354,7 @@
       if (projectionColumns == null) {
         return;
       }
-      let result = await coordinator.query(
+      let result: any = await coordinator.query(
         SQL.Query.from(table)
           .select({
             x: SQL.column(projectionColumns.x),

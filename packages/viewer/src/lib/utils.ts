@@ -32,7 +32,7 @@ export function startDrag(e1: MouseEvent, callback: (dx: number, dy: number) => 
   window.addEventListener("mouseup", mouseup);
 }
 
-export function downloadBuffer(arrayBuffer: ArrayBuffer | Uint8Array, fileName: string) {
+export function downloadBuffer(arrayBuffer: ArrayBuffer | Uint8Array<ArrayBuffer>, fileName: string) {
   let a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([arrayBuffer], { type: "application/octet-stream" }));
   a.download = fileName;

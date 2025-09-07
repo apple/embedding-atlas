@@ -76,7 +76,4 @@
   .unclickable {
     pointer-events: none;
   }
-
-  .clickable {
-  }
 </style>

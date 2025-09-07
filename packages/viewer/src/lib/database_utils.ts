@@ -59,12 +59,12 @@ export class TableInfo {
   }
 
   async query(query: any) {
-    let result = await this.coordinator.query(query);
+    let result: any = await this.coordinator.query(query);
     return result.toArray().map((x: any) => ({ ...x }));
   }
 
   async queryOne(query: any) {
-    let result = await this.coordinator.query(query);
+    let result: any = await this.coordinator.query(query);
     return { ...result.get(0) };
   }
 

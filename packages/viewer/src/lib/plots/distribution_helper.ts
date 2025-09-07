@@ -60,9 +60,9 @@ export async function distributionStats(
   table: string,
   field: string,
 ): Promise<DistributionStats | null> {
-  let desc = await coordinator.query(
-    SQL.Query.describe(SQL.Query.from(table).select({ field: SQL.column(field, table) })),
-  );
+  let query = (query: any): Promise<any> => coordinator.query(query);
+
+  let desc = await query(SQL.Query.describe(SQL.Query.from(table).select({ field: SQL.column(field, table) })));
   let columnType = desc.get(0)?.column_type;
   if (columnType == null) {
     return null;
@@ -70,7 +70,7 @@ export async function distributionStats(
   let jsColumnType = jsTypeFromDBType(columnType);
   if (jsColumnType == "number") {
     let fieldExpr = SQL.cast(SQL.column(field, table), "DOUBLE");
-    let r1 = await coordinator.query(
+    let r1 = await query(
       SQL.Query.from(table)
         .select({
           count: SQL.count(),
@@ -82,7 +82,7 @@ export async function distributionStats(
         })
         .where(SQL.isFinite(fieldExpr)),
     );
-    let r2 = await coordinator.query(
+    let r2 = await query(
       SQL.Query.from(table)
         .select({
           countNonFinite: SQL.count(),
@@ -98,7 +98,7 @@ export async function distributionStats(
     let fieldExpr = SQL.cast(SQL.column(field, table), "TEXT");
 
     let levels: any[] = Array.from(
-      await coordinator.query(
+      await query(
         SQL.Query.from(table)
           .select({ value: fieldExpr, count: SQL.count() })
           .where(SQL.isNotNull(fieldExpr))
@@ -109,11 +109,11 @@ export async function distributionStats(
     );
 
     let nullCount: number = (
-      await coordinator.query(SQL.Query.from(table).select({ count: SQL.count() }).where(SQL.isNull(fieldExpr)))
+      await query(SQL.Query.from(table).select({ count: SQL.count() }).where(SQL.isNull(fieldExpr)))
     ).get(0).count;
 
     let { otherCount, numOtherLevels } = (
-      await coordinator.query(
+      await query(
         SQL.Query.from(table)
           .select({ otherCount: SQL.count(), numOtherLevels: SQL.sql`COUNT(DISTINCT(${fieldExpr}))` })
           .where(

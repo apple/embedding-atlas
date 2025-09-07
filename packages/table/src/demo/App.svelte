@@ -90,7 +90,7 @@
     <button
       onclick={() => {
         filterBy.update({
-          source: null,
+          source: {},
           predicate: isBetween(column(indexColumn), [20, 30]),
           value: [0, 20],
         });

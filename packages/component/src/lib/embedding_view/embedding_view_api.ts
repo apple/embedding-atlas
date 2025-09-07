@@ -11,9 +11,9 @@ import type { AutomaticLabelsConfig, CustomComponent, DataPoint, OverlayProxy } 
 export interface EmbeddingViewProps {
   /** The data. */
   data: {
-    x: Float32Array;
-    y: Float32Array;
-    category?: Uint8Array | null;
+    x: Float32Array<ArrayBuffer>;
+    y: Float32Array<ArrayBuffer>;
+    category?: Uint8Array<ArrayBuffer> | null;
   };
 
   /** The colors for the categories. */

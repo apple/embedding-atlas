@@ -71,7 +71,7 @@
   }
 
   function currentPredicate() {
-    let predicate = filter.predicate(null);
+    let predicate: any = filter.predicate(null as any);
     if (predicate == null || predicate.length == 0) {
       return null;
     }
@@ -86,14 +86,14 @@
     let client = makeClient({
       coordinator: coordinator,
       selection: filter,
-      query: () => SQL.sql`SELECT 1`,
+      query: (): any => SQL.sql`SELECT 1`,
     });
 
     // Sync selection predicate.
     $effect(() => {
       if (selectedPredicates.length == 0) {
         filter.update({
-          source: client,
+          source: client as any,
           clients: new Set<MosaicClient>([client]),
           predicate: null,
           value: null,
@@ -101,7 +101,7 @@
       } else {
         let preds = selectedPredicates.map((x) => "(" + x + ")").join(" OR ");
         filter.update({
-          source: client,
+          source: client as any,
           clients: new Set<MosaicClient>([client]),
           predicate: SQL.asVerbatim(preds),
           value: preds,

@@ -26,11 +26,12 @@
   let initDatabase = (async () => {
     const wasm = await wasmConnector();
     coordinator().databaseConnector(wasm);
+    return await wasm.getDuckDB();
   })();
 
   async function initialize() {
     loadingStatus = "Loading DuckDB...";
-    await initDatabase;
+    let db = await initDatabase;
     ready = false;
 
     loadingStatus = "Loading Data (may take some time depending on network speed and data size)...";
@@ -42,11 +43,10 @@
     await coordinator().exec(`DROP TABLE IF EXISTS data_table`);
 
     let dataset = generateSampleDataset({ numPoints: 500000, numCategories: 3, numSubClusters: 32 });
-    let db = await coordinator().databaseConnector().getDuckDB();
     await db.registerFileText("rows.json", JSON.stringify(dataset));
     await (await db.connect()).insertJSONFromPath("rows.json", { name: "data_table" });
 
-    let r = await coordinator().query("SELECT COUNT(*) AS count FROM data_table");
+    let r: any = await coordinator().query("SELECT COUNT(*) AS count FROM data_table");
     pointCount = r.get(0).count;
 
     brush = vg.Selection.crossfilter();

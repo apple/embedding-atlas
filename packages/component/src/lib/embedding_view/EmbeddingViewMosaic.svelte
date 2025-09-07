@@ -56,9 +56,9 @@
     onRangeSelection = null,
   }: EmbeddingViewMosaicProps = $props();
 
-  let xData: Float32Array = $state.raw(new Float32Array());
-  let yData: Float32Array = $state.raw(new Float32Array());
-  let categoryData: Uint8Array | null = $state.raw(null);
+  let xData: Float32Array<ArrayBuffer> = $state.raw(new Float32Array());
+  let yData: Float32Array<ArrayBuffer> = $state.raw(new Float32Array());
+  let categoryData: Uint8Array<ArrayBuffer> | null = $state.raw(null);
   let categoryCount: number = $state.raw(1);
   let totalCount: number = $state.raw(1);
   let maxDensity: number = $state.raw(1);
@@ -146,9 +146,9 @@
         return;
       }
       let captuerd = tooltip;
-      effectiveTooltip = captuerd.value;
+      effectiveTooltip = (captuerd.valueFor(client) ?? null) as any;
       let listener = () => {
-        effectiveTooltip = captuerd.value;
+        effectiveTooltip = (captuerd.valueFor(client) ?? null) as any;
       };
 
       $effect(() => {
@@ -211,9 +211,9 @@
         return;
       }
       let captuerd = selection;
-      effectiveSelection = captuerd.value;
+      effectiveSelection = (captuerd.valueFor(client) ?? null) as any;
       let listener = () => {
-        effectiveSelection = captuerd.value;
+        effectiveSelection = (captuerd.valueFor(client) ?? null) as any;
       };
 
       $effect(() => {

@@ -1,6 +1,8 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { type Selection } from "@uwdata/mosaic-core";
+  import { MosaicClient, type Selection } from "@uwdata/mosaic-core";
+  import * as SQL from "@uwdata/mosaic-sql";
+
   import type { PlotStateStore } from "./plots/plot_state_store.js";
 
   interface Item {
@@ -20,11 +22,13 @@
 
   let selectedItems = $state.raw(new Set<Item>());
 
-  const client = {
-    reset: () => {
+  class Client extends MosaicClient {
+    reset() {
       selectedItems = new Set();
-    },
-  };
+    }
+  }
+
+  const client = new Client();
 
   function onClickItem(item: Item, event: MouseEvent) {
     if (event.shiftKey || event.metaKey) {
@@ -53,24 +57,18 @@
     $effect.pre(() => {
       let items = selectedItems;
 
-      let predicate =
-        items.size != 0
-          ? Array.from(items)
-              .map((x) => x.predicate.toString())
-              .join(" OR ")
-          : null;
+      let predicate = items.size != 0 ? SQL.or(Array.from(items).map((x) => x.predicate)) : null;
       let clause = {
         source: client,
-        clients: new Set().add(client),
+        clients: new Set([client]),
         value: items.size == 0 ? null : items,
         predicate: predicate,
       };
-      captured.activate(clause);
       captured.update(clause);
     });
 
     return () => {
-      captured.update({ source: client, clients: new Set().add(client), value: null, predicate: null });
+      captured.update({ source: client, clients: new Set([client]), value: null, predicate: null });
     };
   });
 

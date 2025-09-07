@@ -43,7 +43,7 @@
         }
         for (let clause of selection.clauses) {
           if (isSourceSelf(container, clause.source)) {
-            clause.source?.reset();
+            clause.source?.reset?.();
             selection.update({ ...clause, value: null, predicate: null });
           }
         }

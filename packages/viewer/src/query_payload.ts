@@ -1,6 +1,9 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-async function compress(data: Uint8Array, format: CompressionFormat = "gzip"): Promise<Uint8Array> {
+async function compress(
+  data: Uint8Array<ArrayBuffer>,
+  format: CompressionFormat = "gzip",
+): Promise<Uint8Array<ArrayBuffer>> {
   const stream = new CompressionStream(format);
   const inputBlob = new Blob([data]);
   const compressedStream = inputBlob.stream().pipeThrough(stream);
@@ -9,7 +12,10 @@ async function compress(data: Uint8Array, format: CompressionFormat = "gzip"): P
   return new Uint8Array(buf);
 }
 
-async function decompress(data: Uint8Array, format: CompressionFormat = "gzip"): Promise<Uint8Array> {
+async function decompress(
+  data: Uint8Array<ArrayBuffer>,
+  format: CompressionFormat = "gzip",
+): Promise<Uint8Array<ArrayBuffer>> {
   const stream = new DecompressionStream(format);
   const inputBlob = new Blob([data]);
   const compressedStream = inputBlob.stream().pipeThrough(stream);
@@ -27,7 +33,7 @@ function base64Encode(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function base64Decode(base64: string): Uint8Array {
+function base64Decode(base64: string): Uint8Array<ArrayBuffer> {
   const binaryString = atob(base64);
   return new Uint8Array([...binaryString].map((char) => char.charCodeAt(0)));
 }

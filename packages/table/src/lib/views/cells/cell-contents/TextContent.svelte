@@ -30,9 +30,6 @@
 </div>
 
 <style>
-  .text-content {
-  }
-
   .clamped {
     display: -webkit-box;
     -webkit-box-orient: vertical;

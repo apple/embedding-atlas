@@ -13,7 +13,7 @@
     hasOther: boolean;
   }> {
     let column = SQL.column(field, table);
-    let result = await coordinator.query(
+    let result: any = await coordinator.query(
       SQL.Query.from(
         SQL.Query.from(table).select({
           value: SQL.sql`UNNEST(${column})`,
@@ -182,7 +182,7 @@
         clientBase.destroy();
         clientSelection.destroy();
         filter.update({
-          source: clientSelection,
+          source: clientSelection as any,
           clients: new Set([clientSelection]),
           value: null,
           predicate: null,

@@ -350,7 +350,7 @@ export class TableController {
       .from("original")
       .where(eq(column(this.rowKeyColumn!), literal(rowKey)));
 
-    const result = await this.coordinator.query(query);
+    const result: any = await this.coordinator.query(query);
     const arr = result.toArray();
     if (arr.length > 0) {
       const offset = arr[0][OID] - 1;
@@ -431,7 +431,7 @@ export class TableController {
     }, {});
 
     const query = Query.from(tableName).select(select).offset(0).limit(10);
-    const sample = await this.coordinator.query(query);
+    const sample: any = await this.coordinator.query(query);
     const arr = sample.toArray();
     for (const row of arr) {
       for (const col of cols) {

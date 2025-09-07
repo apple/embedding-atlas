@@ -160,7 +160,7 @@
       return () => {
         clientSelection.destroy();
         filter.update({
-          source: clientSelection,
+          source: clientSelection as any,
           clients: new Set([clientSelection]),
           value: null,
           predicate: null,

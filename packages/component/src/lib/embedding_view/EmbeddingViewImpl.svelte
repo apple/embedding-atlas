@@ -2,9 +2,9 @@
 <script lang="ts" module>
   interface Props<Selection> {
     data: {
-      x: Float32Array;
-      y: Float32Array;
-      category: Uint8Array | null;
+      x: Float32Array<ArrayBuffer>;
+      y: Float32Array<ArrayBuffer>;
+      category: Uint8Array<ArrayBuffer> | null;
     };
     categoryCount: number;
     categoryColors: string[] | null;
@@ -17,6 +17,7 @@
     minimumDensity: number;
     totalCount: number | null;
     maxDensity: number | null;
+    userPointSize: number | null;
     automaticLabels: AutomaticLabelsConfig | boolean;
     queryClusterLabels: ((clusters: Rectangle[][]) => Promise<(string | null)[]>) | null;
     tooltip: Selection | null;

@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { coordinator as defaultCoordinator } from "@uwdata/mosaic-core";
+  import { coordinator as defaultCoordinator, DuckDBWASMConnector } from "@uwdata/mosaic-core";
   import { literal } from "@uwdata/mosaic-sql";
 
   import type { Value as ColumnsPickerValue } from "./ColumnsPicker.svelte";
@@ -40,10 +40,11 @@
       log("Initializing database...");
       await databaseInitialized;
       log("Loading data...");
-      let db = await coordinator.databaseConnector().getDuckDB();
+      let db = await (coordinator.databaseConnector()! as DuckDBWASMConnector).getDuckDB();
       await db.registerFileBuffer(file.name, new Uint8Array(await file.arrayBuffer()));
       await coordinator.exec(`CREATE TABLE dataset AS SELECT * FROM ${literal(file.name)}`);
-      describe = Array.from(await coordinator.query(`DESCRIBE TABLE dataset`));
+      let describeResult: any = await coordinator.query(`DESCRIBE TABLE dataset`);
+      describe = Array.from(describeResult);
       await coordinator.exec(`
         ALTER TABLE dataset DROP COLUMN IF EXISTS __row_index__;
         ALTER TABLE dataset ADD COLUMN __row_index__ INTEGER;
