@@ -43,8 +43,8 @@ export default function Component() {
     return { x: data.x[minIndex], y: data.y[minIndex], text: dataset[minIndex].text, fields: {} };
   }
 
-  async function queryClusterLabels(rects: Rectangle[]): Promise<string | null> {
-    return "label";
+  async function queryClusterLabels(regions: Rectangle[][]): Promise<(string | null)[]> {
+    return regions.map(_ => "label");
   }
 
   return (

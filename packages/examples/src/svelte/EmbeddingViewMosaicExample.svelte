@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { Coordinator, wasmConnector } from "@uwdata/mosaic-core";
+  import { Coordinator, wasmConnector, type DuckDBWASMConnector } from "@uwdata/mosaic-core";
   import * as vg from "@uwdata/vgplot";
 
   import { EmbeddingViewMosaic } from "embedding-atlas/svelte";
@@ -43,11 +43,11 @@
     await coordinator.exec(`DROP TABLE IF EXISTS data_table`);
 
     let dataset = generateSampleDataset({ numPoints: 500000, numCategories: 3, numSubClusters: 32 });
-    let db = await coordinator.databaseConnector().getDuckDB();
+    let db = await (coordinator.databaseConnector()! as DuckDBWASMConnector).getDuckDB();
     await db.registerFileText("rows.json", JSON.stringify(dataset));
     await (await db.connect()).insertJSONFromPath("rows.json", { name: "data_table" });
 
-    let r = await coordinator.query("SELECT COUNT(*) AS count FROM data_table");
+    let r: any = await coordinator.query("SELECT COUNT(*) AS count FROM data_table");
     pointCount = r.get(0).count;
 
     brush = vg.Selection.crossfilter();

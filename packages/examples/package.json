@@ -15,6 +15,8 @@
     "@sveltejs/vite-plugin-svelte": "^6.1.0",
     "@tailwindcss/postcss": "^4.1.11",
     "@tsconfig/svelte": "^5.0.4",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
     "@uwdata/mosaic-core": ">=0.18.0",
     "@uwdata/mosaic-spec": ">=0.18.0",
     "@uwdata/mosaic-sql": ">=0.18.0",

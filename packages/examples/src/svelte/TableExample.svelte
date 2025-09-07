@@ -13,7 +13,8 @@
     const wasm = await wasmConnector();
     coordinator.databaseConnector(wasm);
     await createSampleDataTable(coordinator, "dataset", 100000);
-    columns = Array.from((await coordinator.query("DESCRIBE dataset")).getChild("column_name"));
+    let describe: any = await coordinator.query("DESCRIBE dataset");
+    columns = Array.from(describe.getChild("column_name"));
   })();
 </script>
 
