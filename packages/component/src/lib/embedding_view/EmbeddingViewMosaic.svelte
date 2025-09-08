@@ -145,16 +145,16 @@
       if (client == null) {
         return;
       }
-      let captuerd = tooltip;
-      effectiveTooltip = (captuerd.valueFor(client) ?? null) as any;
+      let captured = tooltip;
+      effectiveTooltip = (captured.valueFor(client) ?? null) as any;
       let listener = () => {
-        effectiveTooltip = (captuerd.valueFor(client) ?? null) as any;
+        effectiveTooltip = (captured.valueFor(client) ?? null) as any;
       };
 
       $effect(() => {
         let value = effectiveTooltip;
         let source = { x, y, category, identifier };
-        captuerd.update({
+        captured.update({
           source: client,
           clients: new Set<MosaicClient>().add(client),
           predicate: value != null ? predicateForDataPoints(source, [value]) : null,
@@ -162,10 +162,10 @@
         });
       });
 
-      captuerd.addEventListener("value", listener);
+      captured.addEventListener("value", listener);
       return () => {
-        captuerd.removeEventListener("value", listener);
-        captuerd.update({
+        captured.removeEventListener("value", listener);
+        captured.update({
           source: client,
           clients: new Set<MosaicClient>().add(client),
           value: null,
@@ -210,16 +210,16 @@
       if (client == null) {
         return;
       }
-      let captuerd = selection;
-      effectiveSelection = (captuerd.valueFor(client) ?? null) as any;
+      let captured = selection;
+      effectiveSelection = (captured.valueFor(client) ?? null) as any;
       let listener = () => {
-        effectiveSelection = (captuerd.valueFor(client) ?? null) as any;
+        effectiveSelection = (captured.valueFor(client) ?? null) as any;
       };
 
       $effect(() => {
         let value = effectiveSelection;
         let source = { x, y, category, identifier };
-        captuerd.update({
+        captured.update({
           source: client,
           clients: new Set<MosaicClient>().add(client),
           predicate: value != null ? predicateForDataPoints(source, value) : null,
@@ -227,10 +227,10 @@
         });
       });
 
-      captuerd.addEventListener("value", listener);
+      captured.addEventListener("value", listener);
       return () => {
-        captuerd.removeEventListener("value", listener);
-        captuerd.update({
+        captured.removeEventListener("value", listener);
+        captured.update({
           source: client,
           clients: new Set<MosaicClient>().add(client),
           value: null,
