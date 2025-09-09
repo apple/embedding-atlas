@@ -17,8 +17,8 @@ function makeReactWrapper<Props>(
   style: any = { display: "flex" },
 ): (props: Props) => any {
   return (props) => {
-    const container = useRef(null);
-    const component = useRef(null);
+    const container = useRef<any>(null);
+    const component = useRef<any>(null);
     useEffect(() => {
       let c = new ComponentClass(container.current!, props);
       component.current = c;
