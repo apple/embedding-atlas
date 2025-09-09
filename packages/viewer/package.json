@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "vite build && vite build --config vite.config.lib.js",
+    "build": "uv run python scripts/download_duckdb_extensions.py && vite build && vite build --config vite.config.lib.js",
     "check": "svelte-check",
     "package": "npm run build && publint",
     "preview": "vite preview"

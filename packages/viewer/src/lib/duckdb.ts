@@ -48,6 +48,12 @@ export async function createDuckDB({ log = false } = {}) {
   const logger = log ? new duckdb.ConsoleLogger() : new duckdb.VoidLogger();
   const db = new duckdb.AsyncDuckDB(logger, worker);
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  await db.open({
+    filesystem: {
+      // Suppresses the use of HTTP range requests for DuckDB-WASM running in the browser.
+      forceFullHTTPReads: true,
+    },
+  });
   const connection = await db.connect();
   // Use a local extension repository to avoid CSP issues
   await connection.query(`SET custom_extension_repository = '${extensionRepositoryUrl()}';`);

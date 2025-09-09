@@ -5,7 +5,7 @@ from itertools import product
 
 remote_repo = "https://extensions.duckdb.org"
 
-versions = ["v1.1.1"]
+versions = ["v1.3.2"]
 variants = ["wasm_eh", "wasm_mvp"]
 extensions = ["json", "fts", "parquet"]
 
