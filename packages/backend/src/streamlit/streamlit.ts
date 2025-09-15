@@ -26,7 +26,15 @@ resizeObserver.observe(container);
 // The embedding atlas view instance
 let view: EmbeddingAtlas | null = null;
 
-let debouncedSetValue = debounce((value) => Streamlit.setComponentValue(value), 300);
+// The current component value, used to stop setting it if it hasn't changed.
+let currentComponentValue: any = null;
+
+let debouncedSetValue = debounce((value) => {
+  if (JSON.stringify(currentComponentValue) != JSON.stringify(value)) {
+    currentComponentValue = value;
+    Streamlit.setComponentValue(value);
+  }
+}, 300);
 
 async function createView(data_frame: ArrowTable, props: Partial<EmbeddingAtlasProps>) {
   if (view) {
