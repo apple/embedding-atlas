@@ -71,7 +71,7 @@
   }
 
   function currentPredicate() {
-    let predicate: any = filter.predicate(null as any);
+    let predicate: any = filter.predicate(null);
     if (predicate == null || predicate.length == 0) {
       return null;
     }
@@ -93,7 +93,7 @@
     $effect(() => {
       if (selectedPredicates.length == 0) {
         filter.update({
-          source: client as any,
+          source: client,
           clients: new Set<MosaicClient>([client]),
           predicate: null,
           value: null,
@@ -101,7 +101,7 @@
       } else {
         let preds = selectedPredicates.map((x) => "(" + x + ")").join(" OR ");
         filter.update({
-          source: client as any,
+          source: client,
           clients: new Set<MosaicClient>([client]),
           predicate: SQL.asVerbatim(preds),
           value: preds,

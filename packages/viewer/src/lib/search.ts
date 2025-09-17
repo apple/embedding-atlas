@@ -154,7 +154,7 @@ export async function querySearchResultItems(
     id2order.set(ids[i], i);
     id2item.set(ids[i], items[i]);
   }
-  let r: any = await coordinator.query(`
+  let r = await coordinator.query(`
     SELECT
       ${fieldExpressions.join(", ")}
     FROM (
@@ -210,7 +210,7 @@ export function resolveSearcher(options: {
       let q = SQL.Query.from(table)
         .select({ knn: SQL.column(neighborsColumn) })
         .where(SQL.eq(SQL.column(idColumn), SQL.literal(id)));
-      let result: any = await coordinator.query(q);
+      let result = await coordinator.query(q);
       let items: any[] = Array.from(result);
       if (items.length != 1) {
         return [];

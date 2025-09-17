@@ -177,7 +177,7 @@
       return () => {
         clientSelection.destroy();
         filter.update({
-          source: clientSelection as any,
+          source: clientSelection,
           clients: new Set([clientSelection]),
           value: null,
           predicate: null,

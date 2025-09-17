@@ -346,7 +346,7 @@
     let chunkSize = 10000;
     let lastAdd: Promise<unknown> | null = null;
     while (true) {
-      let r: any = await coordinator.query(
+      let r = await coordinator.query(
         SQL.Query.from(table)
           .select({ x: SQL.column(x), y: SQL.column(y), text: SQL.column(text) })
           .offset(start)

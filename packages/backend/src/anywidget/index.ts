@@ -28,7 +28,7 @@ function makeDatabaseConnector(model: AnyModel<Model>): Connector {
     } else {
       switch (msg.type) {
         case "arrow": {
-          const table = decodeIPC(buffers[0].buffer as any);
+          const table = decodeIPC(buffers[0].buffer);
           query.resolve(table);
           break;
         }

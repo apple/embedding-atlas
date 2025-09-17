@@ -43,8 +43,8 @@
       let db = await (coordinator.databaseConnector()! as DuckDBWASMConnector).getDuckDB();
       await db.registerFileBuffer(file.name, new Uint8Array(await file.arrayBuffer()));
       await coordinator.exec(`CREATE TABLE dataset AS SELECT * FROM ${literal(file.name)}`);
-      let describeResult: any = await coordinator.query(`DESCRIBE TABLE dataset`);
-      describe = Array.from(describeResult);
+      let describeResult = await coordinator.query(`DESCRIBE TABLE dataset`);
+      describe = Array.from(describeResult) as typeof describe;
       await coordinator.exec(`
         ALTER TABLE dataset DROP COLUMN IF EXISTS __row_index__;
         ALTER TABLE dataset ADD COLUMN __row_index__ INTEGER;

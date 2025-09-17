@@ -58,18 +58,18 @@ export class TableInfo {
     await this.coordinator.exec(query);
   }
 
-  async query(query: any) {
-    let result: any = await this.coordinator.query(query);
-    return result.toArray().map((x: any) => ({ ...x }));
+  async query<T = any>(query: any): Promise<T[]> {
+    let result = await this.coordinator.query(query);
+    return result.toArray().map((x: any) => ({ ...x })) as T[];
   }
 
-  async queryOne(query: any) {
-    let result: any = await this.coordinator.query(query);
-    return { ...result.get(0) };
+  async queryOne<T = any>(query: any): Promise<T> {
+    let result = await this.coordinator.query(query);
+    return { ...result.get(0) } as T;
   }
 
-  async describe(): Promise<{ column_name: string; column_type: string }[]> {
-    return await this.query(SQL.sql`DESCRIBE ${this.table}`);
+  async describe() {
+    return await this.query<{ column_name: string; column_type: string }>(SQL.sql`DESCRIBE ${this.table}`);
   }
 
   async distinctCount(column: string): Promise<number> {
@@ -154,15 +154,13 @@ export class TableInfo {
 
   async makeCategoryColumn(column: string, maxCategories: number): Promise<EmbeddingLegend> {
     let indexColumnName = `_ev_${column}_id`;
-    let values: { value: string; count: number }[] = Array.from(
-      await this.query(
-        SQL.Query.from(this.table)
-          .select({ value: SQL.cast(SQL.column(column), "TEXT"), count: SQL.count() })
-          .where(SQL.not(SQL.isNull(SQL.cast(SQL.column(column), "TEXT"))))
-          .groupby(SQL.cast(SQL.column(column), "TEXT"))
-          .orderby(SQL.desc(SQL.count()))
-          .limit(maxCategories),
-      ),
+    let values: { value: string; count: number }[] = await this.query(
+      SQL.Query.from(this.table)
+        .select({ value: SQL.cast(SQL.column(column), "TEXT"), count: SQL.count() })
+        .where(SQL.not(SQL.isNull(SQL.cast(SQL.column(column), "TEXT"))))
+        .groupby(SQL.cast(SQL.column(column), "TEXT"))
+        .orderby(SQL.desc(SQL.count()))
+        .limit(maxCategories),
     );
 
     let otherIndex = values.length;
@@ -280,7 +278,7 @@ export class TableInfo {
     let index2Count = new Map<number | null, number>();
 
     let reverse = (x: number) => binning.scale.reverse(x, binning.scale.constant ?? 0);
-    for (let { index, count } of Array.from(counts) as { index: number | null; count: number }[]) {
+    for (let { index, count } of counts as { index: number | null; count: number }[]) {
       if (index != null) {
         if (minIndex == null || index < minIndex) {
           minIndex = index;

@@ -46,7 +46,7 @@
     await db.registerFileText("rows.json", JSON.stringify(dataset));
     await (await db.connect()).insertJSONFromPath("rows.json", { name: "data_table" });
 
-    let r: any = await coordinator().query("SELECT COUNT(*) AS count FROM data_table");
+    let r = await coordinator().query("SELECT COUNT(*) AS count FROM data_table");
     pointCount = r.get(0).count;
 
     brush = vg.Selection.crossfilter();

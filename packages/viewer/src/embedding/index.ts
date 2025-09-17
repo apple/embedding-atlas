@@ -21,7 +21,7 @@ async function* inputBatches(
   valueColumn: string,
   batchSize: number,
 ): AsyncGenerator<any> {
-  let r: any = await coordinator.query(SQL.Query.from(table).select({ count: SQL.count() }));
+  let r = await coordinator.query(SQL.Query.from(table).select({ count: SQL.count() }));
   let count = r.get(0).count;
   let start = 0;
   while (start < count) {

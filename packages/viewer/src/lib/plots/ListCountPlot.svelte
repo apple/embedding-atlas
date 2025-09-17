@@ -13,7 +13,7 @@
     hasOther: boolean;
   }> {
     let column = SQL.column(field, table);
-    let result: any = await coordinator.query(
+    let result = await coordinator.query(
       SQL.Query.from(
         SQL.Query.from(table).select({
           value: SQL.sql`UNNEST(${column})`,
@@ -27,7 +27,7 @@
         .orderby(SQL.desc("count"))
         .limit(limit + 1),
     );
-    let values: { value: string; count: number }[] = Array.from(result);
+    let values = Array.from(result) as { value: string; count: number }[];
     return { values: values.slice(0, limit), hasOther: values.length > limit };
   }
 
@@ -182,7 +182,7 @@
         clientBase.destroy();
         clientSelection.destroy();
         filter.update({
-          source: clientSelection as any,
+          source: clientSelection,
           clients: new Set([clientSelection]),
           value: null,
           predicate: null,
