@@ -1,10 +1,9 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import type { Selection } from "@uwdata/mosaic-core";
+  import { type Selection, makeClient } from "@uwdata/mosaic-core";
   import { Query, sql } from "@uwdata/mosaic-sql";
 
   import { Context } from "../contexts.js";
-  import { makeClient } from "./mosaic_helper.js";
 
   interface Props {
     table: string;
@@ -34,7 +33,7 @@
         Query.from(props.table)
           .select({ count: sql`COUNT(*)::INT` })
           .where(predicate),
-      queryResult: (result) => {
+      queryResult: (result: any) => {
         count = result.getChild("count").get(0);
       },
     });

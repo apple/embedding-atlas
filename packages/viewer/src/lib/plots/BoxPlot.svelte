@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { Selection, type Coordinator } from "@uwdata/mosaic-core";
+  import { makeClient, Selection, type Coordinator } from "@uwdata/mosaic-core";
   import * as SQL from "@uwdata/mosaic-sql";
 
   import SizeReader from "../charts/SizeReader.svelte";
@@ -19,7 +19,6 @@
     type DistributionAggregate,
     type DistributionStats,
   } from "./distribution_helper.js";
-  import { makeClient } from "./mosaic_helper.js";
   import type { PlotStateStore } from "./plot_state_store.js";
   import { syncState } from "./utils.svelte";
 
@@ -102,7 +101,7 @@
     ) {
       return makeClient({
         coordinator: coordinator,
-        selection: selection,
+        selection: selection ?? undefined,
         query: (predicate) => {
           let yExpr = SQL.column(yField, table);
           return SQL.Query.from(table)
@@ -117,7 +116,7 @@
             .where(predicate, SQL.isFinite(yExpr))
             .groupby(aggregate.select.x);
         },
-        queryResult: (data) => {
+        queryResult: (data: any) => {
           callback(Array.from(data).map(aggregate.collect));
         },
       });

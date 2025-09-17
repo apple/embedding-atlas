@@ -37,13 +37,13 @@
 </script>
 
 <script lang="ts">
-  import type { Selection } from "@uwdata/mosaic-core";
+  import { type Selection, makeClient } from "@uwdata/mosaic-core";
   import { format } from "d3-format";
   import { scaleLinear } from "d3-scale";
 
   import { Context } from "../contexts.js";
   import { plotColors } from "./colors.js";
-  import { makeClient } from "./mosaic_helper.js";
+
   import type { PlotStateStore } from "./plot_state_store.js";
   import { syncState } from "./utils.svelte";
 
@@ -97,7 +97,7 @@
     function createClient(selection: Selection | null, values: string[], callback: (bins: any[]) => void) {
       return makeClient({
         coordinator: coordinator,
-        selection: selection,
+        selection: selection ?? undefined,
         query: (predicate) => {
           let column = SQL.column(field, table);
           return SQL.Query.from(
@@ -120,7 +120,7 @@
             .groupby("value")
             .orderby(SQL.desc("count"));
         },
-        queryResult: (data) => {
+        queryResult: (data: any) => {
           callback(Array.from(data));
         },
       });

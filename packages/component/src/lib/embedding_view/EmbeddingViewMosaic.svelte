@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { coordinator as defaultCoordinator, isSelection, type MosaicClient } from "@uwdata/mosaic-core";
+  import { coordinator as defaultCoordinator, isSelection, makeClient, type MosaicClient } from "@uwdata/mosaic-core";
   import * as SQL from "@uwdata/mosaic-sql";
   import { untrack } from "svelte";
 
@@ -14,7 +14,6 @@
     predicateForRangeSelection,
     queryApproximateDensity,
   } from "./mosaic_client.js";
-  import { makeClient } from "./mosaic_helper.js";
   import type { DataPoint, DataPointID } from "./types.js";
   import {
     textSummarizerAdd,
@@ -90,7 +89,7 @@
       // A client is a thing that queries data from a selection with user-defined query
       client = makeClient({
         coordinator: deps.coordinator,
-        selection: filter,
+        selection: filter ?? undefined,
         query: (predicate) => {
           return SQL.Query.from(source.table)
             .select({
@@ -100,7 +99,7 @@
             })
             .where(predicate);
         },
-        queryResult: (data) => {
+        queryResult: (data: any) => {
           let xArray = data.getChild("x").toArray();
           let yArray = data.getChild("y").toArray();
           let categoryArray = data.getChild("c")?.toArray() ?? null;
