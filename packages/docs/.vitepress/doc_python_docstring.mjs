@@ -8,9 +8,10 @@ function extract(entrypoint) {
   let code = deindent(`
     import json
     import docutils.core
+    from textwrap import dedent
     from ${module} import ${func.split(".")[0]}
 
-    docstring = ${func}.__doc__
+    docstring = dedent(${func}.__doc__)
 
     settings_overrides = {
       "embed_stylesheet": False,
