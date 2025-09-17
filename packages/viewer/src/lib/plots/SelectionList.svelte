@@ -11,6 +11,7 @@
   import { Context } from "../contexts.js";
   import { IconClose, IconEdit } from "../icons.js";
 
+  import { predicateToString } from "../database_utils";
   import type { PlotStateStore } from "./plot_state_store.js";
   import { syncState } from "./utils.svelte";
 
@@ -68,17 +69,6 @@
       return null;
     }
     return { name, predicate };
-  }
-
-  function currentPredicate() {
-    let predicate: any = filter.predicate(null);
-    if (predicate == null || predicate.length == 0) {
-      return null;
-    }
-    if (typeof predicate == "string") {
-      return predicate;
-    }
-    return predicate.map((x: any) => x.toString()).join("\nAND ");
   }
 
   // Mosaic client
@@ -239,7 +229,7 @@
         <div class="flex-1"></div>
         <button
           class="text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-          onclick={() => (editingPredicate = currentPredicate()?.trim() ?? "")}>Current Predicate</button
+          onclick={() => (editingPredicate = predicateToString(filter.predicate(null)) ?? "")}>Current Predicate</button
         >
       </div>
     </div>

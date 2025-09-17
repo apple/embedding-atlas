@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import { Coordinator, restConnector, socketConnector, wasmConnector } from "@uwdata/mosaic-core";
+import { Coordinator, restConnector, socketConnector, wasmConnector, type Selection } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 import { format } from "d3-format";
 
@@ -26,6 +26,25 @@ export async function initializeDatabase(
     const conn = await restConnector({ uri: uri ?? "" });
     coordinator.databaseConnector(conn);
   }
+}
+
+export function predicateToString(predicate: ReturnType<Selection["predicate"]>): string | null {
+  if (predicate == null) {
+    return null;
+  }
+  if (predicate instanceof Array) {
+    if (predicate.length == 0) {
+      return null;
+    }
+    return SQL.and(predicate).toString().trim();
+  }
+  if (typeof predicate == "string") {
+    return predicate.trim();
+  }
+  if (typeof predicate == "boolean") {
+    return SQL.literal(predicate).toString();
+  }
+  return predicate.toString().trim();
 }
 
 export interface ColumnDesc {

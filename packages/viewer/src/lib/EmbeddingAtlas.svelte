@@ -41,7 +41,7 @@
   import { Context } from "./contexts.js";
   import { CustomOverlay, CustomTooltip } from "./custom_components.js";
   import { makeDarkModeStore } from "./dark_mode_store.js";
-  import { TableInfo, type ColumnDesc, type EmbeddingLegend } from "./database_utils.js";
+  import { predicateToString, TableInfo, type ColumnDesc, type EmbeddingLegend } from "./database_utils.js";
   import type { Plot } from "./plots/plot.js";
   import { PlotStateStoreManager } from "./plots/plot_state_store.js";
   import { getRenderer, type ColumnStyle } from "./renderers/index.js";
@@ -112,15 +112,7 @@
   const crossFilter = vg.Selection.crossfilter();
 
   function currentPredicate(): string | null {
-    let predicate: any = crossFilter.predicate(null);
-    if (predicate == null || predicate.length == 0) {
-      return null;
-    }
-    if (typeof predicate == "string") {
-      return predicate;
-    }
-    let joined = predicate.map((x: any) => x.toString()).join(" AND ");
-    return joined;
+    return predicateToString(crossFilter.predicate(null));
   }
 
   let columns: ColumnDesc[] = $state.raw([]);
