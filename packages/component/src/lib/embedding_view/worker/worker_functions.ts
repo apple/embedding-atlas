@@ -9,7 +9,7 @@ export { dynamicLabelPlacement, findClusters };
 
 let textSummarizers = new Map<string, TextSummarizer>();
 
-export function textSummarizerCreate(options: { regions: Rectangle[][]; stopWords?: string[] }) {
+export function textSummarizerCreate(options: { regions: Rectangle[][]; stopWords?: string[] | null }) {
   let key = new Date().getTime() + "-" + Math.random();
   textSummarizers.set(key, new TextSummarizer(options));
   return key;
@@ -21,7 +21,7 @@ export function textSummarizerDestroy(key: string) {
 
 export function textSummarizerAdd(
   key: string,
-  data: { x: ArrayLike<number>; y: ArrayLike<number>; text: ArrayLike<string> }
+  data: { x: ArrayLike<number>; y: ArrayLike<number>; text: ArrayLike<string> },
 ) {
   textSummarizers.get(key)?.add(data);
 }

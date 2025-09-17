@@ -1,13 +1,14 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import { EmbeddingAtlas, EmbeddingAtlasProps } from "@embedding-atlas/viewer";
+import { EmbeddingAtlas, type EmbeddingAtlasProps } from "@embedding-atlas/viewer";
 import { Coordinator, wasmConnector } from "@uwdata/mosaic-core";
-import { ArrowTable, RenderData, Streamlit } from "streamlit-component-lib";
+import { ArrowTable, type RenderData, Streamlit } from "streamlit-component-lib";
 
 import { debounce } from "./utils.js";
 
 const coordinator = new Coordinator();
-coordinator.databaseConnector(wasmConnector());
+const connector = wasmConnector();
+coordinator.databaseConnector(connector);
 
 // The root container element
 const container = document.createElement("div");
@@ -41,7 +42,7 @@ async function createView(data_frame: ArrowTable, props: Partial<EmbeddingAtlasP
     view.destroy();
     container.replaceChildren();
   }
-  let conn = await coordinator.databaseConnector().getConnection();
+  let conn = await connector.getConnection();
   const ipcBuffer = data_frame.serialize().data;
   await conn.insertArrowFromIPCStream(ipcBuffer, { name: "dataframe" });
   const row_id_column = "__row_id__";
@@ -54,8 +55,11 @@ async function createView(data_frame: ArrowTable, props: Partial<EmbeddingAtlasP
   view = new EmbeddingAtlas(container, {
     ...props,
     coordinator: coordinator,
-    table: "dataframe",
-    idColumn: row_id_column,
+    data: {
+      ...props.data,
+      table: "dataframe",
+      id: row_id_column,
+    },
     onStateChange: (state) => {
       debouncedSetValue({
         predicate: state.predicate,

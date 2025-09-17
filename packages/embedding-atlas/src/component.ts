@@ -10,14 +10,15 @@ export {
 export { defaultCategoryColors, maxDensityModeCategories } from "@embedding-atlas/component";
 
 export type {
-  AutomaticLabelsConfig,
   CustomComponent,
   DataField,
   DataPoint,
   DataPointID,
+  EmbeddingViewConfig,
+  EmbeddingViewTheme,
+  Label,
   OverlayProxy,
   Point,
   Rectangle,
-  Theme,
   ViewportState,
 } from "@embedding-atlas/component";

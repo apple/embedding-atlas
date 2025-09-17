@@ -3,7 +3,8 @@
 import type { Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 
-import type { DataSource, ViewerConfig } from "./data_source.js";
+import type { DataSource } from "./data_source.js";
+import type { EmbeddingAtlasProps } from "./lib/api.js";
 import { initializeDatabase } from "./lib/database_utils.js";
 import { exportMosaicSelection, filenameForSelection, type ExportFormat } from "./lib/mosaic_exporter.js";
 import { downloadBuffer } from "./lib/utils.js";
@@ -22,14 +23,14 @@ function joinUrl(a: string, b: string) {
 }
 
 interface Metadata {
-  columns: ViewerConfig;
-  is_static?: boolean;
+  props: Partial<EmbeddingAtlasProps>;
+
+  isStatic?: boolean;
   database?: {
     type: "wasm" | "socket" | "rest";
     uri?: string;
     load?: boolean;
   };
-  point_size?: number;
 }
 
 export class BackendDataSource implements DataSource {
@@ -51,7 +52,7 @@ export class BackendDataSource implements DataSource {
     coordinator: Coordinator,
     table: string,
     onStatus: (message: string) => void,
-  ): Promise<ViewerConfig> {
+  ): Promise<Partial<EmbeddingAtlasProps>> {
     let metadata = await this.metadata();
 
     onStatus("Initializing DuckDB...");
@@ -66,7 +67,7 @@ export class BackendDataSource implements DataSource {
       `);
     }
 
-    if (!metadata.is_static) {
+    if (!metadata.isStatic) {
       this.downloadArchive = async () => {
         let resp = await this.fetchEndpoint("archive.zip");
         let data = await resp.arrayBuffer();
@@ -79,7 +80,7 @@ export class BackendDataSource implements DataSource {
         let [bytes, name] = await exportMosaicSelection(coordinator, table, predicate, format);
         downloadBuffer(bytes, name);
       };
-    } else if (!metadata.is_static) {
+    } else if (!metadata.isStatic) {
       this.downloadSelection = async (predicate, format) => {
         let name = filenameForSelection(format);
         let resp = await this.fetchEndpoint("selection", {
@@ -91,10 +92,7 @@ export class BackendDataSource implements DataSource {
       };
     }
 
-    return {
-      ...metadata.columns,
-      pointSize: metadata.point_size,
-    };
+    return metadata.props;
   }
 
   private async fetchEndpoint(endpoint: string, init?: RequestInit) {

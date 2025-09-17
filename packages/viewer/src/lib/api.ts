@@ -2,6 +2,7 @@
 
 // The component API for embedding viewer.
 
+import type { EmbeddingViewConfig, Label } from "@embedding-atlas/component";
 import type { CustomCell } from "@embedding-atlas/table";
 import type { Coordinator } from "@uwdata/mosaic-core";
 import { createClassComponent } from "svelte/legacy";
@@ -11,76 +12,79 @@ import Component from "./EmbeddingAtlas.svelte";
 import cssCode from "../app.css?inline";
 
 export interface EmbeddingAtlasProps {
-  /** The Mosaic coordinator */
+  /** The Mosaic coordinator. */
   coordinator: Coordinator;
 
-  /** The name of the data table */
-  table: string;
+  /** The data source. */
+  data: {
+    /** The name of the data table. */
+    table: string;
 
-  /** The column for unique row identifiers */
-  idColumn: string;
+    /** The column for unique row identifiers. */
+    id: string;
 
-  /** The X and Y columns for the embedding projection view */
-  projectionColumns?: { x: string; y: string } | null;
+    /** The X and Y columns for the embedding projection view. */
+    projection?: { x: string; y: string } | null;
 
-  /** The column for pre-computed nearest neighbors.
-   * Each value in the column should be a dictionary with the format: `{ "ids": [id1, id2, ...], "distances": [distance1, distance2, ...] }`.
-   * `"ids"` should be an array of row ids (as given by the `idColumn`) of the neighbors, sorted by distance.
-   * `"distances"` should contain the corresponding distances to each neighbor.
-   * Note that if `searcher.nearestNeighbors` is specified, the UI will use the searcher instead.
-   */
-  neighborsColumn?: string | null;
+    /** The column for pre-computed nearest neighbors.
+     *  Each value in the column should be a dictionary with the format: `{ "ids": [id1, id2, ...], "distances": [distance1, distance2, ...] }`.
+     *  `"ids"` should be an array of row ids (as given by the `idColumn`) of the neighbors, sorted by distance.
+     *  `"distances"` should contain the corresponding distances to each neighbor.
+     *  Note that if `searcher.nearestNeighbors` is specified, the UI will use the searcher instead.
+     */
+    neighbors?: string | null;
 
-  /** The column for text. The text will be used as content for the tooltip and search features. */
-  textColumn?: string | null;
+    /** The column for text. The text will be used as content for the tooltip and search features. */
+    text?: string | null;
+  };
 
   /** The color scheme. */
   colorScheme?: "light" | "dark" | null;
 
-  /** The initial viewer state */
+  /** The initial viewer state. */
   initialState?: EmbeddingAtlasState | null;
 
+  /** Configuration for the embedding view. See docs for the EmbeddingView. */
+  embeddingViewConfig?: EmbeddingViewConfig | null;
+
+  /** Labels for the embedding view. */
+  embeddingViewLabels?: Label[] | null;
+
   /** An object that provides search functionalities, including full text search, vector search, and nearest neighbor queries.
-   * If not specified (undefined), a default full-text search with the text column will be used.
-   * If set to null, search will be disabled. */
+   *  If not specified (undefined), a default full-text search with the text column will be used.
+   *  If set to null, search will be disabled. */
   searcher?: Searcher | null;
 
-  /** Set to true to enable automatic labels for the embedding */
-  automaticLabels?: boolean | null;
-
-  /** Override the automatically calculated point size. If not specified, point size is calculated based on density. */
-  pointSize?: number | null;
-
-  /** A cache to speed up initialization of the viewer */
-  cache?: Cache | null;
-
-  /** Custom cell renderers for the table view */
+  /** Custom cell renderers for the table view. */
   tableCellRenderers?: Record<string, CustomCell | "markdown">;
 
-  /** A callback to export the currently selected points */
+  /** A callback to export the currently selected points. */
   onExportSelection?:
     | ((predicate: string | null, format: "json" | "jsonl" | "csv" | "parquet") => Promise<void>)
     | null;
 
-  /** A callback to download the application as archive */
+  /** A callback to download the application as archive. */
   onExportApplication?: (() => Promise<void>) | null;
 
   /** A callback when the state of the viewer changes. You may serialize the state to JSON and load it back. */
   onStateChange?: ((state: EmbeddingAtlasState) => void) | null;
+
+  /** A cache to speed up initialization of the viewer. */
+  cache?: Cache | null;
 }
 
 export interface EmbeddingAtlasState {
-  /** The version of Embedding Atlas that created this state */
+  /** The version of Embedding Atlas that created this state. */
   version: string;
-  /** UNIX timestamp when this was created */
+  /** UNIX timestamp when this was created. */
   timestamp: number;
-  /** The view configuration and state of the embedding view */
+  /** The view configuration and state of the embedding view. */
   view?: any;
-  /** The list of plots */
+  /** The list of plots. */
   plots?: { id: string; title: string; spec: any }[];
-  /** The state of all plots */
+  /** The state of all plots. */
   plotStates?: Record<string, any>;
-  /** The selection predicate (SQL expression) */
+  /** The selection predicate (SQL expression). */
   predicate?: string | null;
 }
 

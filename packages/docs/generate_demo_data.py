@@ -4,7 +4,6 @@
 # ///
 
 import json
-import os
 import shutil
 from pathlib import Path
 
@@ -91,13 +90,15 @@ def main(output: str):
     """)
 
     metadata = {
-        "columns": {
-            "id": "_row_index",
-            "text": "description",
-            "embedding": {"x": "projection_x", "y": "projection_y"},
-            "neighbors": "__neighbors",
+        "props": {
+            "data": {
+                "id": "_row_index",
+                "text": "description",
+                "projection": {"x": "projection_x", "y": "projection_y"},
+                "neighbors": "__neighbors",
+            }
         },
-        "is_static": True,
+        "isStatic": True,
         "database": {"type": "wasm", "load": True},
     }
 

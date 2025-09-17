@@ -4,7 +4,8 @@
 
   import Viewer from "./Viewer.svelte";
 
-  import type { ViewerConfig, DataSource } from "./data_source.js";
+  import type { DataSource } from "./data_source.js";
+  import type { EmbeddingAtlasProps } from "./lib/api.js";
   import { initializeDatabase } from "./lib/database_utils.js";
 
   export class TestDataSource implements DataSource {
@@ -14,7 +15,7 @@
       this.count = count;
     }
 
-    async initializeCoordinator(coordinator: Coordinator, table: string): Promise<ViewerConfig> {
+    async initializeCoordinator(coordinator: Coordinator, table: string): Promise<Partial<EmbeddingAtlasProps>> {
       await initializeDatabase(coordinator, "wasm");
 
       await coordinator.exec(`
@@ -55,9 +56,12 @@
       `);
 
       return {
-        id: "id",
-        embedding: { x: "x", y: "y" },
-        text: "text",
+        data: {
+          table: table,
+          id: "id",
+          projection: { x: "x", y: "y" },
+          text: "text",
+        },
       };
     }
   }

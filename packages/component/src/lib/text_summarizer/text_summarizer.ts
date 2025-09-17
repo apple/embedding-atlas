@@ -15,7 +15,7 @@ export class TextSummarizer {
   private frequencyAll: Map<string, number>;
 
   /** Create a new TextSummarizer */
-  constructor(options: { regions: Rectangle[][]; stopWords?: string[] }) {
+  constructor(options: { regions: Rectangle[][]; stopWords?: string[] | null }) {
     this.binning = XYBinning.inferFromRegions(options.regions);
     this.segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
     this.stopWords = new Set(options.stopWords ?? defaultStopWords);

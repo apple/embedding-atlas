@@ -9,7 +9,7 @@
       "source.organizeImports": "explicit"
     }
   },
-  "[javascript][css][typescript][json][jsonc][yaml]": {
+  "[javascript][css][typescript][json][jsonc][yaml][typescriptreact]": {
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.codeActionsOnSave": {

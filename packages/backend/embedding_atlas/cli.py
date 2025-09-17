@@ -2,7 +2,6 @@
 
 """Command line interface."""
 
-import asyncio
 import logging
 import pathlib
 import socket
@@ -15,6 +14,7 @@ import pandas as pd
 import uvicorn
 
 from .data_source import DataSource
+from .options import make_embedding_atlas_props
 from .server import make_server
 from .utils import Hasher, load_huggingface_data, load_pandas_data
 from .version import __version__
@@ -208,6 +208,18 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
     default=None,
     help="Size of points in the embedding view (default: automatically calculated based on density).",
 )
+@click.option(
+    "--stop-words",
+    type=str,
+    default=None,
+    help="Path to a file containing stop words to exclude from the text embedding. The file should be a data frame with column 'word'",
+)
+@click.option(
+    "--labels",
+    type=str,
+    default=None,
+    help="Path to a file containing labels for the embedding view. The file should be a data frame with columns 'x', 'y', 'text', and optionally 'level' and 'priority'",
+)
 @click.version_option(version=__version__, package_name="embedding_atlas")
 def main(
     inputs,
@@ -234,6 +246,8 @@ def main(
     enable_auto_port: bool,
     export_application: str | None,
     point_size: float | None,
+    stop_words: str | None,
+    labels: str | None,
 ):
     logging.basicConfig(
         level=logging.INFO,
@@ -314,25 +328,33 @@ def main(
     id_column = find_column_name(df.columns, "_row_index")
     df[id_column] = range(df.shape[0])
 
+    stop_words_resolved = None
+    if stop_words is not None:
+        stop_words_df = load_pandas_data(stop_words)
+        stop_words_resolved = stop_words_df["word"].to_list()
+
+    labels_resolved = None
+    if labels is not None:
+        labels_df = load_pandas_data(labels)
+        labels_resolved = labels_df.to_dict("records")
+
+    props = make_embedding_atlas_props(
+        row_id=id_column,
+        x=x_column,
+        y=y_column,
+        neighbors=neighbors_column,
+        text=text,
+        point_size=point_size,
+        stop_words=stop_words_resolved,
+        labels=labels_resolved,
+    )
+
     metadata = {
-        "columns": {
-            "id": id_column,
-            "text": text,
-        },
+        "props": props,
     }
 
-    if point_size is not None:
-        metadata["point_size"] = point_size
-
-    if x_column is not None and y_column is not None:
-        metadata["columns"]["embedding"] = {
-            "x": x_column,
-            "y": y_column,
-        }
-    if neighbors_column is not None:
-        metadata["columns"]["neighbors"] = neighbors_column
-
     hasher = Hasher()
+    hasher.update(__version__)
     hasher.update(inputs)
     hasher.update(metadata)
     identifier = hasher.hexdigest()

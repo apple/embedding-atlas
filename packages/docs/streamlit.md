@@ -8,7 +8,7 @@ The Python package also provides a Streamlit component to use Embedding Atlas in
 pip install embedding-atlas
 ```
 
-## Usage
+## Example
 
 ```python
 from embedding_atlas.streamlit import embedding_atlas
@@ -51,3 +51,13 @@ value = embedding_atlas(df)
 ```
 
 Without `x` and `y` the widget will fall back to a table and charts only mode.
+
+## Reference
+
+```python
+from embedding_atlas.streamlit import embedding_atlas
+```
+
+Below are the options and return value of the `embedding_atlas` function:
+
+<!-- @doc(python-docstring): embedding_atlas.streamlit:embedding_atlas -->

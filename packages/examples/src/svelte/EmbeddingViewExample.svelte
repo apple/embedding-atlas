@@ -67,9 +67,11 @@
   <div style:border="1px solid black">
     <EmbeddingView
       data={data}
-      mode={mode}
-      colorScheme={colorScheme}
-      minimumDensity={minimumDensity}
+      config={{
+        mode: mode,
+        colorScheme: colorScheme,
+        minimumDensity: minimumDensity,
+      }}
       tooltip={tooltip}
       onTooltip={(v) => {
         tooltip = v;
@@ -86,7 +88,6 @@
       onViewportState={(v) => {
         viewportState = v;
       }}
-      automaticLabels={true}
       queryClusterLabels={queryClusterLabels}
       querySelection={querySelection}
     />

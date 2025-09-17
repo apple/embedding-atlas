@@ -1,24 +1,32 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-export interface ThemeConfig {
+export interface EmbeddingViewTheme {
+  /** The font family for texts. */
   fontFamily: string;
+  /** Color for cluster labels. */
   clusterLabelColor: string;
+  /** Color for cluster labels' outline. */
   clusterLabelOutlineColor: string;
+  /** Opacity for cluster labels. */
   clusterLabelOpacity: number;
+  /** Whether to show the status bar at the bottom. */
   statusBar: boolean;
+  /** Color for status bar text. */
   statusBarTextColor: string;
+  /** Color for status bar background. */
   statusBarBackgroundColor: string;
+  /** Branding link. */
   brandingLink: { text: string; href: string } | null;
 }
 
-export type Theme = Partial<ThemeConfig> & {
+export type ThemeConfig = Partial<EmbeddingViewTheme> & {
   /** Overrides for light mode. */
-  dark?: Partial<ThemeConfig>;
+  dark?: Partial<EmbeddingViewTheme>;
   /** Overrides for dark mode. */
-  light?: Partial<ThemeConfig>;
+  light?: Partial<EmbeddingViewTheme>;
 };
 
-const defaultThemeConfig: { light: ThemeConfig; dark: ThemeConfig } = {
+const defaultThemeConfig: { light: EmbeddingViewTheme; dark: EmbeddingViewTheme } = {
   light: {
     fontFamily: "system-ui,sans-serif",
     clusterLabelColor: "#000",
@@ -41,7 +49,7 @@ const defaultThemeConfig: { light: ThemeConfig; dark: ThemeConfig } = {
   },
 };
 
-export function resolveTheme(theme: Theme | null, colorScheme: "light" | "dark"): ThemeConfig {
+export function resolveTheme(theme: ThemeConfig | null, colorScheme: "light" | "dark"): EmbeddingViewTheme {
   if (theme == null) {
     return defaultThemeConfig[colorScheme];
   } else {

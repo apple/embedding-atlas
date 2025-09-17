@@ -6,8 +6,8 @@
   import EmbeddingAtlas from "./lib/EmbeddingAtlas.svelte";
   import Spinner from "./lib/Spinner.svelte";
 
-  import type { ViewerConfig, DataSource } from "./data_source.js";
-  import type { EmbeddingAtlasState } from "./lib/api.js";
+  import type { DataSource } from "./data_source.js";
+  import type { EmbeddingAtlasProps, EmbeddingAtlasState } from "./lib/api.js";
   import { systemDarkMode } from "./lib/dark_mode_store.js";
   import { type ExportFormat } from "./lib/mosaic_exporter.js";
   import { debounce } from "./lib/utils.js";
@@ -25,13 +25,13 @@
   let error = $state(false);
   let status = $state("Loading...");
   let initialState: any | null = $state.raw(null);
-  let columns: ViewerConfig | null = $state.raw(null);
+  let config: Partial<EmbeddingAtlasProps> | null = $state.raw(null);
 
   onMount(async () => {
     try {
       initialState = await getQueryPayload();
       status = "Initializing database...";
-      columns = await dataSource.initializeCoordinator(coordinator, "dataset", (s) => {
+      config = await dataSource.initializeCoordinator(coordinator, "dataset", (s) => {
         status = s;
       });
       ready = true;
@@ -60,21 +60,21 @@
 </script>
 
 <div class="fixed left-0 right-0 top-0 bottom-0">
-  {#if ready && columns != null}
+  {#if ready && config != null}
     <EmbeddingAtlas
       coordinator={coordinator}
-      table="dataset"
+      data={{
+        ...(config.data ?? { id: "id" }),
+        // table is loaded with the name "dataset" above.
+        table: "dataset",
+      }}
+      embeddingViewConfig={config.embeddingViewConfig}
+      embeddingViewLabels={config.embeddingViewLabels}
       initialState={initialState}
-      idColumn={columns.id}
-      textColumn={columns.text}
-      projectionColumns={columns.embedding}
-      neighborsColumn={columns.neighbors}
-      cache={dataSource.cache}
-      automaticLabels={true}
-      pointSize={columns.pointSize}
       onExportApplication={dataSource.downloadArchive ? onDownloadArchive : null}
       onExportSelection={dataSource.downloadSelection ? onExportSelection : null}
       onStateChange={debounce(onStateChange, 200)}
+      cache={dataSource.cache}
     />
   {:else}
     <div

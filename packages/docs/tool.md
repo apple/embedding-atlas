@@ -94,54 +94,8 @@ compute_text_projection(df, text="text_column",
 
 ```
 Usage: embedding-atlas [OPTIONS] INPUTS...
-
-Options:
-  --text TEXT                     Column containing text data.
-  --image TEXT                    Column containing image data.
-  --vector TEXT                   Column containing pre-computed vector
-                                  embeddings.
-  --split TEXT                    Dataset split name(s) to load from Hugging
-                                  Face datasets. Can be specified multiple
-                                  times for multiple splits.
-  --enable-projection / --disable-projection
-                                  Compute embedding projections from
-                                  text/image/vector data. If disabled without
-                                  pre-computed projections, the embedding view
-                                  will be unavailable.
-  --model TEXT                    Model name for generating embeddings (e.g.,
-                                  'all-MiniLM-L6-v2').
-  --trust-remote-code             Allow execution of remote code when loading
-                                  models from Hugging Face Hub.
-  --x TEXT                        Column containing pre-computed X coordinates
-                                  for the embedding view.
-  --y TEXT                        Column containing pre-computed Y coordinates
-                                  for the embedding view.
-  --neighbors TEXT                Column containing pre-computed nearest
-                                  neighbors in format: {"ids": [n1, n2, ...],
-                                  "distances": [d1, d2, ...]}. IDs should be
-                                  zero-based row indices.
-  --sample INTEGER                Number of random samples to draw from the
-                                  dataset. Useful for large datasets.
-  --umap-n-neighbors INTEGER      Number of neighbors to consider for UMAP
-                                  dimensionality reduction (default: 15).
-  --umap-min-dist FLOAT           The min_dist parameter for UMAP.
-  --umap-metric TEXT              Distance metric for UMAP computation
-                                  (default: 'cosine').
-  --umap-random-state INTEGER     Random seed for reproducible UMAP results.
-  --duckdb TEXT                   DuckDB connection mode: 'wasm' (run in
-                                  browser), 'server' (run on this server), or
-                                  URI (e.g., 'ws://localhost:3000').
-  --host TEXT                     Host address for the web server (default:
-                                  localhost).
-  --port INTEGER                  Port number for the web server (default:
-                                  5055).
-  --auto-port / --no-auto-port    Automatically find an available port if the
-                                  specified port is in use.
-  --static TEXT                   Custom path to frontend static files
-                                  directory.
-  --export-application TEXT       Export the visualization as a standalone web
-                                  application to the specified ZIP file and
-                                  exit.
-  --version                       Show the version and exit.
-  --help                          Show this message and exit.
 ```
+
+### Command Line Options
+
+<!-- @doc(python-cli): embedding_atlas.cli:main -->

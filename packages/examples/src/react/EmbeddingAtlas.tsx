@@ -1,8 +1,8 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import * as React from "react";
-import { useState, useEffect } from "react";
 import { Coordinator, wasmConnector } from "@uwdata/mosaic-core";
+import * as React from "react";
+import { useEffect, useState } from "react";
 
 import { EmbeddingAtlas } from "embedding-atlas/react";
 import { createSampleDataTable } from "../sample_datasets";
@@ -26,10 +26,12 @@ export default function Component() {
       <div className="w-full h-full">
         <EmbeddingAtlas
           coordinator={coordinator}
-          table="dataset"
-          idColumn="id"
-          textColumn="text"
-          projectionColumns={{ x: "x", y: "y" }}
+          data={{
+            table: "dataset",
+            id: "id",
+            text: "text",
+            projection: { x: "x", y: "y" },
+          }}
         />
       </div>
     );

@@ -13,12 +13,23 @@ export interface DataPoint {
 
 export type DataField = string | { sql: string };
 
-export type AutomaticLabelsConfig = {
-  cache?: {
-    get: (key: string) => Promise<any | null>;
-    set: (key: string, value: any) => Promise<void>;
-  };
-};
+export interface Cache {
+  get: (key: string) => Promise<any | null>;
+  set: (key: string, value: any) => Promise<void>;
+}
+
+export interface Label {
+  /** X coordinate. */
+  x: number;
+  /** Y coordinate. */
+  y: number;
+  /** Label text, use "\n" for a new line. */
+  text: string;
+  /** Label level. The label will be shown around 2^level zoom factor. */
+  level?: number | null;
+  /** Placement priority. */
+  priority?: number | null;
+}
 
 export interface OverlayProxy {
   location: (x: number, y: number) => { x: number; y: number };

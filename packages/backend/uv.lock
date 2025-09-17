@@ -750,6 +750,15 @@ wheels = [
 ]
 
 [[package]]
+name = "docutils"
+version = "0.22"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e9/86/5b41c32ecedcfdb4c77b28b6cb14234f252075f8cdb254531727a35547dd/docutils-0.22.tar.gz", hash = "sha256:ba9d57750e92331ebe7c08a1bbf7a7f8143b86c476acd51528b042216a6aad0f", size = 2277984, upload-time = "2025-07-29T15:20:31.06Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/44/57/8db39bc5f98f042e0153b1de9fb88e1a409a33cda4dd7f723c2ed71e01f6/docutils-0.22-py3-none-any.whl", hash = "sha256:4ed966a0e96a0477d852f7af31bdcb3adc049fbb35ccba358c2ea8a03287615e", size = 630709, upload-time = "2025-07-29T15:20:28.335Z" },
+]
+
+[[package]]
 name = "duckdb"
 version = "1.3.2"
 source = { registry = "https://pypi.org/simple" }
@@ -824,6 +833,7 @@ dependencies = [
 dev = [
     { name = "anywidget" },
     { name = "datasets" },
+    { name = "docutils" },
     { name = "jupyterlab" },
     { name = "streamlit" },
 ]
@@ -851,6 +861,7 @@ requires-dist = [
 dev = [
     { name = "anywidget", specifier = ">=0.9.0" },
     { name = "datasets", specifier = ">=3.1.0" },
+    { name = "docutils", specifier = ">=0.22.0" },
     { name = "jupyterlab", specifier = ">=4.3.0" },
     { name = "streamlit", specifier = ">=1.43.0" },
 ]

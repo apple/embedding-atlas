@@ -16,7 +16,7 @@ export interface Cluster {
   pixelCount: number;
   /** The cluster's boundary represented as a list of polygons */
   boundary?: [number, number][][];
-  /** The cluster's boundary approximated with a list of rectangles, each rectangle is given as an array [x1, y1, x2, y2] */
+  /** The cluster's boundary approximated with a list of rectangles, each rectangle is given as an array `[x1, y1, x2, y2]` */
   boundaryRectApproximation?: [number, number, number, number][];
 }
 

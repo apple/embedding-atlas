@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check": "svelte-check",
     "build": "vite build --config vite.config.anywidget.js && vite build --config vite.config.streamlit.js"
   },
   "devDependencies": {
     "@embedding-atlas/viewer": "*",
     "anywidget": "^0.9.18",
     "streamlit-component-lib": "^2.0.0",
+    "svelte-check": "^4.3.1",
     "vite": "^7.0.6"
   }
 }

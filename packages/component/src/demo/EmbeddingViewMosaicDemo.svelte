@@ -142,11 +142,9 @@
       {#if ready}
         <div style:border="1px solid black">
           <EmbeddingViewMosaic
-            mode={mode}
-            minimumDensity={minimumDensity}
+            config={{ mode: mode, minimumDensity: minimumDensity, colorScheme: colorScheme }}
             width={800}
             height={800}
-            colorScheme={colorScheme}
             table="data_table"
             x="x"
             y="y"
@@ -158,7 +156,6 @@
             onViewportState={(v) => (viewportState = v)}
             rangeSelection={brush}
             filter={brush}
-            automaticLabels={true}
           />
         </div>
       {/if}

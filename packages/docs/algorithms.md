@@ -98,5 +98,9 @@ import { findClusters } from "embedding-atlas";
 // A density map of width * height floating point numbers.
 let densityMap: Float32Array;
 
-clusters = await findClusters(densityMap, width, height);
+let clusters = await findClusters(densityMap, width, height);
 ```
+
+`findClusters` returns an array of clusters, as described below:
+
+<!-- @doc(ts,no-required): Cluster -->

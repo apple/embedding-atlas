@@ -109,12 +109,13 @@
   {#if stage == "ready"}
     <EmbeddingAtlas
       coordinator={coordinator}
-      table="dataset"
+      data={{
+        table: "dataset",
+        id: "__row_index__",
+        text: textColumn,
+        projection: projectionColumns,
+      }}
       initialState={initialState}
-      idColumn="__row_index__"
-      textColumn={textColumn}
-      projectionColumns={projectionColumns}
-      automaticLabels={true}
       onExportSelection={onExportSelection}
     />
   {:else}

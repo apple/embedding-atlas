@@ -41,19 +41,17 @@
     width = null,
     height = null,
     pixelRatio = null,
-    colorScheme = "light",
+    config = null,
     theme = null,
     viewportState = null,
-    automaticLabels = false,
-    mode = "density",
-    minimumDensity = 1 / 16,
-    pointSize = null,
+    labels = null,
     customTooltip = null,
     customOverlay = null,
     onViewportState = null,
     onTooltip = null,
     onSelection = null,
     onRangeSelection = null,
+    cache = null,
   }: EmbeddingViewMosaicProps = $props();
 
   let xData: Float32Array<ArrayBuffer> = $state.raw(new Float32Array());
@@ -339,7 +337,10 @@
       return clusters.map(() => null);
     }
     // Create text summarizer (in the worker)
-    let summarizer = await textSummarizerCreate({ regions: clusters });
+    let summarizer = await textSummarizerCreate({
+      regions: clusters,
+      stopWords: config?.autoLabelStopWords ?? null,
+    });
     // Add text data to the summarizer
     let start = 0;
     let chunkSize = 10000;
@@ -384,12 +385,11 @@
 </script>
 
 <EmbeddingViewImpl
-  mode={mode ?? "points"}
   width={width ?? 800}
   height={height ?? 800}
   pixelRatio={pixelRatio ?? 2}
-  colorScheme={colorScheme ?? "light"}
   theme={theme}
+  config={config}
   data={{ x: xData, y: yData, category: categoryData }}
   totalCount={totalCount}
   maxDensity={maxDensity}
@@ -398,8 +398,7 @@
   defaultViewportState={defaultViewportState}
   querySelection={querySelection}
   queryClusterLabels={queryClusterLabels}
-  automaticLabels={text != null ? (automaticLabels ?? false) : false}
-  minimumDensity={minimumDensity ?? 1 / 16}
+  labels={labels}
   customTooltip={customTooltip}
   customOverlay={customOverlay}
   tooltip={effectiveTooltip}
@@ -413,5 +412,5 @@
     effectiveRangeSelection = v;
     onRangeSelection?.(v);
   }}
-  userPointSize={pointSize}
+  cache={cache}
 />

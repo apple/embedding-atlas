@@ -5,28 +5,30 @@ import { createClassComponent } from "svelte/legacy";
 import Component from "./EmbeddingView.svelte";
 
 import type { Point, Rectangle, ViewportState } from "../utils.js";
-import type { Theme } from "./theme.js";
-import type { AutomaticLabelsConfig, CustomComponent, DataPoint, OverlayProxy } from "./types.js";
+import type { EmbeddingViewConfig } from "./embedding_view_config.js";
+import type { ThemeConfig } from "./theme.js";
+import type { Cache, CustomComponent, DataPoint, Label, OverlayProxy } from "./types.js";
 
 export interface EmbeddingViewProps {
   /** The data. */
   data: {
+    /** An array of X coordinates, must be a `Float32Array`. */
     x: Float32Array<ArrayBuffer>;
+    /** An array of Y coordinates, must be a `Float32Array`. */
     y: Float32Array<ArrayBuffer>;
+    /** An array of category indices, must be a `Uint8Array`. */
     category?: Uint8Array<ArrayBuffer> | null;
   };
 
-  /** The colors for the categories. */
+  /** The colors for the categories.
+   *  Category `i` will use the `i`-th color from this list.
+   *  If not specified, default colors will be used. */
   categoryColors?: string[] | null;
 
-  /** The tooltip. Tooltip is triggered on hover. */
-  tooltip?: DataPoint | null;
-
-  /** The selection. Selection is triggered with click or shift/cmd-click. */
-  selection?: DataPoint[] | null;
-
-  /** The range selection. Shift-drag to create a range selection. */
-  rangeSelection?: Rectangle | null;
+  /** Labels to display on the embedding view.
+   *  Each label must have `x`, `y`, and `text` properties,
+   *  and optionally `level` and `priority`. */
+  labels?: Label[] | null;
 
   /** The width of the view. */
   width?: number | null;
@@ -37,28 +39,54 @@ export interface EmbeddingViewProps {
   /** The pixel ratio of the view. */
   pixelRatio?: number | null;
 
-  /** Color scheme. */
-  colorScheme: "light" | "dark" | null;
+  /** Configure the theme of the view. */
+  theme?: ThemeConfig | null;
 
-  /** Theme. */
-  theme?: Theme | null;
+  /** Configure the embedding view. */
+  config?: EmbeddingViewConfig | null;
 
-  /** The viewport state. */
+  /** The viewport state.
+   *  You may use this to share viewport state across multiple views.
+   *  If undefined or set to `null`, the view will use a default viewport state.
+   *  To listen to viewport state change, use `onViewportState`. */
   viewportState?: ViewportState | null;
 
-  /** Set to true to automatically create labels from the text field. */
-  automaticLabels?: AutomaticLabelsConfig | boolean | null;
+  /** The current tooltip.
+   *  The tooltip is an object with the following fields: `x`, `y`, `category`, `text`, `identifier`.
+   *  To listen for a tooltip change, use `onTooltip`. */
+  tooltip?: DataPoint | null;
 
-  /** View mode. */
-  mode?: "points" | "density" | null;
+  /** The current single or multiple point selection.
+   *  Selection is triggered by clicking on the points (shift/cmd+click will toggle points).
+   *  The selection is an array of objects with the following fields: `x`, `y`, `category`, `text`, `identifier`.
+   *  To listen to selection change, use `onSelection`. */
+  selection?: DataPoint[] | null;
 
-  /** Minimum average density for density contours to show up.
-   * The density is measured as number of points per square points (aka., px in CSS units).
-   */
-  minimumDensity?: number | null;
+  /** A rectangle or a polygon (list of points) that represents the range selection.
+   *  If the value is a list of points, it is interpreted as a lasso selection
+   *  with a closed polygon with the list of points as vertices. */
+  rangeSelection?: Rectangle | null;
 
-  /** Override the automatically calculated point size. If not specified, point size is calculated based on density. */
-  pointSize?: number | null;
+  /** A callback for when `viewportState` changes. */
+  onViewportState?: ((value: ViewportState) => void) | null;
+
+  /** A callback for when `tooltip` changes. */
+  onTooltip?: ((value: DataPoint | null) => void) | null;
+
+  /** A callback for when `selection` changes. */
+  onSelection?: ((value: DataPoint[] | null) => void) | null;
+
+  /** A callback for when `rangeSelection` changes. */
+  onRangeSelection?: ((value: Rectangle | Point[] | null) => void) | null;
+
+  /** An async function that returns a data point near the given (x, y) location.
+   *  The `unitDistance` parameter is the distance of a single pixel in data domain.
+   *  You can use this to determine the distance threshold for selecting a point. */
+  querySelection?: ((x: number, y: number, unitDistance: number) => Promise<DataPoint | null>) | null;
+
+  /** An async function that returns labels for a list of clusters.
+   *  Each cluster is given as a list of rectangles that approximately cover the region. */
+  queryClusterLabels?: ((clusters: Rectangle[][]) => Promise<(string | null)[]>) | null;
 
   /** A custom renderer to draw the tooltip content. */
   customTooltip?: CustomComponent<HTMLDivElement, { tooltip: DataPoint }> | null;
@@ -66,23 +94,8 @@ export interface EmbeddingViewProps {
   /** A custom renderer to draw overlay on top of the embedding view. */
   customOverlay?: CustomComponent<HTMLDivElement, { proxy: OverlayProxy }> | null;
 
-  /** A function to query selected point given (x, y) location, and a unit distance (distance of 1pt in data units). */
-  querySelection?: ((x: number, y: number, unitDistance: number) => Promise<DataPoint | null>) | null;
-
-  /** A function that returns summary labels for clusters. Each cluster is given by a list of rectangles that approximate its shape. */
-  queryClusterLabels?: ((clusters: Rectangle[][]) => Promise<(string | null)[]>) | null;
-
-  /** A callback for when viewportState changes. */
-  onViewportState?: ((value: ViewportState) => void) | null;
-
-  /** A callback for when tooltip changes. */
-  onTooltip?: ((value: DataPoint | null) => void) | null;
-
-  /** A callback for when selection changes. */
-  onSelection?: ((value: DataPoint[] | null) => void) | null;
-
-  /** A callback for when rangeSelection changes. */
-  onRangeSelection?: ((value: Rectangle | Point[] | null) => void) | null;
+  /** A cache for intermediate results. */
+  cache?: Cache | null;
 }
 
 export class EmbeddingView {

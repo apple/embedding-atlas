@@ -8,7 +8,7 @@ The Python package also provides a Jupyter widget to use Embedding Atlas in your
 pip install embedding-atlas
 ```
 
-## Usage
+## Example
 
 ```python
 from embedding_atlas.widget import EmbeddingAtlasWidget
@@ -40,3 +40,13 @@ df = widget.selection()
 ```
 
 to get the selection back as a data frame.
+
+## Reference
+
+```python
+from embedding_atlas.widget import EmbeddingAtlasWidget
+```
+
+Below are the constructor options of the widget:
+
+<!-- @doc(python-docstring): embedding_atlas.widget:EmbeddingAtlasWidget.__init__ -->

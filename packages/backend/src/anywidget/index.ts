@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import { EmbeddingAtlas, EmbeddingAtlasProps, EmbeddingAtlasState } from "@embedding-atlas/viewer";
-import { Coordinator, decodeIPC } from "@uwdata/mosaic-core";
+import { EmbeddingAtlas, type EmbeddingAtlasProps, type EmbeddingAtlasState } from "@embedding-atlas/viewer";
+import { type Connector, Coordinator, decodeIPC } from "@uwdata/mosaic-core";
 
 import type { AnyModel, Initialize, Render } from "anywidget/types";
 
@@ -11,7 +11,7 @@ interface Model {
   _predicate: string | null;
 }
 
-function makeDatabaseConnector(model: AnyModel<Model>) {
+function makeDatabaseConnector(model: AnyModel<Model>): Connector {
   const openQueries = new Map();
 
   function send(query: any, resolve: (value: any) => void, reject: (reason?: any) => void) {
@@ -28,7 +28,7 @@ function makeDatabaseConnector(model: AnyModel<Model>) {
     } else {
       switch (msg.type) {
         case "arrow": {
-          const table = decodeIPC(buffers[0].buffer);
+          const table = decodeIPC(buffers[0].buffer as any);
           query.resolve(table);
           break;
         }
@@ -45,7 +45,7 @@ function makeDatabaseConnector(model: AnyModel<Model>) {
   });
 
   return {
-    query(query: any) {
+    query(query: any): Promise<any> {
       return new Promise((resolve, reject) => send(query, resolve, reject));
     },
   };

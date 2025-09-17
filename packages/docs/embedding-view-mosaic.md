@@ -8,7 +8,7 @@ We also provide React and Svelte wrappers of the component to easily include it 
 <p class="light-only"><img style="margin: 0 auto;" src="./assets/component-light.png" /></p>
 <p class="dark-only"><img style="margin: 0 auto;" src="./assets/component-dark.png" /></p>
 
-```
+```bash
 npm install embedding-atlas
 ```
 
@@ -79,140 +79,31 @@ component.destroy();
 
 The view can be configured with the following properties (props):
 
-### coordinator `Coordinator`
+<!-- @doc(ts): EmbeddingViewMosaicProps -->
 
-The Mosaic coordinator (if not specified, the default coordinator from Mosaic's `coordinator()` method will be used).
+## Config
 
-### table `string`
+You can pass in an object with the following properties to the `config` property of the embedding view:
 
-Required. The name of the data table.
+<!-- @doc(ts): EmbeddingViewConfig -->
 
-### x, y `string`
+## Theme
 
-Required. The names of the x and y columns.
-
-### text `string | null`
-
-The name of the text column. If specified, the default tooltip shows the text content.
-The text content is also used to generate labels when `automaticLabels` is set to `true`.
-
-### category `string | null`
-
-The name of the category column. The categories should be represented as integers starting from 0. If you have categories represented as strings, you should first convert them to 0-indexed integers.
-
-### identifier `string | null`
-
-The name of the identifier (aka., id) column. If specified, the `selection` object will contain an `identifier` property that you can use to identify the point.
-
-### categoryColors `string[] | null`
-
-The colors for the categories. Category `i` will use the `i`-th color from this list. If not specified, default colors will be used.
-
-### filter `Selection | null`
-
-A Mosaic `Selection` object to filter the contents of this view.
-
-### tooltip `Selection | DataPoint | DataPointID | null`
-
-The current tooltip. The tooltip is an object with the following fields: `x`, `y`, `category`, `text`, `identifier`.
-
-You may pass the identifier for the data point (`DataPointID`), or a `DataPoint` object, or a Mosaic `Selection`. If an id or a `DataPoint` object is specified, you will need to use `onTooltip` to listen to tooltip changes; if a Mosaic `Selection` is used, the selection will be updated when tooltip is triggered.
-
-### selection `Selection | DataPoint[] | DataPointID[] | null`
-
-The current single or multiple point selection.
-
-You may pass an array of `DataPointID` or `DataPoint` objects, or a Mosaic `Selection`. If `DataPointID[]` or `DataPoint[]` is specified, you will need to use `onSelection` to listen to selection changes; if a Mosaic `Selection` is used, the selection will be updated with the appropriate predicates.
-
-### rangeSelection `Selection | null`
-
-A Mosaic `Selection` object to capture the component's range selection.
-
-### rangeSelectionValue `Rectangle | Point[] | null`
-
-The rectangle or polygon that drives the range selection. Setting this changes the current
-range selection and also affects the selection passed in `rangeSelection`.
-
-Use `onRangeSelection` to listen for changes to this rectangle.
-
-### mode `"points" | "density" | null`
-
-The rendering mode. In `points` mode, the view will simply render each data point individually. In `density` mode, the view will show a density estimation as a contour plot when zoomed out.
-
-### width, height `number | null`
-
-The width and height of the view.
-
-### pixelRatio `number | null`
-
-The pixel ratio of the view.
-
-### colorScheme `"light" | "dark" | null`
-
-Set light or dark mode.
-
-### theme `Theme | null`
-
-Configure the theme of the view. `Theme` is defined as the following:
+You can pass in an object with the following properties to the `theme` property of the embedding view.
+You can also provide these options as `light` and/or `dark` properties, which will control the appearance of the view depending on its `colorScheme`. For example:
 
 ```ts
-interface ThemeConfig {
-  fontFamily: string;
-  clusterLabelColor: string;
-  clusterLabelOutlineColor: string;
-  clusterLabelOpacity: number;
-  statusBar: boolean;
-  statusBarTextColor: string;
-  statusBarBackgroundColor: string;
-  brandingLink: { text: string; href: string } | null;
-}
-
-type Theme = Partial<ThemeConfig> & {
-  /** Overrides for light mode. */
-  dark?: Partial<ThemeConfig>;
-  /** Overrides for dark mode. */
-  light?: Partial<ThemeConfig>;
-};
-```
-
-### viewportState `ViewportState | null`
-
-The viewport state. You may use this to share viewport state across multiple views. If undefined or set to `null`, the view will use a default viewport state.
-
-To listen to viewport state change, use `onViewportState`.
-
-`ViewportState` is defined as the following:
-
-```ts
-interface ViewportState {
-  /** The x coordinate of the center of the viewport in data units. */
-  x: number;
-  /** The y coordinate of the center of the viewport in data units. */
-  y: number;
-  /** The scale of the viewport. This scales data units to [-1, 1]. */
-  scale: number;
+{
+  light: {
+    clusterLabelColor: "black";
+  }
+  dark: {
+    clusterLabelColor: "white";
+  }
 }
 ```
 
-### automaticLabels `boolean | null`
-
-Set to `true` to enable automatic labels from the `text` column.
-
-### onViewportState `((value: ViewportState) => void) | null`
-
-A callback for when viewportState changes.
-
-### onTooltip `((value: DataPoint | null) => void) | null`
-
-A callback for when tooltip changes.
-
-### onSelection `((value: DataPoint[] | null) => void) | null`
-
-A callback for when selection changes.
-
-### onRangeSelection `((value: Rectangle | Point[] | null) => void) | null`
-
-A callback for when rangeSelection changes.
+<!-- @doc(ts,no-required): EmbeddingViewTheme -->
 
 ## Custom Tooltip
 

@@ -1,12 +1,13 @@
 {
+  "type": "module",
   "scripts": {
     "dev": "vitepress dev",
-    "build": "npm run generate_assets && vitepress build --base /embedding-atlas/",
+    "build": "npm run generate_assets && vitepress build",
     "preview": "npm run generate_assets && vitepress preview",
+    "extract-api": "api-extractor run -c scripts/api-extractor.json",
     "generate_assets": "./generate_assets.sh"
   },
   "devDependencies": {
-    "vitepress": "^1.6.3",
-    "gh-pages": "^6.3.0"
+    "vitepress": "^1.6.3"
   }
 }

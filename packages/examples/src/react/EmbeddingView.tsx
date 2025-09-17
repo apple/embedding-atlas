@@ -44,7 +44,7 @@ export default function Component() {
   }
 
   async function queryClusterLabels(regions: Rectangle[][]): Promise<(string | null)[]> {
-    return regions.map(_ => "label");
+    return regions.map((_) => "label");
   }
 
   return (
@@ -80,9 +80,11 @@ export default function Component() {
         <div style={{ border: "1px solid black" }}>
           <EmbeddingView
             data={data}
-            mode={mode}
-            colorScheme={colorScheme}
-            minimumDensity={minimumDensity}
+            config={{
+              mode: mode,
+              colorScheme: colorScheme,
+              minimumDensity: minimumDensity,
+            }}
             tooltip={tooltip}
             onTooltip={(v) => {
               setTooltip(v);
@@ -99,7 +101,6 @@ export default function Component() {
             onViewportState={(v) => {
               setViewportState(v);
             }}
-            automaticLabels={true}
             queryClusterLabels={queryClusterLabels}
             querySelection={querySelection}
           />

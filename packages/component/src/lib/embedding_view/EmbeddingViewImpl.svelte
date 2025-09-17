@@ -11,14 +11,11 @@
     width: number;
     height: number;
     pixelRatio: number;
-    colorScheme: "light" | "dark";
-    theme: Theme | null;
-    mode: "points" | "density";
-    minimumDensity: number;
+    theme: ThemeConfig | null;
+    config: EmbeddingViewConfig | null;
     totalCount: number | null;
     maxDensity: number | null;
-    userPointSize: number | null;
-    automaticLabels: AutomaticLabelsConfig | boolean;
+    labels?: Label[] | null;
     queryClusterLabels: ((clusters: Rectangle[][]) => Promise<(string | null)[]>) | null;
     tooltip: Selection | null;
     selection: Selection[] | null;
@@ -32,6 +29,7 @@
     onTooltip: ((value: Selection | null) => void) | null;
     onSelection: ((value: Selection[] | null) => void) | null;
     onRangeSelection: ((value: Rectangle | Point[] | null) => void) | null;
+    cache: Cache | null;
   }
 
   interface Cluster {
@@ -41,23 +39,6 @@
     rects: Rectangle[];
     bandwidth: number;
     label?: string | null;
-  }
-
-  interface InitialLabel {
-    text: string;
-    x: number;
-    y: number;
-    priority: number;
-    level: number;
-  }
-
-  interface Label {
-    text: string;
-    fontSize: number;
-    bounds: Rectangle;
-    locationAtZero: Point;
-    coordinate: Point;
-    placement: { minScale: number; maxScale: number } | null;
   }
 
   function viewingParameters(
@@ -117,7 +98,6 @@
   import TooltipContainer from "./TooltipContainer.svelte";
 
   import { defaultCategoryColors } from "../colors.js";
-  import { measureText } from "../measure_text.js";
   import type { EmbeddingRenderer } from "../renderer_interface.js";
   import {
     cacheKeyForObject,
@@ -135,10 +115,12 @@
   import { EmbeddingRendererWebGPU } from "../webgpu_renderer/renderer.js";
   import { isWebGPUAvailable } from "../webgpu_renderer/utils.js";
   import { customComponentAction, customComponentProps } from "./custom_component_helper.js";
+  import type { EmbeddingViewConfig } from "./embedding_view_config.js";
+  import { layoutLabels, type LabelWithPlacement } from "./labels.js";
   import { simplifyPolygon } from "./simplify_polygon.js";
-  import { resolveTheme, type Theme } from "./theme.js";
-  import type { AutomaticLabelsConfig, CustomComponent, OverlayProxy } from "./types.js";
-  import { dynamicLabelPlacement, findClusters } from "./worker/index.js";
+  import { resolveTheme, type ThemeConfig } from "./theme.js";
+  import type { Cache, CustomComponent, Label, OverlayProxy } from "./types.js";
+  import { findClusters } from "./worker/index.js";
 
   interface SelectionBase {
     x: number;
@@ -156,13 +138,11 @@
     width = 800,
     height = 800,
     pixelRatio = 2,
-    colorScheme = "light",
     theme = null,
-    mode = "density",
-    minimumDensity = 1 / 16,
+    config = null,
     totalCount = null,
     maxDensity = null,
-    automaticLabels = false,
+    labels = null,
     queryClusterLabels = null,
     tooltip = null,
     selection = null,
@@ -170,17 +150,18 @@
     rangeSelection = null,
     defaultViewportState = null,
     viewportState = null,
-    userPointSize = null,
     customTooltip = null,
     customOverlay = null,
     onViewportState = null,
     onTooltip = null,
     onSelection = null,
     onRangeSelection = null,
+    cache = null,
   }: Props<Selection> = $props();
 
   let showClusterLabels = true;
 
+  let colorScheme = $derived(config?.colorScheme ?? "light");
   let resolvedTheme = $derived(resolveTheme(theme, colorScheme));
   let resolvedCategoryColors = $derived(categoryColors ?? defaultCategoryColors(categoryCount));
 
@@ -227,7 +208,7 @@
     onRangeSelection?.(newValue);
   }
 
-  let clusterLabels: Label[] = $state([]);
+  let clusterLabels: LabelWithPlacement[] = $state([]);
   let statusMessage: string | null = $state(null);
 
   let selectionMode = $state<"marquee" | "lasso" | "none">("none");
@@ -238,6 +219,11 @@
   let canvas: HTMLCanvasElement | null = $state(null);
   let renderer: EmbeddingRenderer | null = $state(null);
   let webGPUPrompt: string | null = $state(null);
+
+  let minimumDensity = $derived(config?.minimumDensity ?? 1 / 16);
+  let userPointSize = $derived(config?.pointSize ?? null);
+  let mode = $derived(config?.mode ?? "points");
+  let autoLabelEnabled = $derived(config?.autoLabelEnabled);
 
   let viewingParams = $derived(
     viewingParameters(
@@ -250,6 +236,7 @@
       userPointSize,
     ),
   );
+
   let pointSize = $derived(viewingParams.pointSize);
 
   let needsUpdateLabels = true;
@@ -274,7 +261,7 @@
     if (needsRender) {
       setNeedsRender();
       if (
-        automaticLabels !== false &&
+        (autoLabelEnabled !== false || labels != null) &&
         needsUpdateLabels &&
         renderer != null &&
         data.x != null &&
@@ -558,6 +545,7 @@
     renderer: EmbeddingRenderer,
     bandwidth: number,
     viewport: ViewportState,
+    densityThreshold: number = 0.005,
   ): Promise<Cluster[]> {
     let map = await renderer.densityMap(1000, 1000, bandwidth, viewport);
     let cs = await findClusters(map.data, map.width, map.height);
@@ -584,30 +572,33 @@
       });
     }
     let maxDensity = collectedClusters.reduce((a, b) => Math.max(a, b.sumDensity), 0);
-    let threshold = maxDensity * 0.005;
-    return collectedClusters.filter((x) => x.sumDensity > threshold);
+    return collectedClusters.filter((x) => x.sumDensity / maxDensity > densityThreshold);
   }
 
-  async function generateLabels(viewport: ViewportState): Promise<InitialLabel[]> {
-    if (renderer == null) {
+  async function generateLabels(viewport: ViewportState): Promise<Label[]> {
+    if (renderer == null || queryClusterLabels == null) {
       return [];
     }
 
-    let cacheKey = await cacheKeyForObject({ generateLabels: viewport });
+    let cacheKey = await cacheKeyForObject({
+      autoLabel: {
+        version: 1,
+        viewport,
+        stopWords: config?.autoLabelStopWords,
+        densityThreshold: config?.autoLabelDensityThreshold,
+      },
+    });
 
-    if (typeof automaticLabels == "object" && automaticLabels.cache) {
-      let cached = await automaticLabels.cache.get(cacheKey);
+    if (cache != null) {
+      let cached = await cache.get(cacheKey);
       if (cached != null) {
         return cached;
       }
     }
 
-    statusMessage = "Generating clusters...";
-
-    let newClusters = await generateClusters(renderer, 10, viewport);
+    let newClusters = await generateClusters(renderer, 10, viewport, config?.autoLabelDensityThreshold ?? 0.005);
     newClusters = newClusters.concat(await generateClusters(renderer, 5, viewport));
 
-    statusMessage = "Generating labels...";
     if (queryClusterLabels) {
       let labels = await queryClusterLabels(newClusters.map((x) => x.rects));
       for (let i = 0; i < newClusters.length; i++) {
@@ -615,73 +606,35 @@
       }
     }
 
-    let result: InitialLabel[] = newClusters
-      .filter((x) => x.label != null)
+    let result: Label[] = newClusters
+      .filter((x) => x.label != null && x.label.length > 0)
       .map((x) => ({
-        text: x.label!,
         x: x.x,
         y: x.y,
+        text: x.label!,
         priority: x.sumDensity,
         level: x.bandwidth == 10 ? 0 : 1,
       }));
 
-    if (typeof automaticLabels == "object" && automaticLabels.cache) {
-      await automaticLabels.cache.set(cacheKey, result);
+    if (cache != null) {
+      await cache.set(cacheKey, result);
     }
 
     return result;
   }
 
-  export async function updateLabels(viewport: ViewportState) {
+  async function updateLabels(viewport: ViewportState) {
     if (renderer == null) {
       return;
     }
-    let vp = new Viewport(viewport, width, height);
-    let newClusters = await generateLabels(viewport);
-
-    let currentScale = viewport.scale;
-    let maxScale = viewport.scale / 2;
-    let scaleThreshold = maxScale * 4;
-    let newClusterLabels: Label[] = newClusters.map((cluster) => {
-      let p = vp.pixelLocation(cluster.x, cluster.y);
-      let fontSize = cluster.level == 0 ? 14 : 12;
-      let size = measureText({
-        text: cluster.text,
-        fontSize: fontSize,
-        fontFamily: resolvedTheme.fontFamily,
-      });
-      size.width += 4;
-      size.height += 4;
-      let threshold = currentScale / scaleThreshold;
-      return {
-        text: cluster.text,
-        fontSize: fontSize,
-        bounds: {
-          xMin: p.x - size.width / 2,
-          xMax: p.x + size.width / 2,
-          yMin: p.y - size.height / 2,
-          yMax: p.y + size.height / 2,
-        },
-        locationAtZero: p,
-        priority: cluster.priority,
-        minScale: cluster.level == 0 ? threshold / 1.2 : null,
-        maxScale: cluster.level == 0 ? null : threshold,
-        coordinate: { x: cluster.x, y: cluster.y },
-        placement: null,
-      };
-    });
-
-    let placements = await dynamicLabelPlacement(newClusterLabels, { globalMaxScale: currentScale / maxScale });
-    for (let i = 0; i < placements.length; i++) {
-      let placement = placements[i];
-      if (placement != null) {
-        let maxScale = currentScale / placement.minScale;
-        let minScale = currentScale / placement.maxScale;
-        newClusterLabels[i].placement = { minScale, maxScale };
-      }
+    if (labels != null) {
+      clusterLabels = await layoutLabels(width, height, viewport, labels, resolvedTheme.fontFamily);
+    } else {
+      statusMessage = "Generating labels...";
+      let result = await generateLabels(viewport);
+      clusterLabels = await layoutLabels(width, height, viewport, result, resolvedTheme.fontFamily);
+      statusMessage = null;
     }
-    clusterLabels = newClusterLabels;
-    statusMessage = null;
   }
 
   class DefaultTooltipRenderer {

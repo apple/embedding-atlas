@@ -34,7 +34,6 @@ export interface Options {
 }
 
 export function dynamicLabelPlacement(labels: Label[], options: Partial<Options> = {}): (Placement | null)[] {
-  let t0 = new Date().getTime();
   let globalMaxScale = options.globalMaxScale ?? 1;
   let n = labels.length;
 
@@ -54,7 +53,13 @@ export function dynamicLabelPlacement(labels: Label[], options: Partial<Options>
       let k1 = xi < xj ? (xi - xj) / (bj.xMin - bi.xMax + xi - xj) : (xi - xj) / (bj.xMax - bi.xMin + xi - xj);
       let k2 = yi < yj ? (yi - yj) / (bj.yMin - bi.yMax + yi - yj) : (yi - yj) / (bj.yMax - bi.yMin + yi - yj);
       let scale = Math.max(k1, k2);
-      if (scale <= 0) {
+      if (xi == xj && yi == yj) {
+        if (bi.xMin < bj.xMax && bi.xMax > bj.xMin && bi.yMin < bj.yMax && bi.yMax > bj.yMin) {
+          scale = 0;
+        } else {
+          scale = Infinity;
+        }
+      } else if (scale <= 0) {
         scale = Infinity;
       } else {
         // Discretize the scale levels, so we don't end up with too many levels.
@@ -126,7 +131,5 @@ export function dynamicLabelPlacement(labels: Label[], options: Partial<Options>
       }
     }
   }
-  let t1 = new Date().getTime();
-  // console.debug(`Label placement: ${labels.length} labels, ${t1 - t0}ms`);
   return placements;
 }

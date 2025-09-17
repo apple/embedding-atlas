@@ -1,12 +1,21 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import type { DataField, DataPoint, Point, Rectangle, ViewportState } from "@embedding-atlas/component";
+  import type {
+    DataField,
+    DataPoint,
+    EmbeddingViewConfig,
+    Label,
+    Point,
+    Rectangle,
+    ViewportState,
+  } from "@embedding-atlas/component";
   import { EmbeddingViewMosaic } from "@embedding-atlas/component/svelte";
   import { Selection } from "@uwdata/mosaic-core";
   import { cubicOut } from "svelte/easing";
 
   import CategoryLegend from "./CategoryLegend.svelte";
 
+  import type { Cache } from "./api.js";
   import { Context } from "./contexts.js";
   import type { EmbeddingLegend } from "./database_utils.js";
   import type { PlotStateStore } from "./plots/plot_state_store.js";
@@ -22,17 +31,11 @@
     x: string;
     y: string;
     text?: string | null;
-
     additionalFields?: Record<string, DataField>;
-
     categoryLegend?: EmbeddingLegend | null;
-    mode: "points" | "density";
 
-    minimumDensityExpFactor?: number;
-
-    automaticLabels?: any;
-
-    pointSize?: number | null;
+    config?: EmbeddingViewConfig | null;
+    labels?: Label[] | null;
 
     customTooltip?: any;
     customOverlay?: any;
@@ -43,6 +46,8 @@
       viewportState: ViewportState | null;
       rangeSelection: Rectangle | Point[] | null;
     } | null>;
+
+    cache?: Cache | null;
   }
 
   let {
@@ -52,16 +57,15 @@
     x,
     y,
     text,
-    mode,
     categoryLegend,
     additionalFields,
-    minimumDensityExpFactor,
-    pointSize = null,
+    config,
+    labels,
     customTooltip,
     customOverlay,
-    automaticLabels,
     onClickPoint = null,
     stateStore,
+    cache,
   }: Props = $props();
 
   const coordinator = Context.coordinator;
@@ -165,11 +169,14 @@
     identifier={id}
     x={x}
     y={y}
-    colorScheme={$darkMode ? "dark" : "light"}
+    labels={labels}
+    config={{
+      ...(config ?? {}),
+      colorScheme: $darkMode ? "dark" : "light",
+    }}
     text={text}
     category={categoryLegend?.indexColumn}
     categoryColors={categoryLegend?.legend.map((d) => d.color)}
-    minimumDensity={(1 / 16) * Math.exp(-(minimumDensityExpFactor ?? 0))}
     additionalFields={additionalFields}
     viewportState={viewportState}
     onViewportState={(v) => {
@@ -188,13 +195,11 @@
     onRangeSelection={(v) => {
       rangeSelectionValue = v;
     }}
-    automaticLabels={automaticLabels}
     width={embeddingWidth}
     height={embeddingHeight}
-    mode={mode}
-    pointSize={pointSize}
     customTooltip={customTooltip}
     customOverlay={customOverlay}
+    cache={cache}
   />
 
   {#if categoryLegend != null}

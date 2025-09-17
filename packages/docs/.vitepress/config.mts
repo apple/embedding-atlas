@@ -1,7 +1,10 @@
 import { defineConfig } from "vitepress";
 
+import docComment from "./doc_comment.mjs";
+
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
+  base: "/embedding-atlas/",
   title: "Embedding Atlas",
   description:
     "Interactive visualizations for large-scale embeddings. Effortlessly explore, filter, and search through rich metadata.",
@@ -53,6 +56,14 @@ export default defineConfig({
     socialLinks: [{ icon: "github", link: "https://github.com/apple/embedding-atlas" }],
     footer: {
       copyright: "Copyright © 2025 Apple Inc. Released under the MIT license.",
+    },
+  },
+  vite: {
+    clearScreen: false,
+  },
+  markdown: {
+    config: (md) => {
+      md.use(docComment, { indexDts: "../embedding-atlas/dist/index.d.ts" });
     },
   },
 });

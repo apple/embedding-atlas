@@ -14,13 +14,10 @@
     width = null,
     height = null,
     pixelRatio = null,
-    colorScheme = "light",
     theme = null,
+    config = null,
     viewportState = null,
-    automaticLabels = false,
-    mode = "density",
-    minimumDensity = 1 / 16,
-    pointSize = null,
+    labels = null,
     customTooltip = null,
     customOverlay = null,
     querySelection = null,
@@ -29,6 +26,7 @@
     onTooltip = null,
     onSelection = null,
     onRangeSelection = null,
+    cache = null,
   }: EmbeddingViewProps = $props();
 
   let derivedProperties = $derived(computeDerivedProperties(data));
@@ -60,12 +58,11 @@
 </script>
 
 <EmbeddingViewImpl
-  mode={mode ?? "points"}
   width={width ?? 800}
   height={height ?? 800}
   pixelRatio={pixelRatio ?? 2}
-  colorScheme={colorScheme ?? "light"}
   theme={theme}
+  config={config}
   data={{ x: data.x, y: data.y, category: data.category ?? null }}
   totalCount={derivedProperties.count}
   maxDensity={derivedProperties.maxDensity}
@@ -74,8 +71,7 @@
   defaultViewportState={derivedProperties.defaultViewportState}
   querySelection={querySelection}
   queryClusterLabels={queryClusterLabels}
-  automaticLabels={automaticLabels ?? false}
-  minimumDensity={minimumDensity ?? 1 / 16}
+  labels={labels}
   customTooltip={customTooltip}
   customOverlay={customOverlay}
   tooltip={tooltip}
@@ -86,5 +82,5 @@
   onViewportState={onViewportState}
   rangeSelection={rangeSelection}
   onRangeSelection={onRangeSelection}
-  userPointSize={pointSize}
+  cache={cache}
 />

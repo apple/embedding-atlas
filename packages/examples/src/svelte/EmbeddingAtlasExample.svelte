@@ -20,10 +20,12 @@
   <div class="w-full h-full">
     <EmbeddingAtlas
       coordinator={coordinator}
-      table="dataset"
-      idColumn="id"
-      textColumn="text"
-      projectionColumns={{ x: "x", y: "y" }}
+      data={{
+        table: "dataset",
+        id: "id",
+        text: "text",
+        projection: { x: "x", y: "y" },
+      }}
     />
   </div>
 {/await}

@@ -7,7 +7,7 @@ We also provide React and Svelte wrappers of the component to easily include it 
 <p class="light-only"><img style="margin: 0 auto;" src="./assets/component-light.png" /></p>
 <p class="dark-only"><img style="margin: 0 auto;" src="./assets/component-dark.png" /></p>
 
-```
+```bash
 npm install embedding-atlas
 ```
 
@@ -78,121 +78,31 @@ component.destroy();
 
 The view can be configured with the following properties (props):
 
-### data `{ x: Float32Array, y: Float32Array, category?: Uint8Array }`
+<!-- @doc(ts): EmbeddingViewProps -->
 
-Required. The data to the component. `x` and `y` must be `Float32Array`, and `category`, if provided, must be `Uint8Array`.
+## Config
 
-### tooltip `DataPoint | null`
+You can pass in an object with the following properties to the `config` property of the embedding view:
 
-The current tooltip. The tooltip is an object with the following fields: `x`, `y`, `category`, `text`, `identifier`.
+<!-- @doc(ts): EmbeddingViewConfig -->
 
-To listen for a tooltip change, use `onTooltip`.
+## Theme
 
-### selection `DataPoint[] | null`
-
-The current single or multiple point selection. Selection is triggered by clicking on the points (shift/cmd+click will toggle points). The selection is an array of objects with the following fields: `x`, `y`, `category`, `text`, `identifier`.
-
-To listen to selection change, use `onSelection`.
-
-### rangeSelection `Rectangle | Point[] | null`
-
-A rectangle or a polygon (list of points) that represents the range selection.
-If the value is a list of points, it is interpreted as a lasso selection
-with a closed polygon with the list of points as vertices.
-
-### categoryColors `string[] | null`
-
-The colors for the categories. Category `i` will use the `i`-th color from this list. If not specified, default colors will be used.
-
-### mode `"points" | "density" | null`
-
-The rendering mode. In `points` mode, the view will simply render each data point individually. In `density` mode, the view will show a density estimation as a contour plot when zoomed out.
-
-### width, height `number | null`
-
-The width and height of the view.
-
-### pixelRatio `number | null`
-
-The pixel ratio of the view.
-
-### colorScheme `"light" | "dark" | null`
-
-Set light or dark mode.
-
-### theme `Theme | null`
-
-Configure the theme of the view. `Theme` is defined as the following:
+You can pass in an object with the following properties to the `theme` property of the embedding view.
+You can also provide these options as `light` and/or `dark` properties, which will control the appearance of the view depending on its `colorScheme`. For example:
 
 ```ts
-interface ThemeConfig {
-  fontFamily: string;
-  clusterLabelColor: string;
-  clusterLabelOutlineColor: string;
-  clusterLabelOpacity: number;
-  statusBar: boolean;
-  statusBarTextColor: string;
-  statusBarBackgroundColor: string;
-  brandingLink: { text: string; href: string } | null;
-}
-
-type Theme = Partial<ThemeConfig> & {
-  /** Overrides for light mode. */
-  dark?: Partial<ThemeConfig>;
-  /** Overrides for dark mode. */
-  light?: Partial<ThemeConfig>;
-};
-```
-
-### viewportState `ViewportState | null`
-
-The viewport state. You may use this to share viewport state across multiple views. If undefined or set to `null`, the view will use a default viewport state.
-
-To listen to viewport state change, use `onViewportState`.
-
-`ViewportState` is defined as the following:
-
-```ts
-interface ViewportState {
-  /** The x coordinate of the center of the viewport in data units. */
-  x: number;
-  /** The y coordinate of the center of the viewport in data units. */
-  y: number;
-  /** The scale of the viewport. This scales data units to [-1, 1]. */
-  scale: number;
+{
+  light: {
+    clusterLabelColor: "black";
+  }
+  dark: {
+    clusterLabelColor: "white";
+  }
 }
 ```
 
-### automaticLabels `boolean | null`
-
-Set to `true` to enable automatic labels from the `text` column.
-
-### onViewportState `((value: ViewportState) => void) | null`
-
-A callback for when viewportState changes.
-
-### onTooltip `((value: DataPoint | null) => void) | null`
-
-A callback for when tooltip changes.
-
-### onSelection `((value: DataPoint[] | null) => void) | null`
-
-A callback for when selection changes.
-
-### onRangeSelection `((value: Rectangle | Point[] | null) => void) | null`
-
-A callback for when rangeSelection changes.
-
-### querySelection `Function | null`
-
-An async function of type `(x: number, y: number, unitDistance: number) => Promise<DataPoint | null>`,
-that returns a data point near the given (x, y) location. The `unitDistance` parameter is the distance
-of a single pixel in data domain. You can use this to determine the distance threshold for selecting a point.
-
-### queryClusterLabels `Function | null`
-
-An async function of type `(clusters: Rectangle[][]) => Promise<(string | null)[]>`,
-that returns labels for a list of clusters. Each cluster is given as a list of rectangles that approximately cover the region.
+<!-- @doc(ts,no-required): EmbeddingViewTheme -->
 
 ## Custom Tooltip
 

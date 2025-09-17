@@ -10,17 +10,37 @@ html.dark .VPHero .image {
   mix-blend-mode: screen;
 }
 
-h3:has(code) {
+h3.doc-property {
   display: flex;
   gap: 10px;
+  min-height: 32px;
   align-items: center;
   background: var(--vp-c-gray-3);
   padding-left: 10px;
   border-radius: 4px;
 }
 
-h3:has(code) code {
+h3.doc-property code {
+  padding: 0.2rem 0.2rem;
+  line-height: 1rem;
   font-size: 0.75rem !important;
   color: var(--vp-c-indigo-2);
   background: none !important;
+}
+
+h4.doc-property {
+  display: flex;
+  gap: 10px;
+}
+
+h4.doc-property code {
+  padding: 0.2rem 0.2rem;
+  line-height: 1rem;
+  font-size: 0.75rem !important;
+  color: var(--vp-c-indigo-2);
+  margin-left: 5px;
+}
+
+.python-docstring dt {
+  font-weight: 600;
 }

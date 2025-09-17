@@ -57,21 +57,17 @@
 
   let {
     coordinator,
-    table,
-    idColumn,
-    projectionColumns,
-    neighborsColumn,
-    textColumn,
+    data,
+    initialState,
+    searcher: specifiedSearcher,
+    embeddingViewConfig = null,
+    embeddingViewLabels = null,
+    colorScheme,
+    tableCellRenderers,
     onExportApplication,
     onExportSelection,
     onStateChange,
-    initialState,
-    searcher: specifiedSearcher,
     cache,
-    automaticLabels,
-    pointSize = null,
-    colorScheme,
-    tableCellRenderers,
   }: EmbeddingAtlasProps = $props();
 
   const { darkMode, userDarkMode } = makeDarkModeStore();
@@ -96,31 +92,19 @@
   let initialized = $state(false);
 
   // View mode
-  let showEmbedding: boolean = $state(projectionColumns != null);
-  let showTable: boolean = $state(!(projectionColumns != null));
+  let showEmbedding: boolean = $state(data.projection != null);
+  let showTable: boolean = $state(!(data.projection != null));
   let showSidebar: boolean = $state(true);
 
   let tableHeight: number = $state(320);
   let panelWidth: number = $state(400);
 
-  const tableInfo = new TableInfo(coordinator, table);
+  const tableInfo = new TableInfo(coordinator, data.table);
 
   let embeddingViewMode: "points" | "density" = $state("points");
   let minimumDensityExpFactor: number = $state(0);
   let defaultViewportScale = $derived(
-    projectionColumns != null ? tableInfo.defaultViewportScale(projectionColumns.x, projectionColumns.y) : null,
-  );
-  let automaticLabelsConfig = $derived(
-    automaticLabels
-      ? cache != null
-        ? {
-            cache: {
-              get: (key: string) => cache.get("labels-" + key),
-              set: (key: string, value: any) => cache.set("labels-" + key, value),
-            },
-          }
-        : true
-      : false,
+    data.projection != null ? tableInfo.defaultViewportScale(data.projection.x, data.projection.y) : null,
   );
 
   let exportFormat: "json" | "jsonl" | "csv" | "parquet" = $state("parquet");
@@ -183,7 +167,7 @@
       let style = styles[column.name];
       if (style == null) {
         // Default display style
-        style = { display: textColumn == column.name ? "full" : "badge" };
+        style = { display: data.text == column.name ? "full" : "badge" };
       }
       result[column.name] = style;
     }
@@ -199,10 +183,10 @@
   let searcher = $derived(
     resolveSearcher({
       coordinator,
-      table,
-      idColumn,
-      textColumn,
-      neighborsColumn,
+      table: data.table,
+      idColumn: data.id,
+      textColumn: data.text,
+      neighborsColumn: data.neighbors,
       searcher: specifiedSearcher,
     }),
   );
@@ -280,8 +264,8 @@
     // And convert the search result ids to tuples.
     let result = await querySearchResultItems(
       coordinator,
-      table,
-      { id: idColumn, x: projectionColumns?.x, y: projectionColumns?.y, text: textColumn },
+      data.table,
+      { id: data.id, x: data.projection?.x, y: data.projection?.y, text: data.text },
       additionalFields,
       predicate,
       searcherResult,
@@ -351,16 +335,16 @@
 
     let scale = (await defaultViewportScale) * 2;
     if (x == null || y == null) {
-      if (projectionColumns == null) {
+      if (data.projection == null) {
         return;
       }
       let result: any = await coordinator.query(
-        SQL.Query.from(table)
+        SQL.Query.from(data.table)
           .select({
-            x: SQL.column(projectionColumns.x),
-            y: SQL.column(projectionColumns.y),
+            x: SQL.column(data.projection.x),
+            y: SQL.column(data.projection.y),
           })
-          .where(SQL.eq(SQL.column(idColumn), SQL.literal(identifier))),
+          .where(SQL.eq(SQL.column(data.id), SQL.literal(identifier))),
       );
       let item: { x: number; y: number } = result.get(0);
       x = item.x;
@@ -386,7 +370,7 @@
 
   function makeAdditionalFields(columns: any) {
     let fields: any = {};
-    fields.id = idColumn;
+    fields.id = data.id;
     for (let c of columns) {
       fields[c.name] = c.name;
     }
@@ -457,7 +441,7 @@
   }
 
   onMount(async () => {
-    let ignoreColumns = [idColumn, textColumn, projectionColumns?.x, projectionColumns?.y].filter((x) => x != null);
+    let ignoreColumns = [data.id, data.text, data.projection?.x, data.projection?.y].filter((x) => x != null);
     columns = (await tableInfo.columnDescriptions()).filter((x) => !x.name.startsWith("__"));
     if (plots.length == 0) {
       plots = await tableInfo.defaultPlots(columns.filter((x) => ignoreColumns.indexOf(x.name) < 0));
@@ -577,7 +561,7 @@
           style:opacity={showSidebar ? 1 : 0}
         >
           <div class="flex h-full gap-2 items-center justify-end whitespace-nowrap">
-            <FilteredCount filter={crossFilter} table={table} />
+            <FilteredCount filter={crossFilter} table={data.table} />
             <div class="flex flex-row gap-1 items-center">
               <button
                 class="flex px-2.5 mr-1 select-none items-center justify-center text-slate-500 dark:text-slate-300 rounded-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 focus-visible:outline-2 outline-blue-600 -outline-offset-1"
@@ -653,7 +637,7 @@
             }}
           />
         {/if}
-        {#if projectionColumns != null}
+        {#if data.projection != null}
           <ToggleButton icon={IconEmbeddingView} title="Show / hide embedding" bind:checked={showEmbedding} />
         {/if}
         <ToggleButton icon={IconTable} title="Show / hide table" bind:checked={showTable} />
@@ -663,22 +647,24 @@
     <div class="flex flex-row overflow-hidden h-full">
       {#if showTable || showEmbedding}
         <div class="flex-1 flex flex-col mt-0 ml-2 mb-2 mr-2 overflow-hidden">
-          {#if showEmbedding && projectionColumns != null}
+          {#if showEmbedding && data.projection != null}
             <div class="flex-1 relative bg-white dark:bg-black rounded-md overflow-hidden">
               <EmbeddingView
                 bind:this={embeddingView}
-                table={table}
+                table={data.table}
                 filter={crossFilter}
-                id={idColumn}
-                x={projectionColumns.x}
-                y={projectionColumns.y}
-                text={textColumn}
+                id={data.id}
+                x={data.projection.x}
+                y={data.projection.y}
+                text={data.text}
                 additionalFields={additionalFields}
                 categoryLegend={categoryLegend}
-                mode={embeddingViewMode}
-                minimumDensityExpFactor={minimumDensityExpFactor}
-                automaticLabels={automaticLabelsConfig}
-                pointSize={pointSize}
+                config={{
+                  ...(embeddingViewConfig ?? {}),
+                  mode: embeddingViewMode,
+                  minimumDensity: (1 / 16) * Math.exp(-(minimumDensityExpFactor ?? 0)),
+                }}
+                labels={embeddingViewLabels}
                 customTooltip={{
                   class: CustomTooltip,
                   props: {
@@ -696,6 +682,7 @@
                   : null}
                 onClickPoint={(p) => scrollTableTo(p.identifier)}
                 stateStore={plotStateStores.store("embedding-view")}
+                cache={cache}
               />
             </div>
           {/if}
@@ -721,8 +708,8 @@
                 {#key columns}
                   <Table
                     coordinator={coordinator}
-                    table={table}
-                    rowKey={idColumn}
+                    table={data.table}
+                    rowKey={data.id}
                     columns={columns.map((x) => x.name)}
                     filter={crossFilter}
                     scrollTo={tableScrollTo}
@@ -767,7 +754,7 @@
           >
             <PlotList
               bind:plots={plots}
-              table={table}
+              table={data.table}
               columns={columns}
               filter={crossFilter}
               layout={fullWidth ? "full" : "sidebar"}

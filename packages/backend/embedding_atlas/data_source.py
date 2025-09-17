@@ -42,7 +42,7 @@ class DataSource:
                 "data/metadata.json",
                 json.dumps(
                     self.metadata
-                    | {"is_static": True, "database": {"type": "wasm", "load": True}}
+                    | {"isStatic": True, "database": {"type": "wasm", "load": True}}
                 ),
             )
             zip.writestr("data/dataset.parquet", to_parquet_bytes(self.dataset))
