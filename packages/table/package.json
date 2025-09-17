@@ -28,8 +28,8 @@
     }
   },
   "peerDependencies": {
-    "@uwdata/mosaic-core": ">=0.15.0",
-    "@uwdata/mosaic-sql": ">=0.15.0",
+    "@uwdata/mosaic-core": ">=0.19.0",
+    "@uwdata/mosaic-sql": ">=0.19.0",
     "svelte": "^5.0.0"
   },
   "devDependencies": {
