@@ -451,6 +451,8 @@
       } catch (e) {}
     }
   }
+
+  let paddedWidth = $derived(panelWidth - 149.5 - ($darkMode ? 0 : 1) + (colorScheme == null ? 30 : 0));
 </script>
 
 <div class="embedding-atlas-root" style:width="100%" style:height="100%">
@@ -545,7 +547,7 @@
       <div
         class="relative h-full"
         style:--sidebar-tween={sidebarTween.current}
-        style:--padded-width="calc({panelWidth}px - 149.5px - {$darkMode ? 0 : 1}px)"
+        style:--padded-width="{paddedWidth}px"
         style:max-width="var(--padded-width)"
         style:flex-basis="calc(var(--padded-width) * var(--sidebar-tween))"
       >
@@ -621,7 +623,7 @@
             <div>Embedding Atlas, {EMBEDDING_ATLAS_VERSION}</div>
           </div>
         </PopupButton>
-        {#if colorScheme == null}
+        {#if colorScheme == null && false}
           <Button
             icon={$darkMode ? IconLightMode : IconDarkMode}
             title="Toggle dark mode"
