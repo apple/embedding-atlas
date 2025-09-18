@@ -452,7 +452,7 @@
     }
   }
 
-  let paddedWidth = $derived(panelWidth - 149.5 - ($darkMode ? 0 : 1) + (colorScheme == null ? 30 : 0));
+  let paddedWidth = $derived(panelWidth - 149.5 - ($darkMode ? 0 : 1) + (colorScheme != null ? 30 : 0));
 </script>
 
 <div class="embedding-atlas-root" style:width="100%" style:height="100%">
@@ -623,7 +623,7 @@
             <div>Embedding Atlas, {EMBEDDING_ATLAS_VERSION}</div>
           </div>
         </PopupButton>
-        {#if colorScheme == null && false}
+        {#if colorScheme == null}
           <Button
             icon={$darkMode ? IconLightMode : IconDarkMode}
             title="Toggle dark mode"
