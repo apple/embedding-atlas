@@ -153,7 +153,7 @@ function debounce<T extends any[]>(func: (...args: T) => void, time: number = 10
 }
 
 function isVSCode() {
-  return typeof (window as any).vscIPyWidgets !== undefined;
+  return typeof (window as any).vscIPyWidgets !== "undefined";
 }
 
 export default { initialize, render };
