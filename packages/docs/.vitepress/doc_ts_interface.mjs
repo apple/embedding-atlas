@@ -57,7 +57,7 @@ function renderType(type) {
     }
     type = n;
   }
-  return type.replaceAll("\n", "");
+  return type.replaceAll("\n", " ");
 }
 
 const loadFileCache = new Map();

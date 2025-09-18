@@ -457,6 +457,7 @@
   <div
     class="w-full h-full flex flex-col text-slate-800 bg-slate-200 dark:text-slate-200 dark:bg-slate-800"
     class:dark={$darkMode}
+    style:color-scheme={$darkMode ? "dark" : "light"}
   >
     <div class="m-2 flex flex-row justify-between items-center">
       <div class="flex flex-row flex-1 justify-between">
