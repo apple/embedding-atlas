@@ -4,6 +4,7 @@ import { EmbeddingAtlas, type EmbeddingAtlasProps, type EmbeddingAtlasState } fr
 import { type Connector, Coordinator, decodeIPC } from "@uwdata/mosaic-core";
 
 import type { AnyModel, Initialize, Render } from "anywidget/types";
+import { parseCSSColor } from "../streamlit/utils";
 
 interface Model {
   _props: Omit<EmbeddingAtlasProps, "coordinator">;
@@ -110,6 +111,7 @@ const render: Render<Model> = (view) => {
       coordinator: coordinator,
       ...props,
       ...(state != null ? { initialState: state } : {}),
+      colorScheme: detectColorScheme(container),
       onStateChange: debounce(saveState, 200),
     };
   }
@@ -124,6 +126,16 @@ const render: Render<Model> = (view) => {
     } else {
       container.replaceChildren();
       component = new EmbeddingAtlas(container, props);
+
+      let currentColorScheme = props.colorScheme;
+      let observer = new MutationObserver(() => {
+        let newValue = detectColorScheme(container);
+        if (newValue !== currentColorScheme && newValue != null) {
+          component?.update({ colorScheme: newValue });
+          currentColorScheme = newValue;
+        }
+      });
+      observer.observe(document.body, { attributes: true, attributeFilter: ["style", "class"] });
     }
   }
 
@@ -154,6 +166,16 @@ function debounce<T extends any[]>(func: (...args: T) => void, time: number = 10
 
 function isVSCode() {
   return typeof (window as any).vscIPyWidgets !== "undefined";
+}
+
+function detectColorScheme(container: HTMLElement): "light" | "dark" | undefined {
+  let color = getComputedStyle(container).getPropertyValue("--jp-layout-color0")?.trim();
+  if (color == null) {
+    return undefined;
+  }
+  let { r, g, b } = parseCSSColor(color);
+  let grayscale = 0.299 * r + 0.587 * g + 0.114 * b;
+  return grayscale < 128 ? "dark" : "light";
 }
 
 export default { initialize, render };
