@@ -54,8 +54,37 @@ function makeDatabaseConnector(model: AnyModel<Model>): Connector {
 const initialize: Initialize<Model> = (view) => {};
 
 const render: Render<Model> = (view) => {
+  // Configure view style
+  let container = document.createElement("div");
+  container.className = "embedding-atlas-widget-container";
+  container.style.height = "650px";
+  container.style.resize = "vertical";
+  container.style.overflow = "hidden";
+
+  view.el.replaceChildren(container);
+
+  if (isVSCode()) {
+    // Stop wheel event propagation to prevent scrolling problems.
+    container.onwheel = (e) => {
+      e.stopPropagation();
+    };
+
+    // Override the ".cell-output-ipywidget-background" class to remove padding and white background.
+    let style = document.createElement("style");
+    style.textContent = `
+      .cell-output-ipywidget-background:has(.embedding-atlas-widget-container) {
+        background: transparent !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+      }
+    `;
+    view.el.appendChild(style);
+  }
+
   const coordinator = new Coordinator();
   coordinator.databaseConnector(makeDatabaseConnector(view.model));
+
+  let component: EmbeddingAtlas | null = null;
 
   function saveState(state: EmbeddingAtlasState) {
     view.model.set("_state", JSON.stringify(state));
@@ -63,15 +92,20 @@ const render: Render<Model> = (view) => {
     view.model.save_changes();
   }
 
-  function getProps(): EmbeddingAtlasProps {
+  function getProps(): EmbeddingAtlasProps | null {
     let props = view.model.get("_props");
     let stateJSON = view.model.get("_state");
+    if (props == null || props.data == null) {
+      // The props is not ready yet
+      return null;
+    }
     let state: EmbeddingAtlasState | null = null;
     try {
       if (stateJSON) {
         state = JSON.parse(stateJSON);
       }
     } catch (e) {}
+
     return {
       coordinator: coordinator,
       ...props,
@@ -80,18 +114,27 @@ const render: Render<Model> = (view) => {
     };
   }
 
-  // Configure view style
-  let container = document.createElement("div");
-  container.style.height = "650px";
-  container.style.resize = "vertical";
-  container.style.overflow = "auto";
-  view.el.replaceChildren(container);
+  function createOrUpdate() {
+    let props = getProps();
+    if (props == null) {
+      return;
+    }
+    if (component != null) {
+      component.update(props);
+    } else {
+      container.replaceChildren();
+      component = new EmbeddingAtlas(container, props);
+    }
+  }
 
-  // Create the component
-  const component = new EmbeddingAtlas(container, getProps());
+  view.model.on("change:_props", () => {
+    createOrUpdate();
+  });
+
+  setTimeout(createOrUpdate, 10);
 
   return () => {
-    component.destroy();
+    component?.destroy();
     coordinator.clear();
   };
 };
@@ -107,6 +150,10 @@ function debounce<T extends any[]>(func: (...args: T) => void, time: number = 10
     }, time);
   };
   return perform;
+}
+
+function isVSCode() {
+  return typeof (window as any).vscIPyWidgets !== undefined;
 }
 
 export default { initialize, render };
