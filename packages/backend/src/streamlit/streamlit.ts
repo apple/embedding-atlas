@@ -4,7 +4,7 @@ import { EmbeddingAtlas, type EmbeddingAtlasProps } from "@embedding-atlas/viewe
 import { Coordinator, wasmConnector } from "@uwdata/mosaic-core";
 import { ArrowTable, type RenderData, Streamlit } from "streamlit-component-lib";
 
-import { debounce } from "./utils.js";
+import { debounce } from "../utils.js";
 
 const coordinator = new Coordinator();
 const connector = wasmConnector();

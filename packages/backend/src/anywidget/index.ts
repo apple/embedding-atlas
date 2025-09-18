@@ -2,9 +2,9 @@
 
 import { EmbeddingAtlas, type EmbeddingAtlasProps, type EmbeddingAtlasState } from "@embedding-atlas/viewer";
 import { type Connector, Coordinator, decodeIPC } from "@uwdata/mosaic-core";
-
 import type { AnyModel, Initialize, Render } from "anywidget/types";
-import { parseCSSColor } from "../streamlit/utils";
+
+import { parseCSSColor } from "../utils.js";
 
 interface Model {
   _props: Omit<EmbeddingAtlasProps, "coordinator">;
