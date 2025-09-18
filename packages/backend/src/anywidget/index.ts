@@ -169,8 +169,13 @@ function isVSCode() {
 }
 
 function detectColorScheme(container: HTMLElement): "light" | "dark" | undefined {
-  let color = getComputedStyle(container).getPropertyValue("--jp-layout-color0")?.trim();
-  if (color == null) {
+  let color: string | undefined = undefined;
+  if (isVSCode()) {
+    color = getComputedStyle(container).getPropertyValue("--theme-background")?.trim();
+  } else {
+    color = getComputedStyle(container).getPropertyValue("--jp-layout-color0")?.trim();
+  }
+  if (color == undefined) {
     return undefined;
   }
   let { r, g, b } = parseCSSColor(color);
