@@ -4,8 +4,7 @@
 [![PyPI - Version](https://img.shields.io/pypi/v/embedding-atlas)](https://pypi.org/project/embedding-atlas/)
 [![Paper](https://img.shields.io/badge/paper-arXiv:2505.06386-b31b1b.svg)](https://arxiv.org/abs/2505.06386)
 ![Build](https://github.com/apple/embedding-atlas/actions/workflows/ci.yml/badge.svg)
-![GitHub License](https://img.shields.io/github/license/apple/embedding-atlas)
-
+[![GitHub License](https://img.shields.io/github/license/apple/embedding-atlas)](./LICENSE)
 
 Embedding Atlas is a tool that provides interactive visualizations for large embeddings. It allows you to visualize, cross-filter, and search embeddings and metadata.
 
