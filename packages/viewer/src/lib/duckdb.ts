@@ -43,7 +43,7 @@ export async function createDuckDB({ log = false } = {}) {
   };
   // Select a bundle based on browser checks
   const bundle = await duckdb.selectBundle(MANUAL_BUNDLES);
-  // Instantiate the asynchronus version of DuckDB-wasm
+  // Instantiate the asynchronous version of DuckDB-wasm
   const worker = new Worker(bundle.mainWorker!);
   const logger = log ? new duckdb.ConsoleLogger() : new duckdb.VoidLogger();
   const db = new duckdb.AsyncDuckDB(logger, worker);
