@@ -114,6 +114,15 @@ jobs:
         run: |
           embedding-atlas --help
 
+          python -c "import embedding_atlas"
+          python -c "from embedding_atlas.projection import compute_text_projection, compute_image_projection, compute_vector_projection"
+
+          pip install jupyterlab anywidget
+          python -c "from embedding_atlas.widget import EmbeddingAtlasWidget"
+
+          pip install streamlit
+          python -c "from embedding_atlas.streamlit import embedding_atlas"
+
   publish-pypi:
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
