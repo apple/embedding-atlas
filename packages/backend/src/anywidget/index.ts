@@ -175,7 +175,14 @@ function detectColorScheme(container: HTMLElement): "light" | "dark" | undefined
   } else {
     color = getComputedStyle(container).getPropertyValue("--jp-layout-color0")?.trim();
   }
-  if (color == undefined) {
+
+  if (color == undefined || color.trim() == "") {
+    if (document.body.classList.contains("light")) {
+      return "light";
+    }
+    if (document.body.classList.contains("dark")) {
+      return "dark";
+    }
     return undefined;
   }
   let { r, g, b } = parseCSSColor(color);
