@@ -6,9 +6,9 @@ import pathlib
 from typing import Any, Unpack
 
 import duckdb
-import pyarrow as pa
 
 from .options import EmbeddingAtlasOptions, make_embedding_atlas_props
+from .utils import arrow_to_bytes
 
 try:
     import anywidget
@@ -161,12 +161,8 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
         try:
             if command == "arrow":
                 result = self._connection.query(sql).arrow()
-                sink = pa.BufferOutputStream()
-                with pa.ipc.new_stream(sink, result.schema) as writer:
-                    writer.write(result)
-                buf = sink.getvalue()
-
-                self.send({"type": "arrow", "uuid": uuid}, buffers=[buf.to_pybytes()])
+                buf = arrow_to_bytes(result)
+                self.send({"type": "arrow", "uuid": uuid}, buffers=[buf])
             elif command == "exec":
                 self._connection.execute(sql)
                 self.send({"type": "exec", "uuid": uuid})

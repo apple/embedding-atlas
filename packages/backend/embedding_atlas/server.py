@@ -10,14 +10,13 @@ from functools import lru_cache
 from typing import Callable
 
 import duckdb
-import pyarrow as pa
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .data_source import DataSource
-from .utils import to_parquet_bytes
+from .utils import arrow_to_bytes, to_parquet_bytes
 
 
 def make_server(
@@ -171,13 +170,6 @@ def make_server(
     app.mount("/", StaticFiles(directory=static_path, html=True))
 
     return app
-
-
-def arrow_to_bytes(arrow):
-    sink = pa.BufferOutputStream()
-    with pa.ipc.new_stream(sink, arrow.schema) as writer:
-        writer.write(arrow)
-    return sink.getvalue().to_pybytes()
 
 
 def parse_range_header(request: Request, content_length: int):

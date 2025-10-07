@@ -10,6 +10,7 @@ from typing import Any
 import inquirer
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 from platformdirs import user_cache_path
 
 logger = logging.getLogger()
@@ -64,6 +65,21 @@ def load_huggingface_data(filename: str, splits: list[str] | None) -> pd.DataFra
         dfs.append(df)
     df = pd.concat(dfs, ignore_index=True)
     return df
+
+
+def arrow_to_bytes(arrow: pa.Table | pa.RecordBatchReader):
+    if isinstance(arrow, pa.Table):
+        # DuckDB version < 1.4.0 returns a pa.Table
+        sink = pa.BufferOutputStream()
+        with pa.ipc.new_stream(sink, arrow.schema) as writer:
+            writer.write(arrow)
+        return sink.getvalue().to_pybytes()
+    else:
+        sink = pa.BufferOutputStream()
+        with pa.ipc.new_stream(sink, arrow.schema) as writer:
+            for batch in arrow:
+                writer.write_batch(batch)
+        return sink.getvalue().to_pybytes()
 
 
 def to_parquet_bytes(df: pd.DataFrame) -> bytes:
