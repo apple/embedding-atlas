@@ -177,7 +177,7 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
 @click.option(
     "--duckdb",
     type=str,
-    default="wasm",
+    default="server",
     help="DuckDB connection mode: 'wasm' (run in browser), 'server' (run on this server), or URI (e.g., 'ws://localhost:3000').",
 )
 @click.option(

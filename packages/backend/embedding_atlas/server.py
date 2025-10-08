@@ -79,20 +79,16 @@ def make_server(
         data = data_source.make_archive(static_path)
         return Response(content=data, media_type="application/zip")
 
-    # Database connection
-
-    @lru_cache(maxsize=1)
-    def get_connection():
-        con = duckdb.connect(":memory:")
-        df = data_source.dataset
-        _ = df
-        con.sql("CREATE TABLE dataset AS (SELECT * FROM df)")
-        return con
+    if duckdb_uri == "server":
+        duckdb_connection = make_duckdb_connection(data_source.dataset)
+    else:
+        duckdb_connection = None
 
     def handle_query(query: dict):
+        assert duckdb_connection is not None
         sql = query["sql"]
         command = query["type"]
-        with get_connection().cursor() as cursor:
+        with duckdb_connection.cursor() as cursor:
             try:
                 result = cursor.execute(sql)
                 if command == "exec":
@@ -111,6 +107,7 @@ def make_server(
                 return JSONResponse({"error": str(e)}, status_code=500)
 
     def handle_selection(query: dict):
+        assert duckdb_connection is not None
         predicate = query.get("predicate", None)
         format = query["format"]
         formats = {
@@ -119,7 +116,7 @@ def make_server(
             "csv": "(FORMAT CSV)",
             "parquet": "(FORMAT parquet)",
         }
-        with get_connection().cursor() as cursor:
+        with duckdb_connection.cursor() as cursor:
             filename = ".selection-" + str(uuid.uuid4()) + ".tmp"
             try:
                 if predicate is not None:
@@ -170,6 +167,13 @@ def make_server(
     app.mount("/", StaticFiles(directory=static_path, html=True))
 
     return app
+
+
+def make_duckdb_connection(df):
+    con = duckdb.connect(":memory:")
+    _ = df  # used in the query
+    con.sql("CREATE TABLE dataset AS (SELECT * FROM df)")
+    return con
 
 
 def parse_range_header(request: Request, content_length: int):
