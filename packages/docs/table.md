@@ -34,7 +34,7 @@ import { Table } from "embedding-atlas/svelte";
 
 ## API
 
-The Table component accepts a number of requiremed and optional properties.
+The Table component accepts a number of required and optional properties.
 
 <!-- @doc(ts): TableProps -->
 
