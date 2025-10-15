@@ -34,7 +34,7 @@ export default defineConfig({
         text: "Use Embedding Atlas",
         items: [
           { text: "Command Line Utility", link: "/tool" },
-          { text: "Jupyter Widget", link: "/widget" },
+          { text: "Python Notebook Widget", link: "/widget" },
           { text: "Streamlit Component", link: "/streamlit" },
         ],
       },

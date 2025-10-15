@@ -1,6 +1,6 @@
 # Embedding Atlas
 
-A Python package that provides a command line tool to visualize a dataset with embeddings. It also includes a Jupyter widget and a Streamlit widget.
+A Python package that provides a command line tool to visualize a dataset with embeddings. It also includes a Python Notebook (e.g., Jupyter) widget and a Streamlit widget.
 
 - Documentation: https://apple.github.io/embedding-atlas
 - GitHub: https://github.com/apple/embedding-atlas

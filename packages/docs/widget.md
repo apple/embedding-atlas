@@ -1,6 +1,6 @@
-# Jupyter Widget
+# Python Notebook Widget
 
-The Python package also provides a Jupyter widget to use Embedding Atlas in your notebooks.
+The Python package also provides a Python notebook widget to use Embedding Atlas in your notebooks. The widget uses [AnyWidget](https://anywidget.dev) and supports Jupyter, Marimo, Colab, VSCode, and more.
 
 ## Installation
 

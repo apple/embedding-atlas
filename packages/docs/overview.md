@@ -8,7 +8,7 @@ Embedding Atlas is released as two packages:
 
 - A Python package `embedding-atlas` that provides:
   - A [command line utility](./tool.md) for running Embedding Atlas on a data frame.
-  - A [Jupyter widget](./widget.md) for using Embedding Atlas in Jupyter notebooks.
+  - A [Python Notebook widget](./widget.md) for using Embedding Atlas in interactive Python notebooks.
   - A [Streamlit component](./streamlit.md) for using Embedding Atlas in Streamlit apps.
 
 All of these approaches allow you to compute embeddings (with custom models) and projections.
