@@ -104,7 +104,9 @@ def _project_text_with_sentence_transformers(
 ) -> np.ndarray:
     from sentence_transformers import SentenceTransformer
 
-    default_args = {"trust_remote_code": False}
+    default_args = {
+        "trust_remote_code": False,
+    }
     merged_args = {**default_args, **(args or {})}
 
     logger.info("Loading model %s...", model)
