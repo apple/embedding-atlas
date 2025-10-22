@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Literal
 
 import numpy as np
 import pandas as pd
@@ -88,15 +89,96 @@ def _run_umap(
     return Projection(projection=result, knn_indices=knn[0], knn_distances=knn[1])
 
 
+# Signature of a function that takes a list of strings, batch size, model name, and optional args, and returns a numpy array of embeddings.
+TextProjectorCallback = Callable[
+    [list[str], int, str, dict | None],
+    np.ndarray,
+]
+
+
+def _project_text_with_sentence_transformers(
+    texts: list[str],
+    batch_size: int,
+    model: str,
+    args: dict | None = None,
+) -> np.ndarray:
+    from sentence_transformers import SentenceTransformer
+
+    default_args = {"trust_remote_code": False}
+    merged_args = {**default_args, **(args or {})}
+
+    logger.info("Loading model %s...", model)
+    transformer = SentenceTransformer(model, **merged_args)
+    return transformer.encode(texts, batch_size=batch_size)
+
+
+def _project_text_with_litellm(
+    texts: list[str],
+    batch_size: int,
+    model: str,
+    args: dict | None = None,
+) -> np.ndarray:
+    from litellm import EmbeddingResponse, aembedding, embedding
+
+    default_args = {
+        "sync": False,
+    }
+    merged_args = {**default_args, **(args or {})}
+
+    def run_sync() -> list[EmbeddingResponse]:
+        # Process batches synchronously
+        return [
+            embedding(
+                input=texts[i : i + batch_size],
+                model=model,
+                **merged_args,
+            )
+            for i in range(0, len(texts), batch_size)
+        ]
+
+    def run_async() -> list[EmbeddingResponse]:
+        import asyncio
+
+        # Create coroutines for each batch for asynchronous processing
+        response_coroutines = [
+            aembedding(
+                input=texts[i : i + batch_size],
+                model=model,
+                **merged_args,
+            )
+            for i in range(0, len(texts), batch_size)
+        ]
+
+        # Run all coroutines and gather results
+        return asyncio.run(asyncio.gather(*response_coroutines))
+
+    # Determine whether to run synchronously or asynchronously
+    should_run_sync: bool = merged_args["sync"]
+    responses = run_sync() if should_run_sync else run_async()
+
+    # Unnest embeddings
+    return np.array(
+        [
+            np.array(item["embedding"])
+            for response in responses
+            for item in response.data
+        ]
+    )
+
+
 def _projection_for_texts(
     texts: list[str],
     model: str | None = None,
-    trust_remote_code: bool = False,
     batch_size: int | None = None,
+    text_projector_args: dict | None = None,
+    text_projector: TextProjectorCallback | None = None,
     umap_args: dict = {},
 ) -> Projection:
     if model is None:
         model = "all-MiniLM-L6-v2"
+    if text_projector is None:
+        text_projector = _project_text_with_sentence_transformers
+
     hasher = Hasher()
     hasher.update(
         {
@@ -114,19 +196,21 @@ def _projection_for_texts(
         logger.info("Using cached projection from %s", str(cpath))
         return Projection.load(cpath)
 
-    # Import on demand.
-    from sentence_transformers import SentenceTransformer
-
     # Set default batch size if not provided
     if batch_size is None:
         batch_size = 32
-        logger.info("Using default batch size of %d for text. Adjust with --batch-size if you encounter memory issues or want to speed up processing.", batch_size)
+        logger.info(
+            "Using default batch size of %d for text. Adjust with --batch-size if you encounter memory issues or want to speed up processing.",
+            batch_size,
+        )
 
-    logger.info("Loading model %s...", model)
-    transformer = SentenceTransformer(model, trust_remote_code=trust_remote_code)
-
-    logger.info("Running embedding for %d texts with batch size %d...", len(texts), batch_size)
-    hidden_vectors = transformer.encode(texts, batch_size=batch_size)
+    logger.info(
+        "Running embedding for %d texts with batch size %d using %s...",
+        len(texts),
+        batch_size,
+        text_projector.__name__,
+    )
+    hidden_vectors = text_projector(texts, batch_size, model, text_projector_args)
 
     result = _run_umap(hidden_vectors, umap_args)
     Projection.save(cpath, result)
@@ -182,9 +266,14 @@ def _projection_for_images(
     # Set default batch size if not provided
     if batch_size is None:
         batch_size = 16
-        logger.info("Using default batch size of %d for images. Adjust with --batch-size if you encounter memory issues or want to speed up processing.", batch_size)
-    
-    logger.info("Running embedding for %d images with batch size %d...", len(images), batch_size)
+        logger.info(
+            "Using default batch size of %d for images. Adjust with --batch-size if you encounter memory issues or want to speed up processing.",
+            batch_size,
+        )
+
+    logger.info(
+        "Running embedding for %d images with batch size %d...", len(images), batch_size
+    )
     tensors = []
 
     current_batch = []
@@ -212,6 +301,20 @@ def _projection_for_images(
     return result
 
 
+def _find_text_projector_callback(name: str) -> TextProjectorCallback:
+    projector_map = {
+        "sentence_transformers": _project_text_with_sentence_transformers,
+        "litellm": _project_text_with_litellm,
+    }
+
+    if name in projector_map:
+        return projector_map[name]
+
+    raise ValueError(
+        f"Unknown text projector: {name}. Must be one of: {list(projector_map.keys())}"
+    )
+
+
 def compute_text_projection(
     data_frame: pd.DataFrame,
     text: str,
@@ -219,16 +322,19 @@ def compute_text_projection(
     y: str = "projection_y",
     neighbors: str | None = "neighbors",
     model: str | None = None,
-    trust_remote_code: bool = False,
     batch_size: int | None = None,
+    text_projector: Literal[
+        "sentence_transformers",
+        "litellm",
+    ] = "sentence_transformers",
     umap_args: dict = {},
+    **kwargs,
 ):
     """
     Compute text embeddings and generate 2D projections using UMAP.
 
-    This function processes text data by creating embeddings using a SentenceTransformer
-    model and then reducing the dimensionality to 2D coordinates using UMAP for
-    visualization purposes.
+    This function processes text data by creating embeddings and then reducing the
+    dimensionality to 2D coordinates using UMAP for visualization purposes.
 
     Args:
         data_frame: pandas DataFrame containing the text data to process.
@@ -236,24 +342,55 @@ def compute_text_projection(
         x: str, column name where the UMAP X coordinates will be stored.
         y: str, column name where the UMAP Y coordinates will be stored.
         neighbors: str, column name where the nearest neighbor indices will be stored.
-        model: str, name or path of the SentenceTransformer model to use for embedding.
-        trust_remote_code: bool, whether to trust and execute remote code when loading
-            the model from HuggingFace Hub. Default is False.
-        batch_size: int, batch size for processing embeddings. Larger values use more 
-            memory but may be faster. Default is 32.
+        model: str, name or path of the embedding model to use. The interpretation
+            depends on the text_projector:
+            - For 'sentence_transformers': A SentenceTransformer model name or path.
+              See https://www.sbert.net/docs/sentence_transformer/pretrained_models.html
+            - For 'litellm': A LiteLLM-supported model identifier.
+              See https://docs.litellm.ai/docs/embedding/supported_embedding
+        batch_size: int, batch size for processing embeddings. Larger values use more
+            memory but may be faster. Default is 32. When using 'litellm', note that
+            different providers have different limits on input tokens per request, so
+            batch size should be set accordingly to avoid exceeding API limits.
+        text_projector: str, the embedding provider to use. Options are:
+            - 'sentence_transformers' (default): Computes embeddings locally using the
+              SentenceTransformers library. Requires the sentence-transformers package.
+              This approach runs the model on your local machine and is suitable for
+              privacy-sensitive data or when you want full control over the embedding
+              process.
+            - 'litellm': Computes embeddings remotely using API calls through the LiteLLM
+              library. Requires the litellm package and appropriate API credentials.
+              This approach supports a wide range of cloud-based embedding APIs
+              (OpenAI, Cohere, Azure, etc.) and is useful when you want to leverage
+              remote models without local computational overhead.
         umap_args: dict, additional keyword arguments to pass to the UMAP algorithm
             (e.g., n_neighbors, min_dist, metric).
+        **kwargs: Additional configuration options for the embedding provider:
+            - For 'sentence_transformers': Options passed to SentenceTransformer.encode().
+              See https://www.sbert.net/docs/package_reference/sentence_transformer/SentenceTransformer.html#sentence_transformers.SentenceTransformer.encode
+              Common options include 'trust_remote_code', 'normalize_embeddings', etc.
+            - For 'litellm': Options passed to litellm.aembedding().
+              See https://docs.litellm.ai/docs/embedding/supported_embedding#input-params-for-litellmembedding
+              Common options include API keys, timeout settings, custom endpoints, etc.
+              Special option 'sync' (bool, default False): Controls whether embeddings are
+              processed asynchronously or synchronously. By default (False), batches are
+              processed asynchronously, which is ideal for remote APIs like OpenAI, Vertex AI,
+              etc., where the embedding happens on a remote instance and the task is IO-bound.
+              However, when performing embeddings through a locally-running server (e.g., Ollama),
+              setting sync=True can help avoid memory issues by processing batches sequentially.
 
     Returns:
         The input DataFrame with added columns for X, Y coordinates and nearest neighbors.
     """
-
     text_series = data_frame[text].astype(str).fillna("")
+    text_projector_callback = _find_text_projector_callback(text_projector)
+
     proj = _projection_for_texts(
         list(text_series),
         model=model,
-        trust_remote_code=trust_remote_code,
         batch_size=batch_size,
+        text_projector_args=kwargs,
+        text_projector=text_projector_callback,
         umap_args=umap_args,
     )
     data_frame[x] = proj.projection[:, 0]
@@ -350,7 +487,7 @@ def compute_image_projection(
         model: str, name or path of the model to use for embedding.
         trust_remote_code: bool, whether to trust and execute remote code when loading
             the model from HuggingFace Hub. Default is False.
-        batch_size: int, batch size for processing images. Larger values use more 
+        batch_size: int, batch size for processing images. Larger values use more
             memory but may be faster. Default is 16.
         umap_args: dict, additional keyword arguments to pass to the UMAP algorithm
             (e.g., n_neighbors, min_dist, metric).
