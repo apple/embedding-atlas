@@ -152,17 +152,15 @@ def _project_text_with_litellm(
                 for i in range(0, len(texts), batch_size)
             ]
 
-            # Gather all coroutines and return results
             return await asyncio.gather(*response_coroutines)
 
-        # Run the async coroutine
         return asyncio.run(run_async_coro())
 
     # Determine whether to run synchronously or asynchronously
     should_run_sync: bool = merged_args["sync"]
     responses = run_sync() if should_run_sync else run_async()
 
-    # Unnest embeddings
+    # Unnest embeddings from response wrapper objects
     return np.array(
         [
             np.array(item["embedding"])
