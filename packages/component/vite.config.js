@@ -38,7 +38,7 @@ export default defineConfig({
       formats: ["es"],
     },
     rollupOptions: {
-      external: ["@uwdata/mosaic-core", "@uwdata/mosaic-sql"],
+      external: ["@uwdata/mosaic-core", "@uwdata/mosaic-sql", "@embedding-atlas/utils"],
     },
     copyPublicDir: false,
   },

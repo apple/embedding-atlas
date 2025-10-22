@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import { beforeAll, describe, expect, test } from "vitest";
 import { createKNN, createUMAP, type UMAPOptions } from "../index.js";
 

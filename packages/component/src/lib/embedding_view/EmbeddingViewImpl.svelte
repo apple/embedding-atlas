@@ -90,6 +90,7 @@
 </script>
 
 <script lang="ts">
+  import { interactionHandler, type CursorValue } from "@embedding-atlas/utils";
   import { onDestroy, onMount } from "svelte";
 
   import EditableRectangle from "./EditableRectangle.svelte";
@@ -102,10 +103,8 @@
   import {
     cacheKeyForObject,
     deepEquals,
-    mouseEventHandlers,
     pointDistance,
     throttleTooltip,
-    type MouseModifiers,
     type Point,
     type Rectangle,
     type ViewportState,
@@ -169,6 +168,8 @@
   let resolvedViewport = $derived(new Viewport(resolvedViewportState, width, height));
   let pointLocation = $derived(resolvedViewport.pixelLocationFunction());
   let coordinateAtPoint = $derived(resolvedViewport.coordinateAtPixelFunction());
+
+  let preventHover = $state(false);
 
   function compareSelection(a: Selection, b: Selection) {
     return a.x == b.x && a.y == b.y && a.category == b.category && a.text == b.text;
@@ -392,6 +393,18 @@
     renderer = null;
   });
 
+  function localCoordinates(e: { clientX: number; clientY: number }): Point {
+    let rect = canvas?.getBoundingClientRect() ?? { left: 0, top: 0 };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function onWheel(e: WheelEvent) {
+    e.preventDefault();
+    let { x, y } = localCoordinates(e);
+    let scaler = Math.exp(-e.deltaY / 200);
+    onZoom(scaler, { x, y });
+  }
+
   function onZoom(scaler: number, position: Point) {
     let { x, y, scale } = resolvedViewportState;
     setTooltip(null);
@@ -409,28 +422,31 @@
     });
   }
 
-  function onDrag(p1: Point, modifiers: { shift: boolean; meta: boolean }) {
+  function onDrag(e1: CursorValue) {
     setTooltip(null);
 
     let mode: "marquee" | "lasso" | "pan" = "pan";
     if (selectionMode != "none") {
-      if (!modifiers.shift) {
+      if (!e1.modifiers.shift) {
         mode = selectionMode;
       }
     } else {
-      if (modifiers.shift) {
-        mode = modifiers.meta ? "lasso" : "marquee";
+      if (e1.modifiers.shift) {
+        mode = e1.modifiers.meta ? "lasso" : "marquee";
       }
     }
+
+    let p1 = localCoordinates(e1);
 
     switch (mode) {
       case "marquee": {
         return {
-          move: (p2: Point) => {
+          move: (e2: CursorValue) => {
             setTooltip(null);
             if (renderer == null) {
               return;
             }
+            let p2 = localCoordinates(e2);
             let l1 = coordinateAtPoint(p1.x, p1.y);
             let l2 = coordinateAtPoint(p2.x, p2.y);
             setRangeSelection({
@@ -445,11 +461,12 @@
       case "lasso": {
         let points = [coordinateAtPoint(p1.x, p1.y)];
         return {
-          move: (p2: Point) => {
+          move: (e2: CursorValue) => {
             setTooltip(null);
             if (renderer == null) {
               return;
             }
+            let p2 = localCoordinates(e2);
             points = [...points, coordinateAtPoint(p2.x, p2.y)];
             if (points.length >= 3) {
               setRangeSelection(simplifyPolygon(points, 24));
@@ -465,10 +482,10 @@
         let x0 = resolvedViewportState.x;
         let y0 = resolvedViewportState.y;
         return {
-          move: (p2: Point) => {
+          move: (e2: CursorValue) => {
             setViewportState({
-              x: x0 + (p2.x - p1.x) * sx,
-              y: y0 + (p2.y - p1.y) * sy,
+              x: x0 + (e2.clientX - e1.clientX) * sx,
+              y: y0 + (e2.clientY - e1.clientY) * sy,
               scale: resolvedViewportState.scale,
             });
           },
@@ -477,16 +494,16 @@
     }
   }
 
-  async function onClick(position: Point | null, modifiers: MouseModifiers) {
+  async function onClick(pointer: CursorValue) {
     if (rangeSelection != null) {
       setRangeSelection(null);
     } else {
-      const newSelection = await selectionFromPoint(position);
+      const newSelection = await selectionFromPoint(localCoordinates(pointer));
       if (newSelection == null) {
         setSelection([]);
         setTooltip(null);
       } else {
-        if (modifiers.shift || modifiers.ctrl || modifiers.meta) {
+        if (pointer.modifiers.shift || pointer.modifiers.ctrl || pointer.modifiers.meta) {
           // Toggle the point from the selection
           let index = selection?.findIndex((item) => {
             return item.x == newSelection.x && item.y == newSelection.y && item.category == newSelection.category;
@@ -506,16 +523,36 @@
     }
   }
 
-  async function onHover(position: Point | null) {
-    if (selection != null && selection.length == 1) {
-      let cSelection = pointLocation(selection[0].x, selection[0].y);
-      if (position != null && pointDistance(position, cSelection) < 10) {
-        setTooltip(selection[0]);
+  let onHoverThrottle = throttleTooltip(
+    async (pointer: CursorValue | null) => {
+      let position = pointer ? localCoordinates(pointer) : null;
+      if (selection != null && selection.length == 1) {
+        let cSelection = pointLocation(selection[0].x, selection[0].y);
+        if (position != null && pointDistance(position, cSelection) < 10) {
+          setTooltip(selection[0]);
+        }
+      } else {
+        setTooltip(await selectionFromPoint(position));
+      }
+    },
+    () => tooltip != null,
+  );
+
+  function onHover(e: CursorValue | null) {
+    if (e != null) {
+      if (!preventHover) {
+        onHoverThrottle(e);
       }
     } else {
-      setTooltip(await selectionFromPoint(position));
+      onHoverThrottle(null);
     }
   }
+
+  $effect.pre(() => {
+    if (preventHover) {
+      onHoverThrottle(null);
+    }
+  });
 
   async function selectionFromPoint(position: Point | null) {
     if (renderer == null || position == null || querySelection == null) {
@@ -525,21 +562,6 @@
     let r = Math.abs(coordinateAtPoint(position.x + 1, position.y).x - x);
     return await querySelection(x, y, r);
   }
-
-  function hasTooltip() {
-    return tooltip != null;
-  }
-
-  let mouseHandlers = $derived(
-    canvas
-      ? mouseEventHandlers(canvas, {
-          zoom: onZoom,
-          drag: onDrag,
-          hover: throttleTooltip(onHover, hasTooltip),
-          click: onClick,
-        })
-      : null,
-  );
 
   async function generateClusters(
     renderer: EmbeddingRenderer,
@@ -685,10 +707,12 @@
     style:left="0"
     style:top="0"
     role="none"
-    onwheel={mouseHandlers?.wheel}
-    onmousedown={mouseHandlers?.mousedown}
-    onmousemove={mouseHandlers?.mousemove}
-    onmouseleave={mouseHandlers?.mouseleave}
+    onwheel={onWheel}
+    use:interactionHandler={{
+      click: onClick,
+      drag: onDrag,
+      hover: onHover,
+    }}
   >
     <!-- Tooltip point -->
     {#if tooltip != null && renderer != null}
@@ -773,7 +797,9 @@
           onChange={setRangeSelection}
           pointLocation={pointLocation}
           coordinateAtPoint={coordinateAtPoint}
-          preventHover={mouseHandlers?.preventHover ?? (() => {})}
+          preventHover={(value) => {
+            preventHover = value;
+          }}
         />
       {/if}
     {/if}

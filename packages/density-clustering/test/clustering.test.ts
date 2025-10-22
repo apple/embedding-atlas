@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import { beforeAll, describe, expect, test } from "vitest";
 import { findClusters, type FindClustersOptions } from "../density_clustering_wasm/js/index.js";
 import * as cluster from "../density_clustering_wasm/pkg/density_clustering_wasm.js";

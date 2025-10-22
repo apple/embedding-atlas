@@ -35,13 +35,19 @@ export default defineConfig({
     target: "esnext",
     lib: {
       entry: {
-        index: "./src/lib/index.ts",
+        index: "./src/index.ts",
       },
       fileName: (_, entryName) => `${entryName}.js`,
       formats: ["es"],
     },
     rollupOptions: {
-      external: ["@uwdata/mosaic-core", "@uwdata/mosaic-spec", "@uwdata/mosaic-sql", "@uwdata/vgplot"],
+      external: [
+        "@uwdata/mosaic-core",
+        "@uwdata/mosaic-spec",
+        "@uwdata/mosaic-sql",
+        "@uwdata/vgplot",
+        "@embedding-atlas/utils",
+      ],
     },
     copyPublicDir: false,
     chunkSizeWarningLimit: 4096,

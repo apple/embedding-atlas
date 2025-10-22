@@ -4,11 +4,11 @@ import type { Coordinator, Selection } from "@uwdata/mosaic-core";
 import { createClassComponent } from "svelte/legacy";
 
 import Component from "./Table.svelte";
-
-import type { CustomCell, CustomCellsConfig } from "./api/custom-cells";
-import type { AdditionalHeaderContent, AdditionalHeaderContentsConfig } from "./api/custom-headers";
-import type { Theme } from "./api/style";
 import type { ColumnConfigChangeCallback, ColumnConfigs, RowClickCallback } from "./context/config.svelte";
+
+import type { CustomCell, CustomCellsConfig } from "./api/custom-cells.js";
+import type { AdditionalHeaderContent, AdditionalHeaderContentsConfig } from "./api/custom-headers.js";
+import type { Theme } from "./api/style.js";
 
 export interface TableProps {
   /** The Mosaic coordinator. If not specified, the default coordinator from Mosaic's `coordinator()` method will be used. */

@@ -2,6 +2,7 @@
   "name": "@embedding-atlas/workspace",
   "private": true,
   "workspaces": [
+    "packages/utils",
     "packages/component",
     "packages/viewer",
     "packages/table",
@@ -14,7 +15,7 @@
   ],
   "scripts": {
     "build": "./scripts/build.sh",
-    "test": "npm run test -w @embedding-atlas/density-clustering -w @embedding-atlas/umap-wasm",
+    "test": "npm run test -w @embedding-atlas/density-clustering -w @embedding-atlas/umap-wasm -w @embedding-atlas/utils",
     "check": "npm run check -w @embedding-atlas/component -w @embedding-atlas/table -w @embedding-atlas/viewer -w @embedding-atlas/embedding-atlas -w @embedding-atlas/examples -w @embedding-atlas/backend",
     "check-format": "prettier -c ."
   },

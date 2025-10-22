@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import { readFileSync } from "fs";
 import * as ts from "typescript";
 

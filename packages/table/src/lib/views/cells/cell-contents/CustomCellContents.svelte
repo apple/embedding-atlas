@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import type { CustomCell, CustomCellProps } from "../../../api/custom-cells";
+  import type { CustomCell, CustomCellProps } from "../../../api/custom-cells.js";
   import { Context } from "../../../context/context.svelte";
 
   interface Props {

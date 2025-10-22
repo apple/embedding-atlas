@@ -25,5 +25,6 @@ export default defineConfig({
     target: "esnext",
     copyPublicDir: false,
     chunkSizeWarningLimit: 4096,
+    emptyOutDir: true,
   },
 });

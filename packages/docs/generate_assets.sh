@@ -5,7 +5,7 @@ set -euxo pipefail
 # Create the upload page
 rm -rf public/upload
 cp -r ../viewer/dist public/upload
-python -c "fn='public/upload/index.html';c=open(fn).read().replace('viewer','upload');open(fn,'w').write(c);"
+sed 's/viewer/upload/g' ../viewer/dist/index.html > public/upload/index.html
 
 # Create the demo page
 if [ -d "demo-data" ]; then

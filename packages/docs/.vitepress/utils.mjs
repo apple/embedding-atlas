@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 export function deindent(code) {
   let lines = code.split(/\r?\n/);
   let indent = null;

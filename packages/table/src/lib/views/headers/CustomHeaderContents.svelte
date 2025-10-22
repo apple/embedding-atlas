@@ -1,7 +1,8 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import type { AdditionalHeaderContent, AdditionalHeaderContentProps } from "../../api/custom-headers";
   import { Context } from "../../context/context.svelte";
+
+  import type { AdditionalHeaderContent, AdditionalHeaderContentProps } from "../../api/custom-headers.js";
 
   interface Props {
     col: string;

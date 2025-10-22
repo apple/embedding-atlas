@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 /** UMAP options */
 export interface UMAPOptions {
   /** The input distance metric */

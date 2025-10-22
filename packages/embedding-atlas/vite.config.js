@@ -53,6 +53,9 @@ export default defineConfig({
     },
     rollupOptions: {
       external: ["react", "@uwdata/mosaic-core", "@uwdata/mosaic-spec", "@uwdata/mosaic-sql", "@uwdata/vgplot"],
+      output: {
+        chunkFileNames: "chunk-[hash].js",
+      },
     },
     copyPublicDir: false,
     chunkSizeWarningLimit: 4096,

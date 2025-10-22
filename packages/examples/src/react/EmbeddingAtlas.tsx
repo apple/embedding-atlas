@@ -5,7 +5,7 @@ import * as React from "react";
 import { useEffect, useState } from "react";
 
 import { EmbeddingAtlas } from "embedding-atlas/react";
-import { createSampleDataTable } from "../sample_datasets";
+import { createSampleDataTable } from "../sample_datasets.js";
 
 export default function Component() {
   let [coordinator, _] = useState(() => new Coordinator());

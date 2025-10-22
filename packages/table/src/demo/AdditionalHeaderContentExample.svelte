@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import type { AdditionalHeaderContentProps } from "../lib/api/custom-headers";
+  import type { AdditionalHeaderContentProps } from "../lib/api/custom-headers.js";
 
   interface Props extends AdditionalHeaderContentProps {}
 

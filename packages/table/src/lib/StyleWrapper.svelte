@@ -1,8 +1,10 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
   import { onMount, type Snippet } from "svelte";
-  import { resolveTheme, type Theme } from "./api/style";
+
   import { StyleContext } from "./context/style.svelte";
+
+  import { resolveTheme, type Theme } from "./api/style.js";
 
   interface Props {
     children: Snippet;

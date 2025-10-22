@@ -1,10 +1,9 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import { debounce } from "@embedding-atlas/utils";
 import { EmbeddingAtlas, type EmbeddingAtlasProps } from "@embedding-atlas/viewer";
 import { Coordinator, wasmConnector } from "@uwdata/mosaic-core";
 import { ArrowTable, type RenderData, Streamlit } from "streamlit-component-lib";
-
-import { debounce } from "../utils.js";
 
 const coordinator = new Coordinator();
 const connector = wasmConnector();

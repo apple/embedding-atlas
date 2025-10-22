@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import { execSync } from "child_process";
 import { resolve } from "path";
 

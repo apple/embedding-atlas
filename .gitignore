@@ -6,6 +6,7 @@ build/
 dist/
 distlib/
 target/
+*.tsbuildinfo
 .svelte-kit/
 .env
 .env.*

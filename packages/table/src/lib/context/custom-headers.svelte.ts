@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import { getContext, setContext } from "svelte";
-import type { AdditionalHeaderContentsConfig } from "../api/custom-headers";
+
+import type { AdditionalHeaderContentsConfig } from "../api/custom-headers.js";
 
 export class CustomHeadersState {
   config: AdditionalHeaderContentsConfig = $state({});

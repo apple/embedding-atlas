@@ -4,6 +4,10 @@
 
 set -euxo pipefail
 
+pushd packages/utils
+npm run package
+popd
+
 pushd packages/component
 npm run package
 popd

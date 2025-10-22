@@ -1,5 +1,7 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
+  import { interactionHandler, type CursorValue } from "@embedding-atlas/utils";
+
   import type { Point, Rectangle } from "../utils.js";
 
   interface Props {
@@ -17,33 +19,31 @@
 
   const borderWidth = 8;
 
-  function startDrag(mask: number[]): (e: MouseEvent) => void {
-    return (e1: MouseEvent) => {
-      e1.stopPropagation();
-      e1.preventDefault();
+  function startDrag(mask: number[]) {
+    return (e1: CursorValue) => {
       preventHover(true);
       let p = [l1.x, l1.y, l2.x, l2.y];
-      let onMove = (e2: MouseEvent) => {
-        e2.preventDefault();
-        let dx = e2.pageX - e1.pageX;
-        let dy = e2.pageY - e1.pageY;
-        let np = [dx, dy, dx, dy].map((d, i) => p[i] + d * mask[i]);
-        let nc1 = coordinateAtPoint(np[0], np[1]);
-        let nc2 = coordinateAtPoint(np[2], np[3]);
-        onChange({
-          xMin: Math.min(nc1.x, nc2.x),
-          xMax: Math.max(nc1.x, nc2.x),
-          yMin: Math.min(nc1.y, nc2.y),
-          yMax: Math.max(nc1.y, nc2.y),
-        });
+      return {
+        move: (e2: CursorValue) => {
+          let dx = e2.pageX - e1.pageX;
+          let dy = e2.pageY - e1.pageY;
+          let np = [dx, dy, dx, dy].map((d, i) => p[i] + d * mask[i]);
+          let nc1 = coordinateAtPoint(np[0], np[1]);
+          let nc2 = coordinateAtPoint(np[2], np[3]);
+          onChange({
+            xMin: Math.min(nc1.x, nc2.x),
+            xMax: Math.max(nc1.x, nc2.x),
+            yMin: Math.min(nc1.y, nc2.y),
+            yMax: Math.max(nc1.y, nc2.y),
+          });
+        },
+        up: () => {
+          preventHover(false);
+        },
+        cancel: () => {
+          preventHover(false);
+        },
       };
-      let onUp = () => {
-        preventHover(false);
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
-      };
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
     };
   }
 </script>
@@ -57,7 +57,7 @@
     style:stroke="#fff"
     style:fill="rgba(128,128,128,0.25)"
     style:cursor="move"
-    onmousedown={startDrag([1, 1, 1, 1])}
+    use:interactionHandler={{ drag: startDrag([1, 1, 1, 1]) }}
     role="none"
   />
   <rect
@@ -66,7 +66,7 @@
     y={Math.min(l1.y, l2.y)}
     height={Math.abs(l1.y - l2.y)}
     style:cursor="ew-resize"
-    onmousedown={startDrag([1, 0, 0, 0])}
+    use:interactionHandler={{ drag: startDrag([1, 0, 0, 0]) }}
     style:stroke="none"
     style:fill="none"
     style:pointer-events="all"
@@ -78,7 +78,7 @@
     y={Math.min(l1.y, l2.y)}
     height={Math.abs(l1.y - l2.y)}
     style:cursor="ew-resize"
-    onmousedown={startDrag([0, 0, 1, 0])}
+    use:interactionHandler={{ drag: startDrag([0, 0, 1, 0]) }}
     style:stroke="none"
     style:fill="none"
     style:pointer-events="all"
@@ -90,7 +90,7 @@
     y={l1.y - borderWidth / 2}
     height={borderWidth}
     style:cursor="ns-resize"
-    onmousedown={startDrag([0, 1, 0, 0])}
+    use:interactionHandler={{ drag: startDrag([0, 1, 0, 0]) }}
     style:stroke="none"
     style:fill="none"
     style:pointer-events="all"
@@ -102,7 +102,7 @@
     y={l2.y - borderWidth / 2}
     height={borderWidth}
     style:cursor="ns-resize"
-    onmousedown={startDrag([0, 0, 0, 1])}
+    use:interactionHandler={{ drag: startDrag([0, 0, 0, 1]) }}
     style:stroke="none"
     style:fill="none"
     style:pointer-events="all"
@@ -114,7 +114,7 @@
     y={l1.y - borderWidth / 2}
     height={borderWidth}
     style:cursor="nesw-resize"
-    onmousedown={startDrag([1, 1, 0, 0])}
+    use:interactionHandler={{ drag: startDrag([1, 1, 0, 0]) }}
     style:stroke="none"
     style:fill="none"
     style:pointer-events="all"
@@ -126,7 +126,7 @@
     y={l2.y - borderWidth / 2}
     height={borderWidth}
     style:cursor="nwse-resize"
-    onmousedown={startDrag([1, 0, 0, 1])}
+    use:interactionHandler={{ drag: startDrag([1, 0, 0, 1]) }}
     style:stroke="none"
     style:fill="none"
     style:pointer-events="all"
@@ -138,7 +138,7 @@
     y={l1.y - borderWidth / 2}
     height={borderWidth}
     style:cursor="nwse-resize"
-    onmousedown={startDrag([0, 1, 1, 0])}
+    use:interactionHandler={{ drag: startDrag([0, 1, 1, 0]) }}
     style:stroke="none"
     style:fill="none"
     style:pointer-events="all"
@@ -150,7 +150,7 @@
     y={l2.y - borderWidth / 2}
     height={borderWidth}
     style:cursor="nesw-resize"
-    onmousedown={startDrag([0, 0, 1, 1])}
+    use:interactionHandler={{ drag: startDrag([0, 0, 1, 1]) }}
     style:stroke="none"
     style:fill="none"
     style:pointer-events="all"

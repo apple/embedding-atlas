@@ -1,5 +1,6 @@
+# Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import os
-import shutil
 import urllib.request
 from itertools import product
 

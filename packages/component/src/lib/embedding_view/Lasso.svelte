@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { polygonToPath, type Point } from "../utils";
+  import { polygonToPath, type Point } from "../utils.js";
 
   interface Props {
     value: Point[];

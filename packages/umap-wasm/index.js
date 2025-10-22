@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import Module from "./runtime.js";
 
 async function initialize() {

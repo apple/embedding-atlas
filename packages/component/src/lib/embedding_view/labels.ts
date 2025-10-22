@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import { measureText } from "../measure_text.js";
 import { type Point, type Rectangle, type ViewportState } from "../utils.js";
 import { Viewport } from "../viewport_utils.js";

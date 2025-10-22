@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import { getContext, setContext } from "svelte";
-import type { CustomCellsConfig } from "../api/custom-cells";
+import type { CustomCellsConfig } from "../api/custom-cells.js";
 
 export class CustomCellsState {
   config: CustomCellsConfig = $state({});

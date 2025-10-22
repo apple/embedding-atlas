@@ -29,6 +29,8 @@
       Helvetica Neue,
       sans-serif;
     font-size: 13px;
+
+    overscroll-behavior: none;
   }
 
   /* Workaround a tailwind issue that variables are not exported to :host

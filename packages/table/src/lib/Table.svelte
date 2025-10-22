@@ -7,15 +7,15 @@
   import Cell from "./views/cells/Cell.svelte";
   import HeaderRow from "./views/headers/HeaderRow.svelte";
 
-  import type { TableProps } from ".";
   import StyleWrapper from "./StyleWrapper.svelte";
-  import { rowNumber } from "./api/config";
+  import { rowNumber } from "./api/config.js";
   import { ConfigContext } from "./context/config.svelte";
   import { Context } from "./context/context.svelte";
   import { CoordinatorContext } from "./context/coordinator.svelte";
   import { CustomCellsContext } from "./context/custom-cells.svelte";
   import { CustomHeadersContext } from "./context/custom-headers.svelte";
   import { StyleContext } from "./context/style.svelte";
+  import type { TableProps } from "./index.js";
   import { OID } from "./mosaic-clients/RowsClient.js";
   import { add, diff, remove } from "./util.js";
   import RowBackground from "./views/RowBackground.svelte";

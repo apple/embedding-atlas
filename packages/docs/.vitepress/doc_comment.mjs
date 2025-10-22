@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import { generatePythonCommandLineDocs } from "./doc_python_cli.mjs";
 import { renderPythonDocstring } from "./doc_python_docstring.mjs";
 import { generateTypeScriptInterfaceDocs } from "./doc_ts_interface.mjs";

@@ -36,6 +36,7 @@
     }
   },
   "devDependencies": {
+    "@embedding-atlas/utils": "*",
     "@sveltejs/vite-plugin-svelte": "^6.1.0",
     "@tsconfig/svelte": "^5.0.4",
     "@types/d3-color": "^3.1.3",
