@@ -139,18 +139,22 @@ def _project_text_with_litellm(
     def run_async() -> list[EmbeddingResponse]:
         import asyncio
 
-        # Create coroutines for each batch for asynchronous processing
-        response_coroutines = [
-            aembedding(
-                input=texts[i : i + batch_size],
-                model=model,
-                **merged_args,
-            )
-            for i in range(0, len(texts), batch_size)
-        ]
+        async def run_async_coro() -> list[EmbeddingResponse]:
+            # Create coroutines for each batch for asynchronous processing
+            response_coroutines = [
+                aembedding(
+                    input=texts[i : i + batch_size],
+                    model=model,
+                    **merged_args,
+                )
+                for i in range(0, len(texts), batch_size)
+            ]
 
-        # Run all coroutines and gather results
-        return asyncio.run(asyncio.gather(*response_coroutines))
+            # Gather all coroutines and return results
+            return await asyncio.gather(*response_coroutines)
+
+        # Run the async coroutine
+        return asyncio.run(run_async_coro())
 
     # Determine whether to run synchronously or asynchronously
     should_run_sync: bool = merged_args["sync"]
