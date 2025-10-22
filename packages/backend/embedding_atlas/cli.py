@@ -136,6 +136,36 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
     help="Batch size for processing embeddings (default: 32 for text, 16 for images). Larger values use more memory but may be faster.",
 )
 @click.option(
+    "--text-projector",
+    type=click.Choice(["sentence_transformers", "litellm"]),
+    default="sentence_transformers",
+    help="Embedding provider: 'sentence_transformers' (local) or 'litellm' (API-based).",
+)
+@click.option(
+    "--api-key",
+    type=str,
+    default=None,
+    help="API key for litellm embedding provider.",
+)
+@click.option(
+    "--api-base",
+    type=str,
+    default=None,
+    help="API endpoint for litellm embedding provider.",
+)
+@click.option(
+    "--dimensions",
+    type=int,
+    default=None,
+    help="Number of dimensions for output embeddings (litellm only, supported by OpenAI text-embedding-3+).",
+)
+@click.option(
+    "--sync",
+    is_flag=True,
+    default=False,
+    help="Process embeddings synchronously (litellm only). Use for local servers like Ollama to avoid memory issues.",
+)
+@click.option(
     "--x",
     "x_column",
     help="Column containing pre-computed X coordinates for the embedding view.",
@@ -231,6 +261,11 @@ def main(
     model: str | None,
     trust_remote_code: bool,
     batch_size: int | None,
+    text_projector: str,
+    api_key: str | None,
+    api_base: str | None,
+    dimensions: int | None,
+    sync: bool,
     x_column: str | None,
     y_column: str | None,
     neighbors_column: str | None,
@@ -299,6 +334,17 @@ def main(
                     umap_args=umap_args,
                 )
             elif text is not None:
+                # Build kwargs for litellm projector
+                litellm_kwargs = {}
+                if api_key is not None:
+                    litellm_kwargs["api_key"] = api_key
+                if api_base is not None:
+                    litellm_kwargs["api_base"] = api_base
+                if dimensions is not None:
+                    litellm_kwargs["dimensions"] = dimensions
+                if sync:
+                    litellm_kwargs["sync"] = sync
+
                 compute_text_projection(
                     df,
                     text,
@@ -306,9 +352,11 @@ def main(
                     y=y_column,
                     neighbors=new_neighbors_column,
                     model=model,
+                    text_projector=text_projector,
                     trust_remote_code=trust_remote_code,
                     batch_size=batch_size,
                     umap_args=umap_args,
+                    **litellm_kwargs,
                 )
             elif image is not None:
                 compute_image_projection(
