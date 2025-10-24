@@ -50,6 +50,7 @@
   import ListChartPanel from "./ListChartPanel.svelte";
 
   let {
+    context,
     charts,
     chartView,
     state: layoutState,
@@ -57,6 +58,8 @@
     onChartsChange,
     onChartStatesChange,
   }: LayoutProps<ListLayoutState> = $props();
+
+  let { colorScheme } = context;
 
   let containerWidth = $state(100);
   let containerHeight = $state(100);
@@ -215,6 +218,7 @@
                   onStateChange({ chartVisibility: { [id]: v } });
                 }}
                 isVisible={isVisible}
+                colorScheme={$colorScheme}
                 chartView={chartView}
                 onRemove={removeChart.bind(null, id)}
                 onUp={index > 0 ? reorderCharts.bind(null, id, -1) : undefined}
@@ -248,6 +252,7 @@
               onStateChange({ chartVisibility: { [id]: v } });
             }}
             isVisible={isVisible}
+            colorScheme={$colorScheme}
             chartView={chartView}
             onRemove={removeChart.bind(null, id)}
             onUp={indexInCharts > 0 ? reorderCharts.bind(null, id, -1) : undefined}

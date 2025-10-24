@@ -31,7 +31,7 @@
 
 <div class="w-full h-full flex flex-col gap-2">
   <CodeEditor
-    class="w-full flex-1"
+    class="w-full flex-1 min-h-0"
     colorScheme={colorScheme}
     language="json"
     value={JSON.stringify(spec, null, 2)}

@@ -2,9 +2,6 @@
 
 @import "tailwindcss";
 
-@import "prism-code-editor/layout.css";
-@import "prism-code-editor/scrollbar.css";
-
 @config "../tailwind.config.js";
 
 @plugin '@tailwindcss/forms' {
@@ -110,12 +107,4 @@ mark {
   list-style: decimal;
   margin-left: 2em;
   margin-bottom: 0.5em;
-}
-
-.code-editor-light {
-  @import "prism-code-editor/themes/github-light.css";
-}
-
-.code-editor-dark {
-  @import "prism-code-editor/themes/github-dark.css";
 }

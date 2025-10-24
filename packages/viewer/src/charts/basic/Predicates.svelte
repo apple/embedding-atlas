@@ -187,6 +187,7 @@
       <div class="w-full !h-32 mb-2">
         <CodeEditor
           language="sql"
+          sql={{ table: context.table, columns: context.columns }}
           class="w-full h-full"
           colorScheme={$colorScheme}
           value={editingPredicate}

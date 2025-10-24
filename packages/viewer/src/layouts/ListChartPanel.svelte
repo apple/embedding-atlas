@@ -14,6 +14,8 @@
 
     isVisible: boolean;
 
+    colorScheme: "light" | "dark";
+
     onIsVisibleChange?: (value: boolean) => void;
 
     onUp?: () => void;
@@ -25,7 +27,8 @@
     chartView: LayoutProps<unknown>["chartView"];
   }
 
-  let { id, spec, isVisible, chartView, onIsVisibleChange, onUp, onDown, onRemove, onSpecChange }: Props = $props();
+  let { id, spec, isVisible, colorScheme, chartView, onIsVisibleChange, onUp, onDown, onRemove, onSpecChange }: Props =
+    $props();
 
   let isEditing = $state(false);
 </script>
@@ -71,6 +74,7 @@
         <div class="w-full h-64 p-2">
           <SpecEditor
             spec={spec}
+            colorScheme={colorScheme}
             onSpecChange={(s) => {
               onSpecChange(s);
               isEditing = false;

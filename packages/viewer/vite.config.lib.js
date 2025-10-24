@@ -48,6 +48,9 @@ export default defineConfig({
         "@uwdata/vgplot",
         "@embedding-atlas/utils",
       ],
+      output: {
+        chunkFileNames: "chunk-[hash].js",
+      },
     },
     copyPublicDir: false,
     chunkSizeWarningLimit: 4096,
