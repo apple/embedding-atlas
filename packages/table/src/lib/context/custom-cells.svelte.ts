@@ -7,7 +7,7 @@ export class CustomCellsState {
   config: CustomCellsConfig = $state({});
 }
 
-const CUSTOM_CELLS_KEY = "custom-cells";
+const CUSTOM_CELLS_KEY = Symbol("custom-cells");
 
 export class CustomCellsContext {
   public static initialize() {

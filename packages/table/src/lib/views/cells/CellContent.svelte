@@ -25,7 +25,7 @@
   const controller = Context.controller;
   const schema = Context.schema;
   const config = ConfigContext.config;
-  const customCellsConfig = CustomCellsContext.config;
+  let customCellsConfig = $derived(CustomCellsContext.config);
 
   let height: number = $state(0);
   let contentHeight = $state(0);

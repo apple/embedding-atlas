@@ -3,7 +3,7 @@
 import { coordinator, type Coordinator } from "@uwdata/mosaic-core";
 import { getContext, setContext } from "svelte";
 
-const COORDINATOR_KEY = "mosaic-coordinator";
+const COORDINATOR_KEY = Symbol("mosaic-coordinator");
 
 export class CoordinatorContext {
   public static get coordinator(): Coordinator {

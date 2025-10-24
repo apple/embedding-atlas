@@ -8,7 +8,7 @@ export class CustomHeadersState {
   config: AdditionalHeaderContentsConfig = $state({});
 }
 
-const CUSTOM_HEADERS_KEY = "custom-cells";
+const CUSTOM_HEADERS_KEY = Symbol("custom-headers");
 
 export class CustomHeadersContext {
   public static initialize() {

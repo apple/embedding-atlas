@@ -45,6 +45,7 @@
 
   ConfigContext.initialize();
   CustomCellsContext.initialize();
+  CustomHeadersContext.initialize();
   StyleContext.initialize();
   Context.initialize();
   const controller = Context.controller;

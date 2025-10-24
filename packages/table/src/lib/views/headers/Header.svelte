@@ -19,7 +19,7 @@
   const model = Context.model;
   const schema = Context.schema;
   const config = ConfigContext.config;
-  const customHeadersConfig = CustomHeadersContext.config;
+  let customHeadersConfig = $derived(CustomHeadersContext.config);
 
   let element: HTMLElement | null = $state(null);
   let contentWidth: number = $state(0);

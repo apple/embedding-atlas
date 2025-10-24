@@ -16,7 +16,6 @@ const VERTICAL_SCROLLBAR_CONTROLLER_KEY = Symbol("vertical-scrollbar-controller"
 const HORIZONTAL_SCROLLBAR_CONTROLLER_KEY = Symbol("horizontal-scrollbar-controller");
 const TABLE_PORTAL_CONTROLLER_KEY = Symbol("table-portal-controller");
 const OVERSCROLL_MODIFIER_KEY = Symbol("overscroll-modifier");
-const CONFIG_KEY = Symbol("config");
 
 export class Context {
   public static initialize() {
