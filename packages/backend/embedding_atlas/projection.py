@@ -186,10 +186,12 @@ def _projection_for_texts(
     hasher = Hasher()
     hasher.update(
         {
-            "version": 1,
+            "version": 2,
             "texts": texts,
             "model": model,
             "batch_size": batch_size,
+            **(text_projector_args or {}),
+            "text_projector": text_projector.__name__,
             "umap_args": umap_args,
         }
     )
