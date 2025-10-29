@@ -40,6 +40,7 @@
     colorScheme: colorSchemeProp,
     chartColors: customChartColors,
     tableCellRenderers,
+    tableTheme,
     onExportApplication,
     onExportSelection,
     onStateChange,
@@ -291,6 +292,7 @@
     embeddingViewConfig: embeddingViewConfig,
     embeddingViewLabels: embeddingViewLabels,
     tableCellRenderers: tableCellRenderers,
+    tableTheme: tableTheme,
   };
 
   let charts = $state.raw<Record<string, any>>({});

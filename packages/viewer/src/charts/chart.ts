@@ -2,6 +2,7 @@
 
 import type { EmbeddingViewConfig, Label } from "@embedding-atlas/component";
 import type { CustomCell } from "@embedding-atlas/table";
+import type { Theme as TableTheme } from "@embedding-atlas/table";
 import type { Coordinator, Selection } from "@uwdata/mosaic-core";
 import type { Readable, Writable } from "svelte/store";
 
@@ -100,6 +101,9 @@ export interface ChartContext {
 
   /** Custom cell renderers for the table view. */
   tableCellRenderers?: Record<string, CustomCell | "markdown">;
+
+  /** Custom theme for the table view. */
+  tableTheme?: TableTheme | null;
 }
 
 /** Props passed into a chart view. */
