@@ -13,7 +13,23 @@ function adjustForGray(hex: string, lightnessShift: number = 0): string {
   return c.rgb().formatHex8();
 }
 
-export const chartColors = {
+export interface ChartColors {
+  scheme: "light" | "dark";
+  continuousColorScheme: string;
+  continuousColorSchemeAtZero: string;
+  markColor: string;
+  markColorFade: string;
+  markColorGray: string;
+  markColorGrayFade: string;
+  gridColor: string;
+  labelColor: string;
+  titleColor: string;
+  brushBorder: string;
+  brushBorderBack: string;
+  brushFill: string;
+}
+
+export const chartColors: Record<"light" | "dark", ChartColors> = {
   light: {
     scheme: "light",
     continuousColorScheme: "YlGnBu",
@@ -52,4 +68,30 @@ export function defaultOrdinalColors(count: number): string[] {
     result.push(interpolateTurbo((i + 0.5) / count));
   }
   return result;
+}
+
+/**
+ * Get chart colors with optional custom overrides.
+ * @param scheme - The color scheme ("light" or "dark")
+ * @param customColors - Optional custom color overrides
+ * @returns The merged chart colors
+ */
+export function getChartColors(
+  scheme: "light" | "dark",
+  customColors?: {
+    light?: Partial<ChartColors>;
+    dark?: Partial<ChartColors>;
+  } | null,
+): ChartColors {
+  const baseColors = chartColors[scheme];
+  const overrides = customColors?.[scheme];
+
+  if (!overrides) {
+    return baseColors;
+  }
+
+  return {
+    ...baseColors,
+    ...overrides,
+  };
 }

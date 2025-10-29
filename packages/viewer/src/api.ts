@@ -10,6 +10,9 @@ import { createClassComponent } from "svelte/legacy";
 import Component from "./EmbeddingAtlas.svelte";
 
 import cssCode from "./app.css?inline";
+import type { ChartColors } from "./charts/common/colors.js";
+
+export type { ChartColors };
 
 export interface EmbeddingAtlasProps {
   /** The Mosaic coordinator. */
@@ -40,6 +43,12 @@ export interface EmbeddingAtlasProps {
 
   /** The color scheme. */
   colorScheme?: "light" | "dark" | null;
+
+  /** Custom chart colors. You can override specific colors for light and dark themes. */
+  chartColors?: {
+    light?: Partial<ChartColors>;
+    dark?: Partial<ChartColors>;
+  } | null;
 
   /** The initial viewer state. */
   initialState?: EmbeddingAtlasState | null;
