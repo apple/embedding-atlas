@@ -758,7 +758,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "fastparquet", specifier = ">=2024.0.0" },
     { name = "inquirer", specifier = ">=3.0.0" },
-    { name = "litellm", specifier = ">=1.79.3" },
+    { name = "litellm", specifier = ">=1.70.0" },
     { name = "llvmlite", specifier = ">=0.43.0" },
     { name = "pandas", specifier = ">=2.2.0" },
     { name = "platformdirs", specifier = ">=4.3.0" },
