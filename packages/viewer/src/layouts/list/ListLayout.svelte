@@ -43,11 +43,12 @@
   import { flip } from "svelte/animate";
   import { slide } from "svelte/transition";
 
+  import ListChartPanel from "./ListChartPanel.svelte";
   import Resizer from "./Resizer.svelte";
 
-  import { findUnusedId } from "../utils/identifier.js";
-  import type { LayoutProps } from "./layout.js";
-  import ListChartPanel from "./ListChartPanel.svelte";
+  import { findUnusedId } from "../../utils/identifier.js";
+  import { reorder } from "../../utils/sort.js";
+  import type { LayoutProps } from "../layout.js";
 
   let {
     context,
@@ -91,25 +92,7 @@
     return Math.floor((minWidth ?? 400) * 2) / 2; // Round to multiple of 0.5
   }
 
-  let chartsOrder = $derived.by(
-    deepMemo(() => {
-      let givenOrder = layoutState.chartsOrder ?? [];
-      // Stable sort the chart ids by the given order.
-      let chartIds = sections.chart.slice();
-      chartIds.sort((a, b) => {
-        let aIndex = givenOrder.indexOf(a);
-        let bIndex = givenOrder.indexOf(b);
-        if (aIndex == -1) {
-          aIndex = chartIds.length;
-        }
-        if (bIndex == -1) {
-          bIndex = chartIds.length;
-        }
-        return aIndex - bIndex;
-      });
-      return chartIds;
-    }),
-  );
+  let chartsOrder = $derived.by(deepMemo(() => reorder(sections.chart, layoutState.chartsOrder)));
 
   function reorderCharts(id: string, shift: number) {
     let newOrder = [...chartsOrder];
@@ -197,7 +180,7 @@
             onclick={() => {
               let id = findUnusedId(charts);
               onChartsChange({ [id]: { type: "builder", title: "New" } });
-              onStateChange({ chartsOrder: [id, ...chartsOrder] });
+              onStateChange({ chartsOrder: [id, ...chartsOrder.filter((x) => x != id)] });
             }}
           >
             + Add

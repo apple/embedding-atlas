@@ -6,6 +6,7 @@
   import CodeEditor from "../../widgets/CodeEditor.svelte";
   import Select from "../../widgets/Select.svelte";
   import ChartView from "../ChartView.svelte";
+  import Container from "../common/Container.svelte";
   import ChartIcon from "./ChartIcon.svelte";
 
   import { type ColumnDesc, type JSType } from "../../utils/database.js";
@@ -13,7 +14,7 @@
   import { chartBuilderDescriptions } from "../chart_types.js";
   import type { UIElement } from "./builder_description.js";
 
-  let { context, onSpecChange, onStateChange }: ChartViewProps<{}, {}> = $props();
+  let { context, width, height, onSpecChange, onStateChange }: ChartViewProps<{}, {}> = $props();
 
   let { columns, colorScheme } = context;
 
@@ -118,7 +119,7 @@
   }
 </script>
 
-<div class="p-2 flex flex-col gap-2">
+<Container width={width} height={height} scrollY={true} class="flex flex-col gap-2">
   <div class="flex flex-wrap gap-2">
     {#each chartBuilders as type}
       {@const selected = builder == type}
@@ -204,4 +205,4 @@
   {#if typeof validateResult == "string" && validateResult.trim() != ""}
     <div>{validateResult}</div>
   {/if}
-</div>
+</Container>

@@ -26,48 +26,26 @@
     }
   }
 
-  $effect(() => {
-    if (container != null) {
-      let onRootMouseDown = (e: Event) => {
-        if (!visible || !container) {
-          return;
-        }
-        if (e.target && !container.contains(e.target as any)) {
-          visible = false;
-        }
-      };
-      let root = container.getRootNode();
-      root.addEventListener("mousedown", onRootMouseDown);
-      return () => {
-        root.removeEventListener("mousedown", onRootMouseDown);
-      };
-    }
-  });
-
   let popoverElement: HTMLElement;
 
   $effect(() => {
     if (visible) {
       $effect(() => {
-        return showPopover();
+        popoverElement.showPopover();
+
+        function updatePosition() {
+          computePosition(container, popoverElement, {
+            placement: "bottom",
+            middleware: [offset(3), shift()],
+          }).then(({ x, y }) => {
+            popoverElement.style.left = x + "px";
+            popoverElement.style.top = y + "px";
+          });
+        }
+        return autoUpdate(container, popoverElement, updatePosition);
       });
     }
   });
-
-  function showPopover() {
-    popoverElement.showPopover();
-
-    function updatePosition() {
-      computePosition(container, popoverElement, {
-        placement: "bottom",
-        middleware: [offset(3), shift()],
-      }).then(({ x, y }) => {
-        popoverElement.style.left = x + "px";
-        popoverElement.style.top = y + "px";
-      });
-    }
-    return autoUpdate(container, popoverElement, updatePosition);
-  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -78,6 +56,11 @@
     class="absolute px-3 py-3 rounded-md z-20 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-lg"
     style:width="max-content"
     popover
+    ontoggle={(e) => {
+      if (e.newState == "closed") {
+        visible = false;
+      }
+    }}
   >
     {@render children?.()}
   </div>

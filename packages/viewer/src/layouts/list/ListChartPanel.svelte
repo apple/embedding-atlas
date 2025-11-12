@@ -2,11 +2,11 @@
 <script lang="ts">
   import { slide } from "svelte/transition";
 
-  import SpecEditor from "../charts/builder/SpecEditor.svelte";
-  import CornerButton from "../widgets/CornerButton.svelte";
+  import SpecEditor from "../../charts/builder/SpecEditor.svelte";
+  import CornerButton from "../../widgets/CornerButton.svelte";
 
-  import { IconChevronDown, IconChevronUp, IconClose, IconDown, IconEdit, IconUp } from "../assets/icons.js";
-  import type { LayoutProps } from "./layout.js";
+  import { IconChevronDown, IconChevronUp, IconClose, IconDown, IconEdit, IconUp } from "../../assets/icons.js";
+  import type { LayoutProps } from "../layout.js";
 
   interface Props {
     id: string;

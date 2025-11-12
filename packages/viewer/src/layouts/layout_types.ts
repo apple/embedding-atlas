@@ -1,18 +1,20 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import type { Component } from "svelte";
-import GridLayout from "./GridLayout.svelte";
-import ListLayout from "./ListLayout.svelte";
+
+import DashboardLayout from "./dashboard/DashboardLayout.svelte";
+import DashboardLayoutOptions from "./dashboard/DashboardLayoutOptions.svelte";
+import ListLayout from "./list/ListLayout.svelte";
+import ListLayoutOptions from "./list/ListLayoutOptions.svelte";
 
 import type { LayoutOptionsProps, LayoutProps } from "./layout.js";
-import ListLayoutOptions from "./ListLayoutOptions.svelte";
 
 export type LayoutComponentClass = Component<LayoutProps<any>, {}, "">;
 export type LayoutOptionsComponentClass = Component<LayoutOptionsProps<any>, {}, "">;
 
 export const layoutTypes: Record<string, [LayoutComponentClass, LayoutOptionsComponentClass]> = {
   list: [ListLayout, ListLayoutOptions],
-  grid: [GridLayout, ListLayoutOptions],
+  dashboard: [DashboardLayout, DashboardLayoutOptions],
 };
 
 export function findLayoutComponent(type: string): LayoutComponentClass {

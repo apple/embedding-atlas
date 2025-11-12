@@ -4,6 +4,7 @@
   import { Selection } from "@uwdata/mosaic-core";
   import { onMount } from "svelte";
   import { writable } from "svelte/store";
+  import { scale } from "svelte/transition";
 
   import LayoutOptionsView from "./layouts/LayoutOptionsView.svelte";
   import LayoutView from "./layouts/LayoutView.svelte";
@@ -14,10 +15,19 @@
   import Button from "./widgets/Button.svelte";
   import Input from "./widgets/Input.svelte";
   import PopupButton from "./widgets/PopupButton.svelte";
+  import SegmentedControl from "./widgets/SegmentedControl.svelte";
   import Select from "./widgets/Select.svelte";
   import Spinner from "./widgets/Spinner.svelte";
 
-  import { IconDarkMode, IconDownload, IconExport, IconLightMode, IconSettings } from "./assets/icons.js";
+  import {
+    IconDarkMode,
+    IconDashboardLayout,
+    IconDownload,
+    IconExport,
+    IconLightMode,
+    IconListLayout,
+    IconSettings,
+  } from "./assets/icons.js";
 
   import type { EmbeddingAtlasProps, EmbeddingAtlasState } from "./api.js";
   import { ChartContextCache, type ChartContext, type RowID } from "./charts/chart.js";
@@ -305,137 +315,153 @@
   >
     <!-- Toolbar -->
     <div class="m-2 flex flex-row items-center gap-2 flex-wrap">
-      <!-- Left side -->
-      <div class="flex flex-row flex-1 justify-between min-w-[180px]">
-        {#if searcher}
-          <div class="relative w-full">
-            <Input type="search" placeholder="Search..." className="w-full max-w-[400px] " bind:value={searchQuery} />
-            {#if searchModes.filter((x) => x != "neighbors").length > 1}
-              <Select
-                options={searchModes.filter((x) => x != "neighbors").map((x) => searchModeOptions[x])}
-                value={searchMode}
-                onChange={(v) => (searchMode = v)}
-              />
-            {/if}
-
-            {#if searchResultVisible}
-              <div
-                class="absolute w-96 left-0 top-[32px] rounded-md right-0 z-20 border border-slate-300 dark:border-slate-600 overflow-hidden resize shadow-lg bg-white/75 dark:bg-slate-800/75 backdrop-blur-sm"
-                style:height="48em"
-              >
-                {#if searchResult != null}
-                  <SearchResultList
-                    items={searchResult.items}
-                    label={searchResult.label}
-                    highlight={searchResult.highlight}
-                    limit={searchLimit}
-                    onClick={async (item) => {
-                      chartContext.highlight.set(item.id);
-                    }}
-                    onClose={clearSearch}
-                    columnStyles={$resolvedColumnStyles}
-                  />
-                {:else if searcherStatus != null}
-                  <div class="p-2">
-                    <Spinner status={searcherStatus} />
-                  </div>
-                {/if}
-              </div>
-            {/if}
-          </div>
-        {:else}
-          <div class="text-slate-500 dark:text-slate-400">Embedding Atlas</div>
-        {/if}
-      </div>
-      <!-- Right side -->
-      <div class="flex flex-none gap-2 items-center">
-        <FilteredCount coordinator={coordinator} filter={crossFilter} table={data.table} />
-        <div class="flex flex-row gap-1 items-center">
-          <button
-            class="flex px-2.5 mr-1 select-none items-center justify-center text-slate-500 dark:text-slate-300 rounded-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 focus-visible:outline-2 outline-blue-600 -outline-offset-1"
-            onclick={resetFilter}
-            title="Clear filters"
-          >
-            Clear
-          </button>
-        </div>
-      </div>
-      <div class="flex flex-none flex-row gap-0.5">
-        <PopupButton icon={IconSettings} title="Options">
-          <div class="min-w-[420px] flex flex-col gap-2">
-            <!-- Text style settings -->
-            {#if columns.length > 0}
-              <h4 class="text-slate-500 dark:text-slate-400 select-none">Column Styles</h4>
-              <ColumnStylePicker
-                columns={columns}
-                styles={$resolvedColumnStyles}
-                onStylesChange={(value) => {
-                  columnStyles = value;
-                }}
-              />
-            {/if}
-            <!-- Export -->
-            <h4 class="text-slate-500 dark:text-slate-400 select-none">Export</h4>
-            <div class="flex flex-col gap-2">
-              {#if onExportSelection}
-                <div class="flex flex-row gap-2">
-                  <ActionButton
-                    icon={IconExport}
-                    label="Export Selection"
-                    title="Export the selected points"
-                    class="w-48"
-                    onClick={() => onExportSelection(currentPredicate(), exportFormat)}
-                  />
-                  <Select
-                    label="Format"
-                    value={exportFormat}
-                    onChange={(v) => (exportFormat = v)}
-                    options={[
-                      { value: "parquet", label: "Parquet" },
-                      { value: "jsonl", label: "JSONL" },
-                      { value: "json", label: "JSON" },
-                      { value: "csv", label: "CSV" },
-                    ]}
-                  />
-                </div>
-              {/if}
-              {#if onExportApplication}
-                <ActionButton
-                  icon={IconDownload}
-                  label="Export Application"
-                  title="Download a self-contained static web application"
-                  class="w-48"
-                  onClick={onExportApplication}
+      {#if initialized}
+        <!-- Left side -->
+        <div class="flex flex-row flex-1 justify-between min-w-[180px]">
+          {#if searcher}
+            <div class="relative w-full">
+              <Input type="search" placeholder="Search..." className="w-full max-w-[400px] " bind:value={searchQuery} />
+              {#if searchModes.filter((x) => x != "neighbors").length > 1}
+                <Select
+                  options={searchModes.filter((x) => x != "neighbors").map((x) => searchModeOptions[x])}
+                  value={searchMode}
+                  onChange={(v) => (searchMode = v)}
                 />
               {/if}
+
+              {#if searchResultVisible}
+                <div
+                  class="absolute w-96 left-0 top-[32px] rounded-md right-0 z-20 border border-slate-300 dark:border-slate-600 overflow-hidden resize shadow-lg bg-white/75 dark:bg-slate-800/75 backdrop-blur-sm"
+                  style:height="48em"
+                >
+                  {#if searchResult != null}
+                    <SearchResultList
+                      items={searchResult.items}
+                      label={searchResult.label}
+                      highlight={searchResult.highlight}
+                      limit={searchLimit}
+                      onClick={async (item) => {
+                        chartContext.highlight.set(item.id);
+                      }}
+                      onClose={clearSearch}
+                      columnStyles={$resolvedColumnStyles}
+                    />
+                  {:else if searcherStatus != null}
+                    <div class="p-2">
+                      <Spinner status={searcherStatus} />
+                    </div>
+                  {/if}
+                </div>
+              {/if}
             </div>
-            <h4 class="text-slate-500 dark:text-slate-400 select-none">About</h4>
-            <div>Embedding Atlas, {EMBEDDING_ATLAS_VERSION}</div>
+          {:else}
+            <div class="text-slate-500 dark:text-slate-400">Embedding Atlas</div>
+          {/if}
+        </div>
+        <!-- Right side -->
+        <div class="flex flex-none gap-2 items-center">
+          <FilteredCount coordinator={coordinator} filter={crossFilter} table={data.table} />
+          <div class="flex flex-row gap-1 items-center">
+            <button
+              class="flex px-2.5 mr-1 select-none items-center justify-center text-slate-500 dark:text-slate-300 rounded-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 focus-visible:outline-2 outline-blue-600 -outline-offset-1"
+              onclick={resetFilter}
+              title="Clear filters"
+            >
+              Clear
+            </button>
           </div>
-        </PopupButton>
-        {#if colorSchemeProp == null}
-          <Button
-            icon={$colorScheme == "dark" ? IconLightMode : IconDarkMode}
-            title="Toggle dark mode"
-            onClick={() => {
-              $userColorScheme = $colorScheme == "light" ? "dark" : "light";
-            }}
+        </div>
+        <div class="flex flex-none flex-row gap-0.5">
+          <div class="grid grid-cols-1 grid-rows-1 justify-items-end items-center">
+            {#key layout}
+              <div transition:scale class="col-start-1 row-start-1">
+                <LayoutOptionsView
+                  context={chartContext}
+                  charts={charts}
+                  chartStates={chartStates}
+                  layout={layout}
+                  layoutStates={layoutStates}
+                  onChartsChange={(v) => (charts = v)}
+                  onChartStatesChange={(v) => (chartStates = v)}
+                  onLayoutStatesChange={(v) => (layoutStates = v)}
+                />
+              </div>
+            {/key}
+          </div>
+          <SegmentedControl
+            value={layout}
+            onChange={(v) => (layout = v)}
+            options={[
+              { value: "list", icon: IconListLayout },
+              { value: "dashboard", icon: IconDashboardLayout },
+            ]}
           />
-        {/if}
-        <LayoutOptionsView
-          context={chartContext}
-          charts={charts}
-          chartStates={chartStates}
-          layout={layout}
-          layoutStates={layoutStates}
-          onChartsChange={(v) => (charts = v)}
-          onChartStatesChange={(v) => (chartStates = v)}
-          onLayoutStatesChange={(v) => (layoutStates = v)}
-        />
-      </div>
+          {#if colorSchemeProp == null}
+            <Button
+              icon={$colorScheme == "dark" ? IconLightMode : IconDarkMode}
+              title="Toggle dark mode"
+              onClick={() => {
+                $userColorScheme = $colorScheme == "light" ? "dark" : "light";
+              }}
+            />
+          {/if}
+          <PopupButton icon={IconSettings} title="Options">
+            <div class="min-w-[420px] flex flex-col gap-2">
+              <!-- Text style settings -->
+              {#if columns.length > 0}
+                <h4 class="text-slate-500 dark:text-slate-400 select-none">Column Styles</h4>
+                <ColumnStylePicker
+                  columns={columns}
+                  styles={$resolvedColumnStyles}
+                  onStylesChange={(value) => {
+                    columnStyles = value;
+                  }}
+                />
+              {/if}
+              <!-- Export -->
+              <h4 class="text-slate-500 dark:text-slate-400 select-none">Export</h4>
+              <div class="flex flex-col gap-2">
+                {#if onExportSelection}
+                  <div class="flex flex-row gap-2">
+                    <ActionButton
+                      icon={IconExport}
+                      label="Export Selection"
+                      title="Export the selected points"
+                      class="w-48"
+                      onClick={() => onExportSelection(currentPredicate(), exportFormat)}
+                    />
+                    <Select
+                      label="Format"
+                      value={exportFormat}
+                      onChange={(v) => (exportFormat = v)}
+                      options={[
+                        { value: "parquet", label: "Parquet" },
+                        { value: "jsonl", label: "JSONL" },
+                        { value: "json", label: "JSON" },
+                        { value: "csv", label: "CSV" },
+                      ]}
+                    />
+                  </div>
+                {/if}
+                {#if onExportApplication}
+                  <ActionButton
+                    icon={IconDownload}
+                    label="Export Application"
+                    title="Download a self-contained static web application"
+                    class="w-48"
+                    onClick={onExportApplication}
+                  />
+                {/if}
+              </div>
+              <h4 class="text-slate-500 dark:text-slate-400 select-none">About</h4>
+              <div>Embedding Atlas, {EMBEDDING_ATLAS_VERSION}</div>
+            </div>
+          </PopupButton>
+        </div>
+      {/if}
     </div>
+    <!-- Main Content -->
     <div class="flex-1 overflow-hidden h-full ml-2 mr-2 mb-2">
-      <!-- Charts Container -->
       {#if initialized}
         <LayoutView
           context={chartContext}

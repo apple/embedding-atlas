@@ -95,13 +95,16 @@
     });
   });
 
-  $effect.pre(() =>
-    highlightStore.subscribe((v) => {
-      if (v !== null) {
+  $effect.pre(() => {
+    let isOnMount = true;
+    return highlightStore.subscribe((v) => {
+      // Note: don't animate immediately on mount.
+      if (v !== null && !isOnMount) {
         animateToPoint(v);
       }
-    }),
-  );
+      isOnMount = false;
+    });
+  });
 
   $effect.pre(() =>
     searchResult.subscribe(async (result) => {
@@ -155,7 +158,7 @@
 
   let currentViewportAnimation: number | null;
   let animatingViewport = $state.raw<ViewportState | null>(null);
-  export function startViewportAnimation(newState: ViewportState) {
+  function startViewportAnimation(newState: ViewportState) {
     tooltip = null;
     let start = animatingViewport ?? chartState.viewport;
     if (start == null) {

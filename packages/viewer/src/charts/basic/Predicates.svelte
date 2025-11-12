@@ -182,7 +182,7 @@
 
   {#if editingEnabled}
     <div class="mt-4">
-      <Input bind:value={editingName} placeholder="name" className="w-full mb-2" />
+      <Input bind:value={editingName} placeholder="predicate name" className="w-full mb-2" />
       <div class="text-slate-500 dark:text-slate-400 text-sm mb-1">SQL Predicate</div>
       <div class="w-full !h-32 mb-2">
         <CodeEditor

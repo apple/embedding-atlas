@@ -1,5 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+export { default as IconPlus } from "~icons/fluent/add-16-filled";
+export { default as IconReset } from "~icons/fluent/arrow-reset-24-filled";
 export { default as IconChevronDown, default as IconDown } from "~icons/fluent/chevron-down-16-filled";
 export { default as IconChevronUp, default as IconUp } from "~icons/fluent/chevron-up-16-filled";
 export { default as IconAnnotation } from "~icons/fluent/comment-text-16-filled";
@@ -13,3 +15,6 @@ export { default as IconSearch } from "~icons/fluent/search-16-filled";
 export { default as IconSettings } from "~icons/fluent/settings-16-filled";
 export { default as IconDarkMode } from "~icons/fluent/weather-moon-16-filled";
 export { default as IconLightMode } from "~icons/fluent/weather-sunny-16-filled";
+
+export { default as IconDashboardLayout } from "~icons/fluent/layout-dynamic-20-filled";
+export { default as IconListLayout } from "~icons/fluent/layout-row-four-20-filled";
