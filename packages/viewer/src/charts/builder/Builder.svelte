@@ -178,6 +178,7 @@
             spec={localChartSpec}
             state={localChartState ?? {}}
             width={"container"}
+            mode="view"
             onStateChange={(update, mode = "merge") => {
               applyUpdatesIfNeeded(localChartState ?? {}, update, mode, (r) => (localChartState = r));
             }}

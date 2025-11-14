@@ -189,7 +189,7 @@
             {@const spec = charts[id]}
             {@const isVisible = layoutState.chartVisibility?.[id] ?? true}
             <div
-              class="bg-white dark:bg-black rounded-md flex flex-col gap-2 group"
+              class="bg-white dark:bg-black rounded-md flex flex-col group"
               style:width="{chartWidth(chartsWidth, 500)}px"
               animate:flip={{ duration: 300 }}
               out:slide
@@ -223,11 +223,7 @@
       {#each sections.embedding.concat(chartsOrder, sections.table) as id, index (id)}
         {@const isVisible = layoutState.chartVisibility?.[id] ?? true}
         {@const indexInCharts = chartsOrder.indexOf(id)}
-        <div
-          class="bg-white dark:bg-black rounded-md flex flex-col gap-2 group"
-          animate:flip={{ duration: 300 }}
-          out:slide
-        >
+        <div class="bg-white dark:bg-black rounded-md flex flex-col group" animate:flip={{ duration: 300 }} out:slide>
           <ListChartPanel
             id={id}
             spec={charts[id]}

@@ -2,14 +2,13 @@
 <script lang="ts" module>
   import { untrack } from "svelte";
 
+  // CodeMirror packages
   import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from "@codemirror/autocomplete";
   import { defaultKeymap, history, historyKeymap, indentLess, insertTab } from "@codemirror/commands";
-  import { PostgreSQL, sql } from "@codemirror/lang-sql";
   import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
   import { lintKeymap } from "@codemirror/lint";
   import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
   import { EditorState } from "@codemirror/state";
-  import { oneDark } from "@codemirror/theme-one-dark";
   import {
     crosshairCursor,
     drawSelection,
@@ -24,7 +23,13 @@
     tooltips,
   } from "@codemirror/view";
 
+  // Languages
+  import { markdown } from "@codemirror/lang-markdown";
+  import { PostgreSQL, sql } from "@codemirror/lang-sql";
   import { jsonSchema } from "codemirror-json-schema";
+
+  // Theme
+  import { oneDark } from "@codemirror/theme-one-dark";
 
   interface JSONOptions {
     schema?: any;
@@ -94,6 +99,9 @@
       "&.cm-editor": { height: "100%" },
       ".cm-scroller": { overflow: "auto" },
       "&.cm-focused": { outline: "none" },
+      ".cm-content": {
+        fontFamily: "var(--font-mono)",
+      },
       ".cm-tooltip": {
         boxShadow: options.colorScheme == "light" ? "0 2px 5px rgba(0,0,0,0.2)" : "0 2px 5px rgba(0,0,0,1)",
       },
@@ -135,6 +143,9 @@
           defaultTable: table,
         }),
       );
+    }
+    if (options.language == "markdown") {
+      languageExtensions.push(markdown());
     }
 
     const view = new EditorView({

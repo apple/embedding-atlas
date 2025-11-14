@@ -130,6 +130,9 @@ export interface ChartViewProps<Spec = unknown, State = unknown> {
    */
   state: State;
 
+  /** The mode of the chart view. The view can decide how to interpret this. */
+  mode: "view" | "edit";
+
   /**
    * Callback for when the state changes.
    * The default update mode is "merge", where the new state is recursively merged into the existing state.

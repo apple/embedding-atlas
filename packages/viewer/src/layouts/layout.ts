@@ -31,7 +31,9 @@ export interface LayoutProps<State = unknown> {
   onChartStatesChange: (states: Record<string, any>, mode?: "merge" | "replace") => void;
 
   /** A snippet that renders a given chart. */
-  chartView: Snippet<[{ id: string; width?: number | "container"; height?: number | "container" }]>;
+  chartView: Snippet<
+    [{ id: string; width?: number | "container"; height?: number | "container"; mode?: "view" | "edit" }]
+  >;
 }
 
 export type LayoutOptionsProps<State = unknown> = Omit<LayoutProps<State>, "chartView">;

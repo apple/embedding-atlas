@@ -66,3 +66,9 @@ export interface PredicatesSpec {
   title?: string;
   items?: { name: string; predicate: string }[];
 }
+
+export interface MarkdownSpec {
+  type: "markdown";
+  title?: string;
+  content: string;
+}

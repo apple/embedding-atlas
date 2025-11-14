@@ -48,4 +48,5 @@ export default {
   theme: {
     extend: resolveREM(defaultTheme),
   },
+  plugins: [require("@tailwindcss/typography")],
 };

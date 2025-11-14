@@ -5,7 +5,17 @@
   import SpecEditor from "../../charts/builder/SpecEditor.svelte";
   import CornerButton from "../../widgets/CornerButton.svelte";
 
-  import { IconChevronDown, IconChevronUp, IconClose, IconDown, IconEdit, IconUp } from "../../assets/icons.js";
+  import {
+    IconCheck,
+    IconChevronDown,
+    IconChevronUp,
+    IconClose,
+    IconDown,
+    IconEdit,
+    IconUp,
+  } from "../../assets/icons.js";
+
+  import { findChartTypeOptions } from "../../charts/chart_types.js";
   import type { LayoutProps } from "../layout.js";
 
   interface Props {
@@ -31,11 +41,13 @@
     $props();
 
   let isEditing = $state(false);
+  let supportsEditMode = $derived(findChartTypeOptions(spec).supportsEditMode ?? false);
+  let chartMode: "edit" | "view" = $derived(supportsEditMode && isEditing ? "edit" : "view");
 </script>
 
-<div class="px-2 pt-2 flex items-center">
+<div class="p-2 flex items-center">
   <button
-    class="font-mono font-medium py-0.5 text-left flex flex-1 mr-2 overflow-hidden items-center"
+    class="font-mono font-medium h-6 text-left flex flex-1 mr-2 overflow-hidden items-center"
     onclick={() => onIsVisibleChange?.(!isVisible)}
   >
     {#if isVisible}
@@ -47,9 +59,18 @@
       {spec.title}
     </div>
   </button>
-  <div class="flex-none flex gap-1 sm:opacity-0 group-hover:opacity-100 pr-0.5">
+  <div class="flex-none flex gap-1 sm:opacity-0 group-hover:opacity-100">
     {#if onSpecChange}
-      <CornerButton icon={IconEdit} title="Edit spec" onClick={() => (isEditing = !isEditing)} />
+      <CornerButton
+        icon={chartMode == "edit" ? IconCheck : IconEdit}
+        title="Edit"
+        onClick={() => {
+          isEditing = !isEditing;
+          if (isEditing) {
+            onIsVisibleChange?.(true);
+          }
+        }}
+      />
     {/if}
     {#if onUp}
       <CornerButton icon={IconUp} title="Move up" onClick={onUp} />
@@ -68,8 +89,8 @@
   style:transition="grid-template-rows 300ms ease-in-out"
 >
   <div class="overflow-hidden">
-    {@render chartView({ id: id, width: "container" })}
-    {#if isEditing && onSpecChange}
+    {@render chartView({ id: id, width: "container", mode: chartMode })}
+    {#if chartMode == "view" && isEditing && onSpecChange}
       <div transition:slide class="h-64">
         <div class="w-full h-64 p-2">
           <SpecEditor

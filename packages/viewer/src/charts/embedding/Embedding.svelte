@@ -249,6 +249,7 @@
           context={context}
           spec={{ items: categoryLegend.legend }}
           state={chartState.legend ?? {}}
+          mode="view"
           onSpecChange={() => {}}
           onStateChange={(update, mode) => {
             onStateChange({ legend: update });

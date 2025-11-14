@@ -6,8 +6,10 @@
   import SpecEditor from "../../charts/builder/SpecEditor.svelte";
   import CornerButton from "../../widgets/CornerButton.svelte";
 
-  import { IconClose, IconEdit } from "../../assets/icons.js";
+  import { IconCheck, IconClose, IconEdit } from "../../assets/icons.js";
+
   import type { ChartContext } from "../../charts/chart.js";
+  import { findChartTypeOptions } from "../../charts/chart_types.js";
   import type { LayoutProps } from "../layout.js";
   import { type Grid } from "./placement.js";
 
@@ -55,6 +57,8 @@
   let { x, y, width, height } = $derived(grid.resolvePlacement(placement));
 
   let isEditing = $state(false);
+  let supportsEditMode = $derived(findChartTypeOptions(spec).supportsEditMode ?? false);
+  let chartMode: "edit" | "view" = $derived(supportsEditMode && isEditing ? "edit" : "view");
 
   function dragHandler(mask: [number, number, number, number]) {
     return (e1: CursorValue) => {
@@ -141,7 +145,7 @@
       </div>
       <div class="flex gap-1">
         <CornerButton
-          icon={IconEdit}
+          icon={chartMode == "edit" ? IconCheck : IconEdit}
           onClick={() => {
             isEditing = !isEditing;
           }}
@@ -150,8 +154,8 @@
       </div>
     </div>
     <div class="flex-1 min-h-0">
-      {#if !isEditing}
-        {@render chartView({ id: id, width: "container", height: "container" })}
+      {#if !(chartMode == "view" && isEditing && onSpecChange)}
+        {@render chartView({ id: id, width: "container", height: "container", mode: chartMode })}
       {:else}
         <div class="p-2 h-full">
           <SpecEditor

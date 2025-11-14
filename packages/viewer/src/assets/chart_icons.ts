@@ -4,6 +4,7 @@ import chart_boxplot from "./chart-boxplot.svg?raw";
 import chart_embedding from "./chart-embedding.svg?raw";
 import chart_h_bar from "./chart-h-bar.svg?raw";
 import chart_heatmap from "./chart-heatmap.svg?raw";
+import chart_markdown from "./chart-markdown.svg?raw";
 import chart_predicates from "./chart-predicates.svg?raw";
 import chart_spec from "./chart-spec.svg?raw";
 import chart_stacked from "./chart-stacked.svg?raw";
@@ -18,4 +19,5 @@ export const chartIcons: Record<string, string> = {
   "chart-v-histogram": chart_v_histogram,
   "chart-spec": chart_spec,
   "chart-predicates": chart_predicates,
+  "chart-markdown": chart_markdown,
 };

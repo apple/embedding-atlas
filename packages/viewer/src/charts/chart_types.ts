@@ -8,6 +8,7 @@ import CountPlotList from "./basic/CountPlotList.svelte";
 import Histogram from "./basic/Histogram.svelte";
 import Histogram2D from "./basic/Histogram2D.svelte";
 import HistogramStack from "./basic/HistogramStack.svelte";
+import Markdown from "./basic/Markdown.svelte";
 import Placeholder from "./basic/Placeholder.svelte";
 import Predicates from "./basic/Predicates.svelte";
 import Builder from "./builder/Builder.svelte";
@@ -20,21 +21,32 @@ import type {
   Histogram2DSpec,
   HistogramSpec,
   HistogramStackSpec,
+  MarkdownSpec,
   PredicatesSpec,
 } from "./basic/types.js";
+import type { UIElement } from "./builder/builder_description.js";
+import type { ChartBuilderDescription, ChartViewProps } from "./chart.js";
 import type { EmbeddingSpec } from "./embedding/types.js";
 import type { TableSpec } from "./table/types.js";
 
-import type { UIElement } from "./builder/builder_description.js";
-import type { ChartBuilderDescription, ChartViewProps } from "./chart.js";
-
 export type ChartComponent = Component<ChartViewProps<any, any>, {}, "">;
 
+interface ChartTypeOptions {
+  /**
+   * The chart component supports edit mode.
+   * If set to true, the chart component is responsible for editing the chart.
+   * Otherwise, a JSON spec editor will be used.
+   */
+  supportsEditMode?: boolean;
+}
+
 const chartTypes: Record<string, ChartComponent> = {};
+const chartTypeOptions: Record<string, ChartTypeOptions> = {};
 const chartBuilders: ChartBuilderDescription<any, any>[] = [];
 
-export function registerChartType(type: string, component: ChartComponent) {
+export function registerChartType(type: string, component: ChartComponent, options: ChartTypeOptions = {}) {
   chartTypes[type] = component;
+  chartTypeOptions[type] = options;
 }
 
 export function registerChartBuilder<Spec, T extends readonly UIElement[]>(builder: ChartBuilderDescription<Spec, T>) {
@@ -55,6 +67,20 @@ export function findChartComponent(spec: any): ChartComponent {
   return Placeholder;
 }
 
+export function findChartTypeOptions(spec: any): ChartTypeOptions {
+  if (typeof spec != "object") {
+    return {};
+  }
+  if (typeof spec.type == "string") {
+    let r = chartTypeOptions[spec.type];
+    if (r == null) {
+      return {};
+    }
+    return r;
+  }
+  return {};
+}
+
 export function chartBuilderDescriptions(): ChartBuilderDescription<any, any>[] {
   return chartBuilders;
 }
@@ -72,6 +98,7 @@ registerChartType("box-plot", BoxPlot);
 registerChartType("embedding", Embedding);
 registerChartType("predicates", Predicates);
 registerChartType("table", Table);
+registerChartType("markdown", Markdown, { supportsEditMode: true });
 
 // Spec type for all builtin chart types
 export type BuiltinChartSpec =
@@ -82,7 +109,8 @@ export type BuiltinChartSpec =
   | CountPlotSpec
   | PredicatesSpec
   | EmbeddingSpec
-  | TableSpec;
+  | TableSpec
+  | MarkdownSpec;
 
 // Chart builders
 
@@ -215,6 +243,18 @@ registerChartBuilder({
   create: (): PredicatesSpec | undefined => ({
     type: "predicates",
     title: "SQL Predicates",
+  }),
+});
+
+registerChartBuilder({
+  icon: "chart-markdown",
+  description: "Create a view with markdown content",
+  preview: false,
+  ui: [{ code: { key: "content", language: "markdown" } }] as const,
+  create: ({ content }): any | undefined => ({
+    type: "markdown",
+    title: "Markdown",
+    content: content,
   }),
 });
 

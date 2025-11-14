@@ -61,13 +61,14 @@
   onChartsChange={updateCharts}
   onChartStatesChange={updateChartStates}
 >
-  {#snippet chartView({ id, width, height })}
+  {#snippet chartView({ id, width, height, mode })}
     <ChartView
       context={context}
       width={width}
       height={height}
       spec={charts[id]}
       state={chartStates[id] ?? {}}
+      mode={mode ?? "view"}
       onSpecChange={updateChart.bind(null, id)}
       onStateChange={updateChartState.bind(null, id)}
     />
