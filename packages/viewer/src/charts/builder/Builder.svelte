@@ -85,9 +85,9 @@
     return input;
   }
 
-  function getField(name: string): { name: string; type: "continuous" | "discrete" | "discrete[]" } | null {
+  function getField(name: string): { name: string; type: "continuous" | "discrete" | "discrete[]" | "unknown" } | null {
     let c = columns.find((x) => x.name == name);
-    if (c == null || c.jsType == null) {
+    if (c == null) {
       return null;
     }
     switch (c.jsType) {
@@ -107,13 +107,16 @@
           type: "discrete[]",
         };
       default:
-        return null;
+        return {
+          name: c.name,
+          type: "unknown",
+        };
     }
   }
 
   function filteredColumns(columns: ColumnDesc[], types: JSType[] | null | undefined): ColumnDesc[] {
     if (types == null) {
-      return columns.filter((c) => c.jsType != null);
+      return columns;
     }
     return columns.filter((c) => c.jsType != null && types.indexOf(c.jsType) >= 0);
   }

@@ -72,3 +72,9 @@ export interface MarkdownSpec {
   title?: string;
   content: string;
 }
+
+export interface ContentViewerSpec {
+  type: "content-viewer";
+  title?: string;
+  field: string;
+}

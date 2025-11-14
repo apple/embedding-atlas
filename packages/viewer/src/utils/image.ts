@@ -49,7 +49,7 @@ export function imageToDataUrl(img: any): string | null {
     return null;
   }
   if (typeof img == "string") {
-    if (img.startsWith("data:")) {
+    if (img.startsWith("data:") || img.startsWith("http://") || img.startsWith("https://")) {
       return img;
     } else {
       let type = detectImageType(base64Decode(img));

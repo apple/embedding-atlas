@@ -1,6 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import chart_boxplot from "./chart-boxplot.svg?raw";
+import chart_content_viewer from "./chart-content-viewer.svg?raw";
 import chart_embedding from "./chart-embedding.svg?raw";
 import chart_h_bar from "./chart-h-bar.svg?raw";
 import chart_heatmap from "./chart-heatmap.svg?raw";
@@ -20,4 +21,5 @@ export const chartIcons: Record<string, string> = {
   "chart-spec": chart_spec,
   "chart-predicates": chart_predicates,
   "chart-markdown": chart_markdown,
+  "chart-content-viewer": chart_content_viewer,
 };

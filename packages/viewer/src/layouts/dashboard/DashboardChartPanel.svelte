@@ -129,7 +129,7 @@
   }}
 >
   <div
-    class="absolute left-0 right-0 top-0 bottom-0 bg-white dark:bg-black rounded-md overflow-hidden flex flex-col shadow-md border border-slate-300 dark:border-slate-700"
+    class="absolute left-0 right-0 top-0 bottom-0 bg-white dark:bg-black rounded-md overflow-hidden flex flex-col shadow-md border border-slate-300 dark:border-slate-700 group"
   >
     <div class="p-2 bg-slate-100 dark:bg-slate-900 flex cursor-move select-none">
       <div
@@ -143,7 +143,7 @@
       >
         {spec.title}
       </div>
-      <div class="flex gap-1">
+      <div class="flex gap-1 sm:opacity-0 group-hover:opacity-100">
         <CornerButton
           icon={chartMode == "edit" ? IconCheck : IconEdit}
           onClick={() => {

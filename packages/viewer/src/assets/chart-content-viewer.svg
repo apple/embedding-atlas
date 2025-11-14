@@ -1,0 +1,13 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect x="18" y="20" width="14" height="8" rx="3" fill="#007AFF"/>
+<rect x="8" y="31" width="8" height="8" rx="4" fill="black" fill-opacity="0.2"/>
+<rect x="34" y="31" width="22" height="8" rx="3" fill="black" fill-opacity="0.2"/>
+<rect x="8" y="42" width="8" height="8" rx="4" fill="black" fill-opacity="0.2"/>
+<rect x="18" y="42" width="14" height="8" rx="3" fill="black" fill-opacity="0.2"/>
+<rect x="34" y="42" width="22" height="8" rx="3" fill="black" fill-opacity="0.2"/>
+<circle cx="25" cy="24" r="11.5" stroke="black" stroke-width="3"/>
+<path d="M53 20C54.6569 20 56 21.3431 56 23V25C56 26.6569 54.6569 28 53 28H37.373C37.7801 26.7399 38 25.3956 38 24C38 22.6044 37.7801 21.2601 37.373 20H53Z" fill="#007AFF" fill-opacity="0.5"/>
+<path d="M32 36C32 37.6569 30.6569 39 29 39H21C19.3431 39 18 37.6569 18 36V34.9561C20.0206 36.2498 22.4227 37 25 37C27.5773 37 29.9794 36.2498 32 34.9561V36Z" fill="black" fill-opacity="0.2"/>
+<path d="M12 20C12.2082 20 12.4127 20.0152 12.6123 20.0459C12.2147 21.2928 12 22.6213 12 24C12 25.3784 12.2148 26.7065 12.6123 27.9531C12.4127 27.9838 12.2082 28 12 28C9.79086 28 8 26.2091 8 24C8 21.7909 9.79086 20 12 20Z" fill="#007AFF" fill-opacity="0.5"/>
+<path d="M46.7676 42.2324C47.7439 43.2087 47.7439 44.7913 46.7676 45.7676C45.7913 46.7439 44.2087 46.7439 43.2324 45.7676L32.9727 35.5078C34.3519 34.5505 35.5505 33.3519 36.5078 31.9727L46.7676 42.2324Z" fill="black"/>
+</svg>

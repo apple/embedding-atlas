@@ -5,6 +5,7 @@ import type { CustomCell } from "@embedding-atlas/table";
 import { ImageRenderer } from "./image.js";
 import { JSONRenderer, safeJSONStringify } from "./json.js";
 import { MarkdownRenderer } from "./markdown.js";
+import { MessagesRenderer } from "./messages.js";
 import { URLRenderer } from "./url.js";
 
 /** A type describing how to display a column in the table, tooltip, and search results */
@@ -22,6 +23,7 @@ export let textRendererClasses: Record<string, any> = {
   image: ImageRenderer,
   url: URLRenderer,
   json: JSONRenderer,
+  messages: MessagesRenderer,
 };
 
 export let renderersList = [
@@ -29,6 +31,7 @@ export let renderersList = [
   { renderer: "image", label: "Image" },
   { renderer: "url", label: "Link" },
   { renderer: "json", label: "JSON" },
+  { renderer: "messages", label: "Messages" },
 ];
 
 export function getRenderer(value: string | CustomCell | null | undefined) {

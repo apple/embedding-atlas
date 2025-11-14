@@ -3,6 +3,7 @@
 import type { Component } from "svelte";
 
 import BoxPlot from "./basic/BoxPlot.svelte";
+import ContentViewer from "./basic/ContentViewer.svelte";
 import CountPlot from "./basic/CountPlot.svelte";
 import CountPlotList from "./basic/CountPlotList.svelte";
 import Histogram from "./basic/Histogram.svelte";
@@ -17,6 +18,7 @@ import Table from "./table/Table.svelte";
 
 import type {
   BoxPlotSpec,
+  ContentViewerSpec,
   CountPlotSpec,
   Histogram2DSpec,
   HistogramSpec,
@@ -99,6 +101,7 @@ registerChartType("embedding", Embedding);
 registerChartType("predicates", Predicates);
 registerChartType("table", Table);
 registerChartType("markdown", Markdown, { supportsEditMode: true });
+registerChartType("content-viewer", ContentViewer);
 
 // Spec type for all builtin chart types
 export type BuiltinChartSpec =
@@ -110,7 +113,8 @@ export type BuiltinChartSpec =
   | PredicatesSpec
   | EmbeddingSpec
   | TableSpec
-  | MarkdownSpec;
+  | MarkdownSpec
+  | ContentViewerSpec;
 
 // Chart builders
 
@@ -255,6 +259,18 @@ registerChartBuilder({
     type: "markdown",
     title: "Markdown",
     content: content,
+  }),
+});
+
+registerChartBuilder({
+  icon: "chart-content-viewer",
+  description: "Create a view that displays a given field's content for the last selected point",
+  preview: false,
+  ui: [{ field: { key: "field", label: "Field", required: true } }] as const,
+  create: ({ field }): ContentViewerSpec | undefined => ({
+    type: "content-viewer",
+    title: field.name,
+    field: field.name,
   }),
 });
 
