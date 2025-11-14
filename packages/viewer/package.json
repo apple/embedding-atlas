@@ -64,7 +64,7 @@
     "d3-scale-chromatic": "^3.1.0",
     "flexsearch": "^0.8.205",
     "mark.js": "^8.11.1",
-    "marked": "^16.1.2",
+    "marked": "^17.0.0",
     "nanoid": "^5.1.5",
     "postcss": "^8.5.6",
     "publint": "^0.3.12",
