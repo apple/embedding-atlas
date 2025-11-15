@@ -3,13 +3,16 @@
 // The component API for embedding viewer.
 
 import type { EmbeddingViewConfig, Label } from "@embedding-atlas/component";
-import type { CustomCell } from "@embedding-atlas/table";
+import type { CustomCell, Theme as TableTheme } from "@embedding-atlas/table";
 import type { Coordinator } from "@uwdata/mosaic-core";
 import { createClassComponent } from "svelte/legacy";
 
 import Component from "./EmbeddingAtlas.svelte";
 
 import cssCode from "./app.css?inline";
+import type { ChartColors } from "./charts/common/colors.js";
+
+export type { ChartColors, TableTheme };
 
 export interface EmbeddingAtlasProps {
   /** The Mosaic coordinator. */
@@ -41,6 +44,12 @@ export interface EmbeddingAtlasProps {
   /** The color scheme. */
   colorScheme?: "light" | "dark" | null;
 
+  /** Custom chart colors. You can override specific colors for light and dark themes. */
+  chartColors?: {
+    light?: Partial<ChartColors>;
+    dark?: Partial<ChartColors>;
+  } | null;
+
   /** The initial viewer state. */
   initialState?: EmbeddingAtlasState | null;
 
@@ -57,6 +66,9 @@ export interface EmbeddingAtlasProps {
 
   /** Custom cell renderers for the table view. */
   tableCellRenderers?: Record<string, CustomCell | "markdown">;
+
+  /** Custom theme for the table view. Allows customization of colors, fonts, and other visual properties. */
+  tableTheme?: TableTheme | null;
 
   /** A callback to export the currently selected points. */
   onExportSelection?:

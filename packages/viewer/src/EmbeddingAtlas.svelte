@@ -48,7 +48,9 @@
     embeddingViewConfig = null,
     embeddingViewLabels = null,
     colorScheme: colorSchemeProp,
+    chartColors: customChartColors,
     tableCellRenderers,
+    tableTheme,
     onExportApplication,
     onExportSelection,
     onStateChange,
@@ -289,6 +291,7 @@
     id: data.id,
     columns: [],
     colorScheme: colorScheme,
+    customChartColors: customChartColors,
     columnStyles: resolvedColumnStyles,
     cache: new ChartContextCache(),
     persistentCache: cache ?? { get: async () => null, set: async (key, value) => {} },
@@ -299,6 +302,7 @@
     embeddingViewConfig: embeddingViewConfig,
     embeddingViewLabels: embeddingViewLabels,
     tableCellRenderers: tableCellRenderers,
+    tableTheme: tableTheme,
   };
 
   let charts = $state.raw<Record<string, any>>({});

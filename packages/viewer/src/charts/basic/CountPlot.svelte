@@ -9,7 +9,7 @@
   import Container from "../common/Container.svelte";
 
   import type { ChartViewProps } from "../chart.js";
-  import { chartColors } from "../common/colors.js";
+  import { getChartColors } from "../common/colors.js";
   import {
     distributionAggregate,
     distributionStats,
@@ -33,7 +33,7 @@
     onStateChange,
     onSpecChange,
   }: ChartViewProps<CountPlotSpec, State> = $props();
-  let { coordinator, colorScheme } = context;
+  let { coordinator, colorScheme, customChartColors } = context;
   let { selection } = $derived(chartState);
   let { expanded, percentage } = $derived(spec);
 
@@ -59,7 +59,7 @@
   // Adjust scale so the minimum width for non-zero count is 1px.
   let xScaleAdjusted = $derived((v: number) => (v != 0 ? Math.max(1, xScale(v)) : 0));
 
-  let colors = $derived(chartColors[$colorScheme]);
+  let colors = $derived(getChartColors($colorScheme, customChartColors));
 
   function initializeClient(coordinator: Coordinator, table: string, field: string, filter: Selection) {
     let stats: any | null = $state.raw(null);

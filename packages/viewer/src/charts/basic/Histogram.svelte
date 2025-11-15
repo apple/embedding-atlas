@@ -11,7 +11,7 @@
   import ScaleTypePicker from "../controls/ScaleTypePicker.svelte";
 
   import type { ChartViewProps } from "../chart.js";
-  import { chartColors } from "../common/colors.js";
+  import { getChartColors } from "../common/colors.js";
   import {
     distributionAggregate,
     distributionStats,
@@ -47,11 +47,11 @@
     onStateChange,
   }: ChartViewProps<HistogramSpec, State> = $props();
 
-  let { coordinator, colorScheme } = context;
+  let { coordinator, colorScheme, customChartColors } = context;
 
   let { brush } = $derived(chartState);
 
-  let colors = $derived(chartColors[$colorScheme]);
+  let colors = $derived(getChartColors($colorScheme, customChartColors));
 
   let chartData: ChartData | null = $state.raw(null);
   let defaultScaleType = $state<ScaleType | null>(null);

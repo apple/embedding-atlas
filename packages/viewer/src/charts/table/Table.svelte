@@ -47,6 +47,10 @@
   let resolvedCustomCellRenderers = $derived(
     resolveCustomCellRenderers(context.columns, $columnStyles, context.tableCellRenderers),
   );
+
+  let resolvedTableTheme = $derived(
+    context.tableTheme ? { ...tableTheme, ...context.tableTheme } : tableTheme,
+  );
 </script>
 
 <Table
@@ -61,7 +65,7 @@
   }}
   numLines={3}
   colorScheme={$colorScheme}
-  theme={tableTheme}
+  theme={resolvedTableTheme}
   highlightHoveredRow={true}
   customCells={resolvedCustomCellRenderers}
 />

@@ -147,4 +147,4 @@ export class Table {
   }
 }
 
-export type { CustomCell, AdditionalHeaderContent as CustomHeader };
+export type { CustomCell, AdditionalHeaderContent as CustomHeader, Theme };

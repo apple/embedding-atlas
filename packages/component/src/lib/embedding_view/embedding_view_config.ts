@@ -1,8 +1,13 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import type { ThemeConfig } from "./theme.js";
+
 export interface EmbeddingViewConfig {
   /** Color scheme. */
   colorScheme?: "light" | "dark" | null;
+
+  /** Theme configuration for customizing colors, fonts, and other visual properties. */
+  theme?: ThemeConfig | null;
 
   /** View mode. */
   mode?: "points" | "density" | null;

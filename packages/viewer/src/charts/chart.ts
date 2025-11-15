@@ -2,10 +2,12 @@
 
 import type { EmbeddingViewConfig, Label } from "@embedding-atlas/component";
 import type { CustomCell } from "@embedding-atlas/table";
+import type { Theme as TableTheme } from "@embedding-atlas/table";
 import type { Coordinator, Selection } from "@uwdata/mosaic-core";
 import type { Readable, Writable } from "svelte/store";
 
 import type { ColumnDesc } from "../utils/database.js";
+import type { ChartColors } from "./common/colors.js";
 
 export class ChartContextCache {
   private contents: Map<string, any>;
@@ -53,6 +55,12 @@ export interface ChartContext {
   /** The current color scheme. */
   colorScheme: Readable<"light" | "dark">;
 
+  /** Custom chart colors (optional overrides). */
+  customChartColors?: {
+    light?: Partial<ChartColors>;
+    dark?: Partial<ChartColors>;
+  } | null;
+
   /** The column styles. */
   columnStyles: Readable<any>;
 
@@ -93,6 +101,9 @@ export interface ChartContext {
 
   /** Custom cell renderers for the table view. */
   tableCellRenderers?: Record<string, CustomCell | "markdown">;
+
+  /** Custom theme for the table view. */
+  tableTheme?: TableTheme | null;
 }
 
 /** Props passed into a chart view. */

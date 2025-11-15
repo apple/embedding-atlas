@@ -44,7 +44,7 @@
   import Container from "../common/Container.svelte";
 
   import type { ChartViewProps } from "../chart.js";
-  import { chartColors } from "../common/colors.js";
+  import { getChartColors } from "../common/colors.js";
 
   const MAX_BARS = 10;
   const MAX_BARS_EXPANDED = 100;
@@ -71,6 +71,7 @@
   }: ChartViewProps<Spec, State> = $props();
 
   let colorScheme = context.colorScheme;
+  let customChartColors = context.customChartColors;
   let { selection } = $derived(chartState);
 
   interface Bin {
@@ -93,7 +94,7 @@
   // Adjust scale so the minimum width for non-zero count is 1px.
   let xScaleAdjusted = $derived((v: number) => (v != 0 ? Math.max(1, xScale(v)) : 0));
 
-  let colors = $derived(chartColors[$colorScheme]);
+  let colors = $derived(getChartColors($colorScheme, customChartColors));
 
   function initializeClient(coordinator: Coordinator, table: string, field: string, filter: Selection, limit: number) {
     let stats: any | null = $state.raw(null);
