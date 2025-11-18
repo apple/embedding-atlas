@@ -408,7 +408,9 @@
   function onZoom(scaler: number, position: Point) {
     let { x, y, scale } = resolvedViewportState;
     setTooltip(null);
-    let newScale = Math.min(1e2, Math.max(1e-2, scale * scaler));
+    let maxScale = (defaultViewportState?.scale ?? 1) * 1e2;
+    let minScale = (defaultViewportState?.scale ?? 1) * 1e-2;
+    let newScale = Math.min(maxScale, Math.max(minScale, scale * scaler));
     let rect = canvas!.getBoundingClientRect();
     let sz = Math.max(rect.width, rect.height);
     let px = ((position.x - rect.width / 2) / sz) * 2;
