@@ -16,4 +16,4 @@
   }
 </script>
 
-<Button icon={IconPlus} onClick={newChart} />
+<Button icon={IconPlus} onClick={newChart} title="Add" />

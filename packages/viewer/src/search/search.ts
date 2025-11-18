@@ -192,9 +192,13 @@ export function resolveSearcher(options: {
 }): Searcher {
   let { coordinator, table, idColumn, searcher, textColumn, neighborsColumn } = options;
 
+  if (searcher === null) {
+    return {};
+  }
+
   let result: Searcher = {};
 
-  if (searcher != null && searcher.fullTextSearch != null) {
+  if (searcher?.fullTextSearch != null) {
     result.fullTextSearch = searcher.fullTextSearch.bind(searcher);
   } else if (textColumn != null) {
     // FullTextSearcher on the text column.
@@ -202,11 +206,11 @@ export function resolveSearcher(options: {
     result.fullTextSearch = fts.fullTextSearch.bind(fts);
   }
 
-  if (searcher != null && searcher.vectorSearch != null) {
+  if (searcher?.vectorSearch != null) {
     result.vectorSearch = searcher.vectorSearch.bind(searcher);
   }
 
-  if (searcher != null && searcher.nearestNeighbors != null) {
+  if (searcher?.nearestNeighbors != null) {
     result.nearestNeighbors = searcher.nearestNeighbors.bind(searcher);
   } else if (neighborsColumn != null) {
     // Search with pre-computed nearest neighbors.

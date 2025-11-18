@@ -56,9 +56,6 @@
     for (let id in placements) {
       maxY = Math.max(maxY, placements[id].y + placements[id].height);
     }
-    for (let placement of newChartRects) {
-      maxY = Math.max(maxY, placement.y + placement.height);
-    }
     return maxY;
   });
 

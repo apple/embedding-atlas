@@ -266,7 +266,7 @@
         value={categoryColumn}
         onChange={(v) => onSpecChange({ data: { ...spec.data, category: v } })}
         options={[
-          { value: null, label: "(none)" },
+          { value: undefined, label: "--" },
           ...context.columns
             .filter((c) => c.jsType == "string" || c.jsType == "number")
             .map((c) => ({ value: c.name, label: `${c.name} (${c.type})` })),

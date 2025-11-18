@@ -132,7 +132,7 @@ export class OccupancyMap {
   ): { x: number; y: number; width: number; height: number }[] {
     let map = this.clone();
     let result: { x: number; y: number; width: number; height: number }[] = [];
-    let maxY = this.maxOccupiedY() + 1;
+    let maxY = this.maxOccupiedY();
     // Find all unused rectangular areas that meet the size constraints
     for (let y = 0; y <= maxY; y++) {
       for (let x = 0; x < map.numColumns; x++) {
@@ -169,6 +169,10 @@ export class OccupancyMap {
               break;
             }
             maxH = h;
+          }
+
+          if (y + maxH > maxY + 1) {
+            maxH = maxY + 1 - y;
           }
 
           // If we found a valid rectangle, add it and mark the area as used

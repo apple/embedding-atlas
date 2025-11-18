@@ -1,8 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import { marked } from "marked";
-
 import { safeJSONStringify } from "./json.js";
+import { renderMarkdown } from "./markdown.js";
 
 type ResolvedContent = { type: "text"; text: string } | { type: "image"; imageUrl: string };
 
@@ -98,7 +97,7 @@ export class MessagesRenderer {
                 if (c.type == "text") {
                   return E("div", {
                     class: "prose dark:prose-invert max-w-none",
-                    innerHTML: marked(c.text, { async: false }),
+                    innerHTML: renderMarkdown(c.text),
                   });
                 } else if (c.type == "image") {
                   return E("img", {

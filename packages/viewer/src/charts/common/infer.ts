@@ -1,28 +1,24 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import { format } from "d3-format";
-import { scaleBand, scaleLinear, scaleLog, scaleSymlog, type ScaleBand, type ScaleContinuousNumeric } from "d3-scale";
+import * as d3 from "d3";
 
-import { defaultCategoryColors, defaultOrdinalColors } from "./colors.js";
+import { resolveInterpolate, type ChartTheme } from "./theme.js";
 import type {
-  AxisSpec,
+  AxisConfig,
+  ConcretePositionScale,
   ConcreteScale,
-  Extents,
   GridLine,
-  IntermedateScale,
+  IntermediatePositionScale,
   Label,
-  ScaleSpec,
+  LinearPosition,
+  ScaleConfig,
   ScaleType,
   Tick,
 } from "./types.js";
 
-export const FONT_FAMILY = "system-ui";
-export const FONT_SIZE = 11;
-export const MAX_LABEL_LENGTH = 80;
-
 let canvas: HTMLCanvasElement | undefined = undefined;
 
-function get_context() {
+function sharedGraphicsContext() {
   if (canvas == undefined) {
     canvas = document.createElement("canvas");
     canvas.width = 1;
@@ -31,117 +27,197 @@ function get_context() {
   return canvas.getContext("2d")!;
 }
 
-function measureText(text: string): { width: number; height: number } {
-  let ctx = get_context();
-  ctx.font = `${FONT_SIZE}px ${FONT_FAMILY}`;
+function measureText(
+  text: string,
+  options: { fontFamily: string; fontSize: number; maxWidth: number },
+): { size: { width: number; height: number }; fontFamily: string; fontSize: number } {
+  let ctx = sharedGraphicsContext();
+  ctx.font = `${options.fontSize}px ${options.fontFamily}`;
   let metrics = ctx.measureText(text);
   return {
-    width: Math.min(MAX_LABEL_LENGTH, metrics.width),
-    height: FONT_SIZE,
+    size: { width: Math.min(options.maxWidth, metrics.width), height: options.fontSize },
+    fontFamily: options.fontFamily,
+    fontSize: options.fontSize,
   };
 }
 
-function axisExtents(labels: Label[], dimension: "x" | "y", padding: number = 0): Extents {
-  let maxWidth = 0;
-  let maxHeight = 0;
-  for (let label of labels) {
-    let { width, height } = label.size;
-    maxWidth = Math.max(maxWidth, width);
-    maxHeight = Math.max(maxHeight, height);
-  }
-  switch (dimension) {
-    case "x": {
-      return { left: maxWidth / 2, right: maxWidth / 2, top: 0, bottom: maxHeight + padding };
-    }
-    case "y": {
-      return { left: maxWidth + padding, right: 0, top: maxHeight / 2, bottom: maxHeight / 2 };
-    }
-  }
-}
-
-export function makeScale(spec: ScaleSpec, axis: AxisSpec | null | undefined, dimension: "x" | "y"): IntermedateScale {
+export function makeScale(
+  spec: ScaleConfig,
+  axis: AxisConfig | null | undefined,
+  dimension: "x" | "y",
+  theme: ChartTheme,
+): IntermediatePositionScale {
   switch (spec.type) {
     case "band":
-      return makeBandScale(spec, axis, dimension);
+      return makeBandScale(spec, axis, dimension, theme);
     default:
-      return makeContinuousScale(spec, axis, dimension);
+      return makeContinuousScale(spec, axis, dimension, theme);
   }
 }
 
-function makeBandScale(spec: ScaleSpec, axis: AxisSpec | null | undefined, dimension: "x" | "y"): IntermedateScale {
+function makeBandScale(
+  spec: ScaleConfig,
+  axis: AxisConfig | null | undefined,
+  dimension: "x" | "y",
+  theme: ChartTheme,
+): IntermediatePositionScale {
   let domain = [...spec.domain, ...(spec.specialValues ?? [])];
   domain = Array.from(new Set(domain));
   if (dimension == "y") {
     domain = domain.reverse();
   }
-  let scale = scaleBand().domain(domain).padding(0.1);
 
   let labels: Label[] = [];
   let ticks: Tick[] = [];
-  let extents: Extents = { left: 0, right: 0, top: 0, bottom: 0 };
 
   if (axis) {
-    let values: string[] = axis.values ?? scale.domain();
+    let values: string[] = axis.values ?? domain;
     let labelPadding = axis.labelPadding ?? 6;
+    let opts = textOptions(axis, theme);
     labels = values.map((v) => {
-      let { width, height } = measureText(v);
       if (dimension == "y") {
         return {
           text: v,
           value: v,
           padding: labelPadding,
           level: 0,
-          size: { width, height },
           orientation: "horizontal",
+          ...measureText(v, opts),
         };
       } else {
+        let tm = measureText(v, opts);
+        tm.size = { width: tm.size.height, height: tm.size.width };
         return {
           text: v,
           value: v,
           padding: labelPadding,
           level: 0,
-          size: { width: height, height: width },
           orientation: "vertical",
+          ...tm,
         };
       }
     });
-    ticks = values.map((x) => {
-      return { value: x, level: 0 };
-    });
-    extents = unionExtents([extents, axisExtents(labels, dimension, labelPadding)]);
+    ticks = values.map((x) => ({ value: x, level: 0 }));
   }
 
+  let scale = d3.scaleBand().domain(domain).padding(0.1);
+  if (dimension == "y") {
+    scale.range([1, 0]);
+  }
+
+  let bandwidth = scale.bandwidth();
+  let step = scale.step();
+
+  let base: IntermediatePositionScale["base"] = {
+    rangeBands: [
+      [
+        [0, 0],
+        [1, 0],
+      ],
+    ],
+    apply: (x) => {
+      return [(scale(x) ?? 0) + bandwidth / 2, 0];
+    },
+    applyBand: (x) => {
+      let p = scale(x) ?? 0;
+      return [
+        [p, 0],
+        [p + bandwidth, 0],
+      ];
+    },
+    invert(position, [r0, r1]) {
+      let t = (position - r0) / (r1 - r0);
+      if (dimension == "y") {
+        t = 1 - t;
+      }
+      let index = Math.floor(t / step);
+      return domain[index];
+    },
+  };
+
   return {
-    extents: extents,
     labels: labels,
     gridLines: [],
     ticks: ticks,
-    concrete: (range) => makeConcreteBand(scale, spec.domain, spec.specialValues ?? [], range),
+    base: base,
+    concrete: (range) => makeConcrete(base, "band", spec.domain, spec.specialValues ?? [], range),
+  };
+}
+
+function lpInterpolator(a: LinearPosition, b: LinearPosition): (t: number) => LinearPosition {
+  let [a0, a1] = a;
+  let [b0, b1] = b;
+  return (t) => [a0 + (b0 - a0) * t, a1 + (b1 - a1) * t];
+}
+
+function lpResolver(range: [number, number]): (pos: LinearPosition) => number {
+  let [r0, r1] = range;
+  return ([a, b]) => a * (r1 - r0) + r0 + b;
+}
+
+function makeConcrete(
+  base: IntermediatePositionScale["base"],
+  type: ScaleType,
+  domain: any[],
+  specialValues: string[],
+  range: [number, number],
+): ConcretePositionScale {
+  let resolver = lpResolver(range);
+  return {
+    type: type,
+    domain: domain,
+    specialValues: specialValues,
+    range: range,
+    rangeBands: base.rangeBands.map(([a, b]) => [resolver(a), resolver(b)]),
+    apply: (x) => {
+      return resolver(base.apply(x));
+    },
+    applyBand: (x) => {
+      let [b1, b2] = base.applyBand(x);
+      let p1 = resolver(b1);
+      let p2 = resolver(b2);
+      return p1 < p2 ? [p1, p2] : [p2, p1];
+    },
+    invert: (x, type) => {
+      return base.invert(x, range, type);
+    },
+  };
+}
+
+function textOptions(
+  axis: AxisConfig | null | undefined,
+  theme: ChartTheme,
+): { fontFamily: string; fontSize: number; maxWidth: number } {
+  return {
+    fontFamily: axis?.labelFontFamily ?? theme.labelFontFamily,
+    fontSize: axis?.labelFontSize ?? theme.labelFontSize,
+    maxWidth: axis?.labelMaxWidth ?? theme.labelMaxWidth,
   };
 }
 
 function makeContinuousScale(
-  spec: ScaleSpec,
-  axis: AxisSpec | null | undefined,
+  spec: ScaleConfig,
+  axis: AxisConfig | null | undefined,
   dimension: "x" | "y",
-): IntermedateScale {
-  let scale: ScaleContinuousNumeric<number, number>;
+  theme: ChartTheme,
+): IntermediatePositionScale {
+  let scale: d3.ScaleContinuousNumeric<number, number>;
 
   switch (spec.type) {
     case "linear": {
-      scale = scaleLinear().domain(spec.domain);
+      scale = d3.scaleLinear().domain(spec.domain);
       break;
     }
     case "log": {
-      scale = scaleLog().domain(spec.domain);
+      scale = d3.scaleLog().domain(spec.domain);
       break;
     }
     case "symlog": {
       let constant = spec.constant ?? 1;
-      scale = scaleSymlog().constant(constant).domain(spec.domain);
+      scale = d3.scaleSymlog().constant(constant).domain(spec.domain);
       scale.nice = () => scale;
       scale.ticks = (count) => symlogTicks(scale.domain(), constant, count);
-      scale.tickFormat = () => format("~s");
+      scale.tickFormat = () => d3.format("~s");
       break;
     }
     default: {
@@ -151,7 +227,6 @@ function makeContinuousScale(
 
   let labels: Label[] = [];
   let gridLines: GridLine[] = [];
-  let extents: Extents = { left: 0, right: 0, top: 0, bottom: 0 };
 
   if (axis) {
     let values: number[] = [];
@@ -189,6 +264,7 @@ function makeContinuousScale(
         return 0;
       }
     };
+    let opts = textOptions(axis, theme);
     labels = values.map((v) => {
       let text = tickFormat(v);
       return {
@@ -196,8 +272,8 @@ function makeContinuousScale(
         value: v,
         padding: labelPadding,
         level: valueLevel(v),
-        size: measureText(text),
         orientation: "horizontal",
+        ...measureText(text, opts),
       };
     });
     for (let sp of spec.specialValues ?? []) {
@@ -206,33 +282,138 @@ function makeContinuousScale(
         value: sp,
         padding: labelPadding,
         level: 0,
-        size: measureText(sp),
         orientation: "horizontal",
+        ...measureText(sp, opts),
       });
     }
-    gridLines = values.map((x) => {
-      return { value: x, level: valueLevel(x) };
-    });
-    extents = unionExtents([extents, axisExtents(labels, dimension, labelPadding)]);
+    gridLines = values.map((x) => ({ value: x, level: valueLevel(x) }));
   }
+
+  if (dimension == "y") {
+    scale.range([1, 0]);
+  }
+
+  let { rangeBands, map } = resolveSpecialValues(
+    Array.from(new Set(spec.specialValues ?? [])),
+    dimension == "x" ? "start" : "end",
+  );
+
+  let [r0, r1] = rangeBands[0];
+  let pos = lpInterpolator(r0, r1);
+
+  let base: IntermediatePositionScale["base"] = {
+    rangeBands: rangeBands,
+    apply: (x) => {
+      let sp = map.get(x);
+      if (sp != undefined) {
+        return [(sp[0][0] + sp[1][0]) / 2, (sp[0][1] + sp[1][1]) / 2];
+      }
+      if (x == undefined) {
+        return [NaN, NaN];
+      }
+      let t = x instanceof Array && x.length >= 2 ? (scale(x[0]) + scale(x[1])) / 2 : scale(x);
+      return pos(t);
+    },
+    applyBand: (x) => {
+      let sp = map.get(x);
+      if (sp != null) {
+        return sp;
+      }
+      if (x == null) {
+        return [
+          [NaN, NaN],
+          [NaN, NaN],
+        ];
+      }
+      if (x instanceof Array && x.length >= 2) {
+        return [pos(scale(x[0])), pos(scale(x[1]))];
+      } else {
+        let v = pos(scale(x));
+        return [v, v];
+      }
+    },
+    invert(position, range, type) {
+      let resolver = lpResolver(range);
+      if (type != "number") {
+        for (let [value, [r0, r1]] of map.entries()) {
+          let b0 = resolver(r0);
+          let b1 = resolver(r1);
+          if (position >= Math.min(b0, b1) && position <= Math.max(b0, b1)) {
+            return value;
+          }
+        }
+      }
+      if (type != "string") {
+        let b0 = resolver(r0);
+        let b1 = resolver(r1);
+        return scale.invert((position - b0) / (b1 - b0));
+      }
+    },
+  };
+
   return {
-    extents: extents,
     labels: labels,
     gridLines: gridLines,
     ticks: gridLines,
-    concrete: (range) => makeConcreteContinuous(scale, spec.specialValues ?? [], range),
+    base: base,
+    concrete: (range) => makeConcrete(base, spec.type, scale.domain(), spec.specialValues ?? [], range),
   };
 }
 
-export function unionExtents(values: Extents[]): Extents {
-  let r: Extents = { left: 0, right: 0, top: 0, bottom: 0 };
-  for (let v of values) {
-    r.left = Math.max(r.left, v.left);
-    r.right = Math.max(r.right, v.right);
-    r.top = Math.max(r.top, v.top);
-    r.bottom = Math.max(r.bottom, v.bottom);
+function resolveSpecialValues(
+  specialValues: string[],
+  placement: "start" | "end",
+): {
+  rangeBands: [LinearPosition, LinearPosition][];
+  map: Map<string, [LinearPosition, LinearPosition]>;
+} {
+  let baseBand: [LinearPosition, LinearPosition] = [
+    [0, 0],
+    [1, 0],
+  ];
+  let specialBand: [LinearPosition, LinearPosition] | undefined;
+  let map = new Map<string, [LinearPosition, LinearPosition]>();
+
+  if (specialValues.length > 0) {
+    let gap = 8;
+    let bandSize = 20;
+    let len = specialValues.length * bandSize;
+
+    if (placement == "start") {
+      baseBand = [
+        [0, len + gap],
+        [1, 0],
+      ];
+
+      specialBand = [
+        [0, 0],
+        [0, len],
+      ];
+    } else {
+      baseBand = [
+        [0, 0],
+        [1, -len - gap],
+      ];
+
+      specialBand = [
+        [1, -len],
+        [1, 0],
+      ];
+    }
+
+    let interp = lpInterpolator(specialBand[0], specialBand[1]);
+
+    for (let i = 0; i < specialValues.length; i++) {
+      let t0 = (i + 0.1) / specialValues.length;
+      let t1 = (i + 0.9) / specialValues.length;
+      map.set(specialValues[i], [interp(t0), interp(t1)]);
+    }
   }
-  return r;
+
+  return {
+    rangeBands: specialBand != undefined ? [baseBand, specialBand] : [baseBand],
+    map: map,
+  };
 }
 
 export function resolveLabelOverlap<T>(
@@ -259,106 +440,6 @@ export function resolveLabelOverlap<T>(
   return labels.filter((_, i) => placed[i]);
 }
 
-function makeConcreteContinuous(
-  partial: ScaleContinuousNumeric<number, number>,
-  specialValues: string[],
-  range: [number, number],
-): ConcreteScale {
-  specialValues = Array.from(new Set(specialValues));
-  let rangeStart = range[0];
-  let rangeEnd = range[1];
-  let map = new Map<string, [number, number]>();
-  let specialValuesRange: [number, number] | undefined = undefined;
-  if (specialValues.length > 0) {
-    let distance = 22;
-    let specialValuesGap = 8;
-    let bandSize = 20;
-    let specialLength = specialValues.length * bandSize;
-    let gap = 2;
-    let start = rangeStart;
-    if (rangeStart < rangeEnd) {
-      rangeStart = rangeStart + specialLength + distance;
-      specialValuesRange = [start, start + specialLength + distance - specialValuesGap];
-    } else {
-      rangeStart = rangeStart - specialLength - distance;
-      start = rangeStart + distance;
-      specialValuesRange = [start - distance + specialValuesGap, start + specialLength];
-    }
-    for (let i = 0; i < specialValues.length; i++) {
-      map.set(specialValues[i], [start + i * bandSize + gap, start + i * bandSize + bandSize - gap]);
-    }
-  }
-  let r = partial.copy().range([rangeStart, rangeEnd]);
-  return {
-    domain: partial.domain(),
-    specialValues: specialValues ?? [],
-    range: [rangeStart, rangeEnd],
-    rangeBands: [[rangeStart, rangeEnd], ...(specialValuesRange ? [specialValuesRange] : [])],
-    apply: (x) => {
-      let sp = map.get(x);
-      if (sp != null) {
-        return (sp[0] + sp[1]) / 2;
-      } else {
-        return r(x);
-      }
-    },
-    applyBand: (x) => {
-      let sp = map.get(x);
-      if (sp != null) {
-        return sp;
-      } else {
-        if (typeof x != "number") {
-          return [r(x[0]), r(x[1])];
-        } else {
-          let v = r(x);
-          return [v, v];
-        }
-      }
-    },
-    invert: (x, type) => {
-      if (type != "number") {
-        for (let [value, range] of map.entries()) {
-          if (x >= Math.min(...range) && x <= Math.max(...range)) {
-            return value;
-          }
-        }
-      }
-      return r.invert(x);
-    },
-  };
-}
-
-function makeConcreteBand(
-  partial: ScaleBand<string>,
-  domain: string[],
-  specialValues: string[],
-  range: [number, number],
-): ConcreteScale {
-  let rangeStart = range[0];
-  let rangeEnd = range[1];
-  let scale = partial.copy().range(range);
-  let bandWidth = scale.bandwidth();
-  let step = scale.step();
-  return {
-    domain: domain,
-    specialValues: specialValues,
-    range: [rangeStart, rangeEnd],
-    rangeBands: [[rangeStart, rangeEnd]],
-    apply: (x) => {
-      return (scale(x) ?? 0) + bandWidth / 2;
-    },
-    applyBand: (x) => {
-      let p = scale(x) ?? 0;
-      return [p, p + bandWidth];
-    },
-    invert: (x) => {
-      let t = (x - rangeStart) / (rangeEnd - rangeStart);
-      let index = Math.floor((t * Math.abs(rangeEnd - rangeStart)) / step);
-      return partial.domain()[index];
-    },
-  };
-}
-
 function symlogTicks(domain: number[], constant: number, count?: number | undefined): number[] {
   count = count ?? 5;
 
@@ -366,7 +447,7 @@ function symlogTicks(domain: number[], constant: number, count?: number | undefi
   let max = domain[1];
 
   if ((min > 0 && max > 0 && min / max > 0.5) || (min < 0 && max < 0 && max / min > 0.5)) {
-    return scaleLinear().domain([min, max]).ticks(count);
+    return d3.scaleLinear().domain([min, max]).ticks(count);
   }
 
   let start = constant * 2;
@@ -376,75 +457,93 @@ function symlogTicks(domain: number[], constant: number, count?: number | undefi
   }
   return [
     ...(min < -threshold
-      ? scaleLog()
+      ? d3
+          .scaleLog()
           .domain([start, -min])
           .ticks(count)
           .map((x) => -x)
       : []),
     0,
-    ...(max > threshold ? scaleLog().domain([start, max]).ticks(count) : []),
+    ...(max > threshold ? d3.scaleLog().domain([start, max]).ticks(count) : []),
   ].filter((x) => x >= min && x <= max);
 }
 
-export function inferPositionScale(
-  stats: {
-    min: number;
-    minPositive: number;
-    max: number;
-    median: number;
-    count: number;
-  },
-  type: ScaleType | null | undefined,
-): ScaleSpec {
-  let { min, max, median, count, minPositive } = stats;
-  let scale: ScaleSpec = {
-    type: "linear",
-    domain: [min, max],
-  };
-  if (type == null) {
-    if (count >= 100 && min >= 0 && median < max * 0.05) {
-      scale.type = min > 0 ? "log" : "symlog";
+export function inferColorScale(spec: ScaleConfig, theme: ChartTheme): ConcreteScale<string> {
+  switch (spec.type) {
+    case "band": {
+      let categoryColors = (spec.range as any) ?? theme.categoryColors;
+
+      let map = new Map<string, string>();
+      if (typeof categoryColors == "function") {
+        let colors = categoryColors(spec.domain.length);
+        for (let i = 0; i < spec.domain.length; i++) {
+          map.set(spec.domain[i], colors[i]);
+        }
+      } else {
+        for (let i = 0; i < spec.domain.length; i++) {
+          map.set(spec.domain[i], categoryColors[i % categoryColors.length]);
+        }
+      }
+
+      return {
+        type: spec.type,
+        domain: spec.domain,
+        specialValues: spec.specialValues ?? [],
+        apply: (value: any) => map.get(value) ?? theme.markColorGray,
+      };
     }
-  } else {
-    scale.type = type;
+    default:
+      let intermediate = makeScale({ ...spec, specialValues: [] }, null, "x", theme);
+      let concrete = intermediate.concrete([0, 1]);
+      let interp = resolveInterpolate((spec.range as any) ?? theme.interpolate);
+      let specialValuesSet = new Set(spec.specialValues ?? []);
+      return {
+        type: spec.type,
+        domain: spec.domain,
+        specialValues: spec.specialValues ?? [],
+        apply: (value: any) => {
+          if (specialValuesSet.has(value)) {
+            return theme.markColorGray;
+          }
+          return interp(concrete.apply(value));
+        },
+      };
   }
-  if (scale.type == "log") {
-    scale.domain[0] = minPositive;
-  }
-  return scale;
 }
 
-export function inferColorScale(
-  domain: (string | [number, number])[],
-  options: {
-    fade?: string[];
-    ordinal?: boolean;
-  } = {},
-): {
-  domain: (string | [number, number])[];
-  apply: (value: string | [number, number]) => string;
-} {
-  let fade = options.fade ?? [];
-  let ordinal = options.ordinal ?? false;
+export function inferSizeScale(spec: ScaleConfig, theme: ChartTheme): ConcreteScale<number> {
+  let sizeRange: [number, number] = [0, 1000];
 
-  let colorfulKeys: string[] = [];
-  let fadeKeys: string[] = [];
-  let value2key = (x: any) => JSON.stringify(x);
-  for (let item of domain) {
-    let key = value2key(item);
-    if (typeof item == "string" && fade.indexOf(item) >= 0) {
-      fadeKeys.push(key);
-    } else {
-      colorfulKeys.push(key);
+  if (spec.range instanceof Array && spec.range.length == 2) {
+    let [r0, r1] = spec.range;
+    if (typeof r0 == "number" && typeof r1 == "number") {
+      sizeRange = [r0, r1];
     }
   }
-  let colors = ordinal ? defaultOrdinalColors(colorfulKeys.length) : defaultCategoryColors(colorfulKeys.length);
-  let map = new Map<string | [number, number], string>(colorfulKeys.map((k, i) => [k, colors[i]]));
-  return {
-    domain: domain,
-    apply: (value) => {
-      let key = value2key(value);
-      return map.get(key) ?? "#888888";
-    },
-  };
+
+  switch (spec.type) {
+    case "band": {
+      let map = new Map<string, number>();
+      for (let i = 0; i < spec.domain.length; i++) {
+        map.set(spec.domain[i], ((i + 1) / spec.domain.length) * (sizeRange[1] - sizeRange[0]) + sizeRange[0]);
+      }
+      return {
+        type: spec.type,
+        domain: spec.domain,
+        specialValues: spec.specialValues ?? [],
+        apply: (value: any) => map.get(value) ?? 1,
+      };
+    }
+    default:
+      let intermediate = makeScale({ ...spec, specialValues: [] }, null, "x", theme);
+      let concrete = intermediate.concrete(sizeRange);
+      return {
+        type: spec.type,
+        domain: spec.domain,
+        specialValues: spec.specialValues ?? [],
+        apply: (value: any) => {
+          return concrete.apply(value);
+        },
+      };
+  }
 }

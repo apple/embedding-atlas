@@ -27,6 +27,7 @@
   import { markdown } from "@codemirror/lang-markdown";
   import { PostgreSQL, sql } from "@codemirror/lang-sql";
   import { jsonSchema } from "codemirror-json-schema";
+  import { json5Schema } from "codemirror-json-schema/json5";
 
   // Theme
   import { oneDark } from "@codemirror/theme-one-dark";
@@ -121,6 +122,9 @@
 
     if (options.language == "json") {
       languageExtensions.push(jsonSchema(options.json?.schema ?? {}));
+    }
+    if (options.language == "json5") {
+      languageExtensions.push(json5Schema(options.json?.schema ?? {}));
     }
     if (options.language == "sql") {
       let table = options.sql?.table;

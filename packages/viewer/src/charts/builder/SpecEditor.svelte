@@ -1,58 +1,45 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
+  import JSON5 from "json5";
+
   import CodeEditor from "../../widgets/CodeEditor.svelte";
+  import type { ChartSpec } from "../spec/spec.js";
+
+  import jsonSchema from "../chart_types.ts?type=BuiltinChartSpec&json-schema";
 
   interface Props {
-    spec: any;
+    class?: string;
+    initialValue?: ChartSpec;
     colorScheme?: "light" | "dark";
-    onSpecChange?: (spec: any) => void;
+    onChange?: (spec: ChartSpec | undefined) => void;
   }
 
-  let { spec, colorScheme, onSpecChange }: Props = $props();
+  let { class: className, initialValue, colorScheme, onChange }: Props = $props();
 
-  let validateResult = $state<{ message?: string; spec?: any } | undefined>(undefined);
-  let isValid = $derived(validateResult?.spec !== undefined);
+  let value = JSON5.stringify(initialValue, { space: 2, quote: '"' });
 
-  function validate(textValue: string): typeof validateResult {
+  function parse(textValue: string): ChartSpec | undefined {
     try {
-      let newSpec = JSON.parse(textValue);
-      return { spec: newSpec };
+      let newSpec = JSON.parse(JSON.stringify(JSON5.parse(textValue)));
+      return newSpec as ChartSpec;
     } catch (e: any) {
-      return { message: e.message?.toString() };
-    }
-  }
-
-  function confirm() {
-    if (validateResult && validateResult.spec != undefined) {
-      onSpecChange?.(validateResult.spec);
+      return undefined;
     }
   }
 </script>
 
-<div class="w-full h-full flex flex-col gap-2">
-  <CodeEditor
-    class="w-full flex-1 min-h-0"
-    colorScheme={colorScheme}
-    language="json"
-    value={JSON.stringify(spec, null, 2)}
-    onChange={(newValue) => {
-      validateResult = validate(newValue);
-    }}
-  />
-  <div class="flex-none flex gap-2 items-center">
-    <button
-      class="flex-none px-2 h-8 w-24 rounded-md text-white text-sm"
-      class:bg-blue-500={isValid}
-      class:bg-gray-300={!isValid}
-      class:dark:text-gray-500={!isValid}
-      class:dark:bg-gray-700={!isValid}
-      disabled={!isValid}
-      onclick={confirm}
-    >
-      Confirm
-    </button>
-    <div class="flex-1 w-0 overflow-hidden text-nowrap text-ellipsis" title={validateResult?.message ?? ""}>
-      {validateResult?.message ?? ""}
-    </div>
-  </div>
-</div>
+<CodeEditor
+  class={className}
+  colorScheme={colorScheme}
+  language="json5"
+  json={{ schema: jsonSchema }}
+  value={value}
+  onChange={(newValue) => {
+    let spec = parse(newValue);
+    if (spec) {
+      onChange?.(spec);
+    } else {
+      onChange?.(undefined);
+    }
+  }}
+/>

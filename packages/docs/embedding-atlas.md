@@ -88,3 +88,21 @@ You may set `initialState` to a previously-saved state value to reload the UI to
 Properties of the state:
 
 <!-- @doc(ts): EmbeddingAtlasState -->
+
+## Chart Theme
+
+You can pass in an object with the following properties to the `chartTheme` property of the component to style the charts.
+You can also provide these options as `light` and/or `dark` properties, which will control the appearance of the view depending on its `colorScheme`. For example:
+
+```ts
+{
+  light: {
+    markColor: "black";
+  }
+  dark: {
+    markColor: "white";
+  }
+}
+```
+
+<!-- @doc(ts,no-required): ChartTheme -->

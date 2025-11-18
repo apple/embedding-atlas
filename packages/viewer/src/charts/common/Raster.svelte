@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { rgb } from "d3-color";
+  import * as d3 from "d3";
   import type { XYFrameProxy } from "./types.js";
 
   interface Props {
@@ -16,11 +16,11 @@
 
   let { proxy, xDomain, yDomain, color, rasterWidth, rasterHeight }: Props = $props();
 
-  let x0 = $derived(proxy.xScale && xDomain ? proxy.xScale.apply(xDomain[0]) : 0);
-  let x1 = $derived(proxy.xScale && xDomain ? proxy.xScale.apply(xDomain[1]) : proxy.plotWidth);
+  let x0 = $derived(proxy.scale.x && xDomain ? proxy.scale.x.apply(xDomain[0]) : 0);
+  let x1 = $derived(proxy.scale.x && xDomain ? proxy.scale.x.apply(xDomain[1]) : proxy.plotWidth);
 
-  let y0 = $derived(proxy.yScale && yDomain ? proxy.yScale.apply(yDomain[0]) : 0);
-  let y1 = $derived(proxy.yScale && yDomain ? proxy.yScale.apply(yDomain[1]) : proxy.plotHeight);
+  let y0 = $derived(proxy.scale.y && yDomain ? proxy.scale.y.apply(yDomain[0]) : 0);
+  let y1 = $derived(proxy.scale.y && yDomain ? proxy.scale.y.apply(yDomain[1]) : proxy.plotHeight);
 
   let href: string | null = $state(null);
 
@@ -38,9 +38,9 @@
       for (let px = 0; px < canvas.width; px++) {
         let cx = ((px + 0.5) / canvas.width) * (x1 - x0) + x0;
         let cy = ((py + 0.5) / canvas.height) * (y1 - y0) + y0;
-        let x = proxy.xScale?.invert(cx) ?? 0;
-        let y = proxy.yScale?.invert(cy) ?? 0;
-        let { r, g, b, opacity } = rgb(color(x, y));
+        let x = proxy.scale.x?.invert(cx) ?? 0;
+        let y = proxy.scale.y?.invert(cy) ?? 0;
+        let { r, g, b, opacity } = d3.rgb(color(x, y));
         data.data[offset++] = r;
         data.data[offset++] = g;
         data.data[offset++] = b;

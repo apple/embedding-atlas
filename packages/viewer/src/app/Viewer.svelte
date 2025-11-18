@@ -70,7 +70,10 @@
       }}
       embeddingViewConfig={config.embeddingViewConfig}
       embeddingViewLabels={config.embeddingViewLabels}
-      initialState={initialState}
+      defaultChartsConfig={config.defaultChartsConfig}
+      chartTheme={config.chartTheme}
+      stylesheet={config.stylesheet}
+      initialState={initialState ?? config.initialState}
       onExportApplication={dataSource.downloadArchive ? onDownloadArchive : null}
       onExportSelection={dataSource.downloadSelection ? onExportSelection : null}
       onStateChange={debounce(onStateChange, 200)}

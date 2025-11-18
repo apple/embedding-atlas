@@ -172,7 +172,7 @@
       </div>
     {/each}
     <button
-      class="text-left text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 whitespace-nowrap text-ellipsis w-full overflow-hidden"
+      class="text-left text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 whitespace-nowrap text-ellipsis w-full overflow-hidden select-none"
       onclick={() => {
         editingEnabled = true;
         editingItem = null;

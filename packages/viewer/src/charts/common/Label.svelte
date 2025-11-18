@@ -1,6 +1,5 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { FONT_FAMILY, FONT_SIZE } from "./infer.js";
   import type { Label, XYFrameProxy } from "./types.js";
 
   interface Props {
@@ -15,14 +14,14 @@
   let { px, py, anchorX, anchorY } = $derived(
     dimension == "x"
       ? {
-          px: proxy.xScale?.apply(label.value) ?? 0,
+          px: proxy.scale.x?.apply(label.value) ?? 0,
           py: proxy.plotHeight + label.padding,
           anchorX: 0.5,
           anchorY: 0,
         }
       : {
           px: -label.padding,
-          py: proxy.yScale?.apply(label.value) ?? 0,
+          py: proxy.scale.y?.apply(label.value) ?? 0,
           anchorX: 1,
           anchorY: 0.5,
         },
@@ -56,8 +55,8 @@
       style:width="{width + 2}px"
       style:height="{height + marginY * 2}px"
       style:line-height="{height + marginY * 2}px"
-      style:font-family={FONT_FAMILY}
-      style:font-size="{FONT_SIZE}px"
+      style:font-family={label.fontFamily}
+      style:font-size="{label.fontSize}px"
       style:margin-left="{marginX}px"
       style:color={color}
       style:overflow="hidden"

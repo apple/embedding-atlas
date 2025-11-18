@@ -4,6 +4,8 @@ import { defineConfig } from "vite";
 import dts from "vite-plugin-dts";
 import wasm from "vite-plugin-wasm";
 
+import { tsJsonSchemaPlugin } from "./scripts/vite-plugin-ts-json-schema.js";
+
 function fixAbsoluteImport() {
   // Fix a bug where vite outputs absolute paths for workers.
   return {
@@ -19,7 +21,14 @@ function fixAbsoluteImport() {
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [svelte(), wasm(), icons({ compiler: "svelte" }), dts({ rollupTypes: true }), fixAbsoluteImport()],
+  plugins: [
+    svelte(),
+    wasm(),
+    icons({ compiler: "svelte" }),
+    dts({ rollupTypes: true }),
+    tsJsonSchemaPlugin(),
+    fixAbsoluteImport(),
+  ],
   worker: {
     format: "es",
     plugins: () => [wasm()],

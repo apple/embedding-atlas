@@ -6,6 +6,7 @@ import type { Coordinator, Selection } from "@uwdata/mosaic-core";
 import type { Readable, Writable } from "svelte/store";
 
 import type { ColumnDesc } from "../utils/database.js";
+import type { ChartThemeConfig } from "./common/theme.js";
 
 export class ChartContextCache {
   private contents: Map<string, any>;
@@ -52,6 +53,9 @@ export interface ChartContext {
 
   /** The current color scheme. */
   colorScheme: Readable<"light" | "dark">;
+
+  /** The chart theme. */
+  theme: Readable<ChartThemeConfig | undefined>;
 
   /** The column styles. */
   columnStyles: Readable<any>;

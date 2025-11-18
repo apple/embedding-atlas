@@ -112,9 +112,11 @@ def make_embedding_atlas_props(**options: Unpack[EmbeddingAtlasOptions]) -> dict
     set_prop("embeddingViewConfig.autoLabelStopWords", options.get("stop_words"))
 
     # Layout
-    set_prop("initialState.view.showTable", options.get("show_table"))
-    set_prop("initialState.view.showSidebar", options.get("show_charts"))
-    set_prop("initialState.view.showEmbedding", options.get("show_embedding"))
+    set_prop("initialState.layoutStates.list.showTable", options.get("show_table"))
+    set_prop("initialState.layoutStates.list.showCharts", options.get("show_charts"))
+    set_prop(
+        "initialState.layoutStates.list.showEmbedding", options.get("show_embedding")
+    )
 
     set_prop("initialState.version", "0.0.0")
 

@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import * as SQL from "@uwdata/mosaic-sql";
-import { scaleLinear, scaleLog } from "d3-scale";
+import * as d3 from "d3";
 import type { ScaleType } from "./types.js";
 
 export interface Binning {
@@ -82,7 +82,7 @@ export function inferBinning(
 
   switch (scaleType) {
     case "linear": {
-      let s = scaleLinear().domain([min, max]).nice(desiredCount);
+      let s = d3.scaleLinear().domain([min, max]).nice(desiredCount);
       let ticks = s.ticks(desiredCount);
       return {
         scale: { ...scaleTypes.linear, domain: s.domain() as any },
@@ -91,7 +91,7 @@ export function inferBinning(
       };
     }
     case "log": {
-      let s = scaleLog().domain([min, max]).nice();
+      let s = d3.scaleLog().domain([min, max]).nice();
       let binStart = Math.log10(s.domain()[0]);
       let binSize = (Math.log10(s.domain()[1]) - binStart) / desiredCount;
       binSize = roundToNearest(binSize, [0.05, 0.1, 0.2, 0.5, 1, 1.5, 2]);

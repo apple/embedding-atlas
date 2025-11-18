@@ -2,23 +2,18 @@
 <script lang="ts">
   import { makeClient, type Coordinator, type Selection, type SelectionClause } from "@uwdata/mosaic-core";
   import * as SQL from "@uwdata/mosaic-sql";
-  import { format } from "d3-format";
-  import { scaleLinear } from "d3-scale";
+  import * as d3 from "d3";
 
   import InlineSelect from "../../widgets/InlineSelect.svelte";
   import Container from "../common/Container.svelte";
 
   import type { ChartViewProps } from "../chart.js";
-  import { chartColors } from "../common/colors.js";
-  import {
-    distributionAggregate,
-    distributionStats,
-    type DistributionAggregate,
-  } from "../common/distribution_helper.js";
+  import { computeFieldStats, inferAggregate, type AggregateInfo, type FieldStats } from "../common/aggregate.js";
+  import { resolveChartTheme } from "../common/theme.js";
   import type { CountPlotSpec } from "./types.js";
 
   interface State {
-    selection?: string[] | null;
+    selection?: string[];
   }
 
   const MAX_BARS = 10;
@@ -33,7 +28,7 @@
     onStateChange,
     onSpecChange,
   }: ChartViewProps<CountPlotSpec, State> = $props();
-  let { coordinator, colorScheme } = context;
+  let { coordinator, colorScheme, theme: themeConfig } = context;
   let { selection } = $derived(chartState);
   let { expanded, percentage } = $derived(spec);
 
@@ -50,54 +45,54 @@
     hasOther: boolean;
   }
 
-  let chartData = $state.raw<ChartData | null>(null);
+  let chartData = $state.raw<ChartData | undefined>(undefined);
   let chartWidth = $state.raw(400);
 
   let maxCount = $derived(chartData?.items.reduce((a, b) => Math.max(a, percentage ? b.selected : b.total), 0) ?? 0);
-  let xScale = $derived(scaleLinear([0, Math.max(1, maxCount)], [0, chartWidth - 250]));
+  let xScale = $derived(d3.scaleLinear([0, Math.max(1, maxCount)], [0, chartWidth - 250]));
 
   // Adjust scale so the minimum width for non-zero count is 1px.
   let xScaleAdjusted = $derived((v: number) => (v != 0 ? Math.max(1, xScale(v)) : 0));
 
-  let colors = $derived(chartColors[$colorScheme]);
+  let theme = $derived(resolveChartTheme($colorScheme, $themeConfig));
 
   function initializeClient(coordinator: Coordinator, table: string, field: string, filter: Selection) {
-    let stats: any | null = $state.raw(null);
+    let stats: FieldStats | undefined = $state.raw(undefined);
 
     // Query the stats
-    distributionStats(coordinator, table, field).then((r) => {
+    computeFieldStats(coordinator, SQL.sql`${table}`, SQL.column(field)).then((r) => {
       stats = r;
     });
 
     // Infer binning from stats
-    let aggregate: DistributionAggregate | null = $derived(
-      stats
-        ? distributionAggregate({ key: "x", stats: stats, binCount: expanded ? MAX_BARS_EXPANDED : MAX_BARS })
-        : null,
+    let aggregate: AggregateInfo | undefined = $derived(
+      stats ? inferAggregate({ stats, binCount: expanded ? MAX_BARS_EXPANDED : MAX_BARS }) : undefined,
     );
 
-    function createClient(
-      aggregate: DistributionAggregate,
-      selection: Selection | null,
-      callback: (bins: any[]) => void,
-    ) {
+    function createClient(aggregate: AggregateInfo, selection: Selection | undefined, callback: (bins: any[]) => void) {
       return makeClient({
         coordinator: coordinator,
-        selection: selection ?? undefined,
+        selection: selection,
         query: (predicate) => {
           return SQL.Query.from(table)
-            .select({ ...aggregate.select, count: SQL.count() })
+            .select({ x: aggregate.select, count: SQL.count() })
             .where(predicate)
-            .groupby(aggregate.select.x);
+            .groupby(aggregate.select);
         },
         queryResult: (data: any) => {
-          callback(Array.from(data).map(aggregate.collect));
+          let items: any[] = Array.from(data);
+          callback(
+            items.map(({ x, count }) => ({
+              x: aggregate.field(x),
+              count: count,
+            })),
+          );
         },
       });
     }
 
     $effect.pre(() => {
-      if (aggregate == null) {
+      if (aggregate == undefined) {
         return;
       }
       let capturedAggregate = aggregate;
@@ -105,7 +100,7 @@
       let allItems: Bin[] = $state.raw([]);
       let filteredItems: Bin[] = $state.raw([]);
 
-      let clientBase = createClient(capturedAggregate, null, (data) => {
+      let clientBase = createClient(capturedAggregate, undefined, (data) => {
         allItems = data;
       });
       let clientSelection = createClient(capturedAggregate, filter, (data) => {
@@ -113,7 +108,7 @@
       });
       let source = {
         reset: () => {
-          onStateChange({ selection: null });
+          onStateChange({ selection: undefined });
         },
       };
 
@@ -124,9 +119,9 @@
           let mapSelected = new Map<string, number>(filteredItems.map(({ x, count }) => [keyfunc(x), count]));
 
           if (allItems.every((d) => typeof d.x == "string")) {
-            let specialValues = capturedAggregate.scales.x.specialValues ?? [];
+            let specialValues = capturedAggregate.scale.specialValues ?? [];
             let hasOther = specialValues.filter((x) => x != "(null)").length > 0;
-            let items = [...capturedAggregate.scales.x.domain, ...specialValues].map((d) => ({
+            let items = [...capturedAggregate.scale.domain, ...specialValues].map((d) => ({
               x: d,
               total: mapTotal.get(keyfunc(d)) ?? 0,
               selected: mapSelected.get(keyfunc(d)) ?? 0,
@@ -137,7 +132,7 @@
               items: items,
               sumTotal: sumTotal,
               sumSelected: sumSelected,
-              firstSpecialIndex: capturedAggregate.scales.x.domain.length,
+              firstSpecialIndex: capturedAggregate.scale.domain.length,
               hasOther: hasOther,
             };
           } else {
@@ -170,7 +165,9 @@
         let clause: SelectionClause = {
           source: source,
           clients: new Set([clientSelection]),
-          ...(selection != null ? capturedAggregate.clause({ x: selection }) : { value: null, predicate: null }),
+          ...(selection != undefined
+            ? { value: selection, predicate: capturedAggregate.predicate(selection) ?? null }
+            : { value: null, predicate: null }),
         };
         filter.update(clause);
         filter.activate(clause);
@@ -196,7 +193,7 @@
   const isSame = (a: any, b: any) => JSON.stringify(a) == JSON.stringify(b);
 
   function toggleSelection(value: string, shift: boolean) {
-    if (selection == null || selection.length == 0) {
+    if (selection == undefined || selection.length == 0) {
       onStateChange({ selection: [value] });
     } else {
       let exists = selection.findIndex((x) => isSame(x, value)) >= 0;
@@ -208,7 +205,7 @@
         }
       } else {
         if (exists) {
-          onStateChange({ selection: null });
+          onStateChange({ selection: undefined });
         } else {
           onStateChange({ selection: [value] });
         }
@@ -216,7 +213,7 @@
     }
   }
 
-  const fmt = format(".6");
+  const fmt = d3.format(".6");
   function display(x: string | [number, number]) {
     if (typeof x == "string") {
       return x;
@@ -239,7 +236,7 @@
     {#if chartData}
       {#each chartData.items as bar, i}
         {@const selected =
-          selection == null || selection.length == 0 || selection.findIndex((x) => isSame(x, bar.x)) >= 0}
+          selection == undefined || selection.length == 0 || selection.findIndex((x) => isSame(x, bar.x)) >= 0}
         {@const hasSelection = !chartData.items.every((x) => x.total == x.selected)}
         {#if i == chartData.firstSpecialIndex}
           <hr class="mt-1 mb-1 border-slate-300 dark:border-slate-500 border-dashed" />
@@ -257,26 +254,26 @@
               {#if !percentage}
                 <div
                   class="absolute left-0 top-0 bottom-0 rounded-sm"
-                  style:background={colors.markColorFade}
+                  style:background={theme.markColorFade}
                   style:width="{xScaleAdjusted(bar.total)}px"
                 ></div>
               {/if}
               <div
                 class="absolute left-0 top-0 bottom-0 rounded-sm"
-                style:background={colors.markColor}
+                style:background={theme.markColor}
                 style:width="{xScaleAdjusted(bar.selected)}px"
               ></div>
             {:else}
               {#if !percentage}
                 <div
                   class="absolute left-0 top-0 bottom-0 rounded-sm"
-                  style:background={colors.markColorGrayFade}
+                  style:background={theme.markColorGrayFade}
                   style:width="{xScaleAdjusted(bar.total)}px"
                 ></div>
               {/if}
               <div
                 class="absolute left-0 top-0 bottom-0 rounded-sm"
-                style:background={colors.markColorGray}
+                style:background={theme.markColorGray}
                 style:width="{xScaleAdjusted(bar.selected)}px"
               ></div>
             {/if}
@@ -314,7 +311,7 @@
               onclick={() => {
                 if (expanded == true) {
                   onSpecChange({ expanded: false });
-                  onStateChange({ selection: null });
+                  onStateChange({ selection: undefined });
                 } else {
                   onSpecChange({ expanded: true });
                 }

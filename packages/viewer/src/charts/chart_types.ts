@@ -2,33 +2,23 @@
 
 import type { Component } from "svelte";
 
-import BoxPlot from "./basic/BoxPlot.svelte";
 import ContentViewer from "./basic/ContentViewer.svelte";
 import CountPlot from "./basic/CountPlot.svelte";
 import CountPlotList from "./basic/CountPlotList.svelte";
-import Histogram from "./basic/Histogram.svelte";
-import Histogram2D from "./basic/Histogram2D.svelte";
-import HistogramStack from "./basic/HistogramStack.svelte";
 import Markdown from "./basic/Markdown.svelte";
 import Placeholder from "./basic/Placeholder.svelte";
 import Predicates from "./basic/Predicates.svelte";
 import Builder from "./builder/Builder.svelte";
 import Embedding from "./embedding/Embedding.svelte";
+import Chart from "./spec/Chart.svelte";
 import Table from "./table/Table.svelte";
 
-import type {
-  BoxPlotSpec,
-  ContentViewerSpec,
-  CountPlotSpec,
-  Histogram2DSpec,
-  HistogramSpec,
-  HistogramStackSpec,
-  MarkdownSpec,
-  PredicatesSpec,
-} from "./basic/types.js";
+import type { ContentViewerSpec, CountPlotSpec, MarkdownSpec, PredicatesSpec } from "./basic/types.js";
 import type { UIElement } from "./builder/builder_description.js";
 import type { ChartBuilderDescription, ChartViewProps } from "./chart.js";
+import { histogramSpec } from "./default_charts.js";
 import type { EmbeddingSpec } from "./embedding/types.js";
+import type { ChartSpec } from "./spec/spec.js";
 import type { TableSpec } from "./table/types.js";
 
 export type ChartComponent = Component<ChartViewProps<any, any>, {}, "">;
@@ -66,7 +56,7 @@ export function findChartComponent(spec: any): ChartComponent {
     }
     return r;
   }
-  return Placeholder;
+  return Chart;
 }
 
 export function findChartTypeOptions(spec: any): ChartTypeOptions {
@@ -93,10 +83,6 @@ registerChartType("builder", Builder);
 // Builtin chart types
 registerChartType("count-plot", CountPlot);
 registerChartType("count-plot-list", CountPlotList);
-registerChartType("histogram", Histogram);
-registerChartType("histogram-stack", HistogramStack);
-registerChartType("histogram-2d", Histogram2D);
-registerChartType("box-plot", BoxPlot);
 registerChartType("embedding", Embedding);
 registerChartType("predicates", Predicates);
 registerChartType("table", Table);
@@ -105,22 +91,19 @@ registerChartType("content-viewer", ContentViewer);
 
 // Spec type for all builtin chart types
 export type BuiltinChartSpec =
-  | BoxPlotSpec
-  | HistogramSpec
-  | Histogram2DSpec
-  | HistogramStackSpec
+  | ChartSpec
+  | ContentViewerSpec
   | CountPlotSpec
-  | PredicatesSpec
   | EmbeddingSpec
-  | TableSpec
   | MarkdownSpec
-  | ContentViewerSpec;
+  | PredicatesSpec
+  | TableSpec;
 
 // Chart builders
 
 registerChartBuilder({
   icon: "chart-h-bar",
-  description: "Create a count plot of a categorical field",
+  description: "Create a count plot of a field",
   ui: [
     { field: { key: "x", label: "Field", types: ["number", "string", "string[]"], required: true } }, //
   ] as const,
@@ -142,49 +125,67 @@ registerChartBuilder({
 });
 
 registerChartBuilder({
-  icon: "chart-v-histogram",
+  icon: "chart-stacked",
   description: "Create a histogram of a field",
   ui: [
     { field: { key: "x", label: "Field", types: ["number", "string"], required: true } }, //
+    { field: { key: "color", label: "Group Field", types: ["number", "string"] } },
   ] as const,
-  create: ({ x }): HistogramSpec | undefined => ({
-    type: "histogram",
-    title: x.name,
-    data: { field: x.name },
-    binCount: 20,
+  create: ({ x, color }): ChartSpec | undefined => histogramSpec(x.name, color?.name),
+});
+
+registerChartBuilder({
+  icon: "chart-line",
+  description: "Create a histogram of a field",
+  ui: [
+    { field: { key: "x", label: "X Field", types: ["number", "string"], required: true } }, //
+    { field: { key: "y", label: "Y Field", types: ["number"], required: true } }, //
+    { field: { key: "color", label: "Group Field", types: ["number", "string"] } },
+  ] as const,
+  create: ({ x, y, color }): ChartSpec | undefined => ({
+    title: y.name,
+    layers: [
+      {
+        mark: "line",
+        filter: "$filter",
+        encoding: {
+          x: { field: x.name },
+          y: { aggregate: "mean", field: y.name },
+          ...(color ? { color: { field: color.name } } : {}),
+        },
+      },
+    ],
+    selection: { brush: { encoding: "x" } },
+    widgets: [
+      { type: "scale.type", channel: "x" },
+      { type: "encoding.normalize", attribute: "y", layer: 0, options: ["x"] },
+    ],
   }),
 });
 
 registerChartBuilder({
-  icon: "chart-stacked",
-  description: "Create a stacked histogram",
+  icon: "chart-ecdf",
+  description: "Create a chart showing the empirical cumulative distribution (eCDF) of a field",
   ui: [
-    { field: { key: "x", label: "X Field", types: ["number", "string"], required: true } }, //
-    { field: { key: "y", label: "Group Field", types: ["number", "string"] } }, //
+    { field: { key: "x", label: "Field", types: ["number"], required: true } }, //
+    { field: { key: "color", label: "Group Field", types: ["number", "string"] } },
   ] as const,
-  create: ({ x, y }): HistogramSpec | HistogramStackSpec | undefined => {
-    if (y == null) {
-      return {
-        type: "histogram",
-        title: `${x.name}`,
-        data: {
-          field: x.name,
+  create: ({ x, color }): ChartSpec | undefined => ({
+    title: x.name,
+    layers: [
+      {
+        mark: "line",
+        filter: "$filter",
+        encoding: {
+          x: { aggregate: "ecdf-value", field: x.name },
+          y: { aggregate: "ecdf-rank" },
+          ...(color ? { color: { field: color.name } } : {}),
         },
-        binCount: 20,
-      };
-    } else {
-      return {
-        type: "histogram-stack",
-        title: `${x.name} by ${y.name}`,
-        data: {
-          x: x.name,
-          group: y.name,
-        },
-        xBinCount: 20,
-        groupBinCount: 5,
-      };
-    }
-  },
+      },
+    ],
+    selection: { brush: { encoding: "x" } },
+    widgets: [{ type: "scale.type", channel: "x" }],
+  }),
 });
 
 registerChartBuilder({
@@ -194,12 +195,35 @@ registerChartBuilder({
     { field: { key: "x", label: "X Field", types: ["number", "string"], required: true } }, //
     { field: { key: "y", label: "Y Field", types: ["number", "string"], required: true } }, //
   ] as const,
-  create: ({ x, y }): Histogram2DSpec | undefined => ({
-    type: "histogram-2d",
+  create: ({ x, y }): ChartSpec | undefined => ({
     title: `${x.name}, ${y.name}`,
-    data: { x: x.name, y: y.name },
-    xBinCount: 20,
-    yBinCount: 20,
+    layers: [
+      {
+        mark: "rect",
+        filter: "$filter",
+        zIndex: -1,
+        encoding: {
+          x: { field: x.name },
+          y: { field: y.name },
+          color: { aggregate: "count" },
+        },
+      },
+      {
+        mark: "rect",
+        zIndex: -2,
+        encoding: {
+          color: {
+            value: 0,
+          },
+        },
+      },
+    ],
+    selection: { brush: { encoding: "xy" } },
+    widgets: [
+      { type: "scale.type", channel: "x" },
+      { type: "scale.type", channel: "y" },
+      { type: "encoding.normalize", attribute: "color", layer: 0, options: ["x", "y"] },
+    ],
   }),
 });
 
@@ -210,11 +234,87 @@ registerChartBuilder({
     { field: { key: "x", label: "X Field", required: true } }, //
     { field: { key: "y", label: "Y Field", types: ["number"], required: true } }, //
   ] as const,
-  create: ({ x, y }): BoxPlotSpec | undefined => ({
-    type: "box-plot",
-    title: `${y.name} by ${x.name}`,
-    data: { x: x.name, y: y.name },
-    xBinCount: 20,
+  create: ({ x, y }): ChartSpec | undefined => ({
+    title: x.name,
+    layers: [
+      {
+        mark: "rect",
+        filter: "$filter",
+        width: 1,
+        style: { fillColor: "$ruleColor" },
+        encoding: {
+          x: { field: x.name },
+          y1: { aggregate: "min", field: y.name },
+          y2: { aggregate: "max", field: y.name },
+        },
+      },
+      {
+        mark: "rect",
+        filter: "$filter",
+        width: { gap: 1, clampToRatio: 0.1 },
+        encoding: {
+          x: { field: x.name },
+          y1: { aggregate: "quantile", quantile: 0.25, field: y.name },
+          y2: { aggregate: "quantile", quantile: 0.75, field: y.name },
+        },
+      },
+      {
+        mark: "rect",
+        filter: "$filter",
+        height: 1,
+        width: { gap: 1, clampToRatio: 0.1 },
+        style: { fillColor: "$ruleColor" },
+        encoding: {
+          x: { field: x.name },
+          y: { aggregate: "median", field: y.name },
+        },
+      },
+    ],
+    selection: { brush: { encoding: "x" } },
+    axis: {
+      y: { title: y.name },
+    },
+    widgets: [
+      { type: "scale.type", channel: "x" },
+      { type: "scale.type", channel: "y" },
+    ],
+  }),
+});
+
+registerChartBuilder({
+  icon: "chart-bubble",
+  description: "Create a bubble chart",
+  ui: [
+    { field: { key: "x", label: "X Field", types: ["number"], required: true } }, //
+    { field: { key: "y", label: "Y Field", types: ["number"], required: true } }, //
+    { field: { key: "color", label: "Color Field", types: ["number", "string"] } }, //
+    { field: { key: "group", label: "Group Field", types: ["number", "string"] } }, //
+  ] as const,
+  create: ({ x, y, color, group }): ChartSpec | undefined => ({
+    title: x.name,
+    layers: [
+      {
+        mark: "point",
+        filter: "$filter",
+        style: {
+          fillColor: "$encoding",
+          fillOpacity: 0.1,
+          strokeColor: "$encoding",
+        },
+        encoding: {
+          x: { aggregate: "mean", field: x.name },
+          y: { aggregate: "mean", field: y.name },
+          size: { aggregate: "count" },
+          ...(color ? { color: { field: color?.name } } : {}),
+          ...(group ? { group: { field: group.name } } : {}),
+        },
+      },
+    ],
+    selection: { brush: { encoding: "xy" } },
+    widgets: [
+      { type: "scale.type", channel: "x" },
+      { type: "scale.type", channel: "y" },
+    ],
   }),
 });
 
@@ -278,6 +378,6 @@ registerChartBuilder({
   icon: "chart-spec",
   description: "Create a chart with custom spec",
   preview: false,
-  ui: [{ code: { key: "spec", language: "json" } }] as const,
-  create: ({ spec }): any | undefined => JSON.parse(spec),
+  ui: [{ spec: { key: "spec" } }] as const,
+  create: ({ spec }): ChartSpec | undefined => spec,
 });

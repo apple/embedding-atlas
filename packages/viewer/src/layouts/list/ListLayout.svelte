@@ -176,7 +176,7 @@
       >
         <div class="flex flex-row flex-wrap gap-2" style:width="{chartsWidth}px">
           <button
-            class="bg-white dark:bg-black rounded-md flex flex-col justify-center items-center gap-2 p-2 w-full text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+            class="bg-white dark:bg-black rounded-md flex flex-col justify-center items-center gap-2 p-2 w-full text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 select-none"
             onclick={() => {
               let id = findUnusedId(charts);
               onChartsChange({ [id]: { type: "builder", title: "New" } });

@@ -8,6 +8,8 @@
   import ChartView from "../ChartView.svelte";
   import Container from "../common/Container.svelte";
   import ChartIcon from "./ChartIcon.svelte";
+  import ConfirmButton from "./ConfirmButton.svelte";
+  import SpecEditor from "./SpecEditor.svelte";
 
   import { type ColumnDesc, type JSType } from "../../utils/database.js";
   import type { ChartBuilderDescription, ChartViewProps } from "../chart.js";
@@ -142,21 +144,24 @@
     {/each}
   </div>
 
-  <div>{builder.description}</div>
+  <div class="select-none">{builder.description}</div>
 
   {#each builder.ui as elem}
     {#if "field" in elem}
       {@const key = elem.field.key}
-      <span class="text-slate-500 dark:text-slate-400">{elem.field.label}</span>
+      {@const options = (elem.field.required ? [] : [{ value: undefined as any, label: "--" }]).concat(
+        filteredColumns(columns, elem.field.types).map((c) => ({
+          value: c.name,
+          label: `${c.name} (${c.type})`,
+        })),
+      )}
+      <span class="text-slate-500 dark:text-slate-400 select-none">{elem.field.label}</span>
       <Select
-        value={values[key] ?? null}
+        value={values[key]}
         onChange={(v) => (values[key] = v)}
         placeholder="(select field)"
         class="w-full"
-        options={filteredColumns(columns, elem.field.types).map((c) => ({
-          value: c.name,
-          label: `${c.name} (${c.type})`,
-        }))}
+        options={options}
       />
     {/if}
     {#if "code" in elem}
@@ -168,6 +173,17 @@
           onChange={(v) => (values[key] = v)}
           colorScheme={$colorScheme}
           language={elem.code.language ?? "plain"}
+        />
+      </div>
+    {/if}
+    {#if "spec" in elem}
+      {@const key = elem.spec.key}
+      <div class="w-full h-64">
+        <SpecEditor
+          class="w-full h-full"
+          initialValue={{ title: "Chart" }}
+          onChange={(v) => (values[key] = v)}
+          colorScheme={$colorScheme}
         />
       </div>
     {/if}
@@ -194,17 +210,7 @@
     {/key}
   {/if}
   <div>
-    <button
-      class="px-2 h-8 w-24 rounded-md text-white text-sm"
-      class:bg-blue-500={validateResult === true}
-      class:bg-gray-300={validateResult !== true}
-      class:dark:text-gray-500={validateResult !== true}
-      class:dark:bg-gray-700={validateResult !== true}
-      disabled={validateResult !== true}
-      onclick={confirm}
-    >
-      Confirm
-    </button>
+    <ConfirmButton label="Confirm" disabled={validateResult !== true} onClick={confirm} />
   </div>
   {#if typeof validateResult == "string" && validateResult.trim() != ""}
     <div>{validateResult}</div>

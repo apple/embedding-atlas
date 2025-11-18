@@ -9,6 +9,9 @@ import { createClassComponent } from "svelte/legacy";
 
 import Component from "./EmbeddingAtlas.svelte";
 
+import type { ChartThemeConfig } from "./charts/common/theme.js";
+import type { DefaultChartsConfig } from "./charts/default_charts.js";
+
 import cssCode from "./app.css?inline";
 
 export interface EmbeddingAtlasProps {
@@ -44,11 +47,24 @@ export interface EmbeddingAtlasProps {
   /** The initial viewer state. */
   initialState?: EmbeddingAtlasState | null;
 
+  /**
+   * Configure the default charts.
+   * By default, we show a distribution chart for each column based on the data type in addition to the embedding and table.
+   * You may configure these charts with this option.
+   */
+  defaultChartsConfig?: DefaultChartsConfig | null;
+
   /** Configuration for the embedding view. See docs for the EmbeddingView. */
   embeddingViewConfig?: EmbeddingViewConfig | null;
 
   /** Labels for the embedding view. */
   embeddingViewLabels?: Label[] | null;
+
+  /** Theme config for charts. */
+  chartTheme?: ChartThemeConfig | null;
+
+  /** Custom CSS stylesheet to apply at the root of the component. */
+  stylesheet?: string | null;
 
   /** An object that provides search functionalities, including full text search, vector search, and nearest neighbor queries.
    *  If not specified (undefined), a default full-text search with the text column will be used.
@@ -142,9 +158,14 @@ export class EmbeddingAtlas {
 
     // Shadow root on container
     let shadowRoot = this.container.attachShadow({ mode: "open" });
-    let style = document.createElement("style");
-    style.innerText = cssCode;
-    shadowRoot.appendChild(style);
+    let sheet = new CSSStyleSheet();
+    sheet.replaceSync(cssCode);
+    shadowRoot.adoptedStyleSheets = [sheet];
+    if (props.stylesheet != undefined) {
+      let customSheet = new CSSStyleSheet();
+      customSheet.replaceSync(props.stylesheet);
+      shadowRoot.adoptedStyleSheets.push(customSheet);
+    }
 
     // Inner container element
     let innerContainer = document.createElement("div");

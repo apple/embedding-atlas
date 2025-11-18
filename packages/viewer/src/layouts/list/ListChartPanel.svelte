@@ -2,6 +2,7 @@
 <script lang="ts">
   import { slide } from "svelte/transition";
 
+  import ConfirmButton from "../../charts/builder/ConfirmButton.svelte";
   import SpecEditor from "../../charts/builder/SpecEditor.svelte";
   import CornerButton from "../../widgets/CornerButton.svelte";
 
@@ -43,6 +44,8 @@
   let isEditing = $state(false);
   let supportsEditMode = $derived(findChartTypeOptions(spec).supportsEditMode ?? false);
   let chartMode: "edit" | "view" = $derived(supportsEditMode && isEditing ? "edit" : "view");
+
+  let editingSpec = $state.raw<any | undefined>();
 </script>
 
 <div class="p-2 flex items-center">
@@ -67,6 +70,7 @@
         onClick={() => {
           isEditing = !isEditing;
           if (isEditing) {
+            editingSpec = spec;
             onIsVisibleChange?.(true);
           }
         }}
@@ -91,14 +95,24 @@
   <div class="overflow-hidden">
     {@render chartView({ id: id, width: "container", mode: chartMode })}
     {#if chartMode == "view" && isEditing && onSpecChange}
-      <div transition:slide class="h-64">
-        <div class="w-full h-64 p-2">
+      <div transition:slide class="h-96">
+        <div class="w-full h-96 p-2 flex flex-col gap-2">
           <SpecEditor
-            spec={spec}
+            class="w-full flex-1 min-h-0"
+            initialValue={editingSpec}
             colorScheme={colorScheme}
-            onSpecChange={(s) => {
-              onSpecChange(s);
-              isEditing = false;
+            onChange={(s) => {
+              editingSpec = s;
+            }}
+          />
+          <ConfirmButton
+            label="Confirm"
+            disabled={editingSpec == undefined}
+            onClick={() => {
+              if (editingSpec != undefined) {
+                onSpecChange(editingSpec);
+                isEditing = false;
+              }
             }}
           />
         </div>

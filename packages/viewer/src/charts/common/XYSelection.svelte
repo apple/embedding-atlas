@@ -2,8 +2,8 @@
 <script lang="ts">
   import { interactionHandler, type CursorValue } from "@embedding-atlas/utils";
 
-  import { chartColors } from "./colors.js";
-  import type { ConcreteScale, XYFrameProxy } from "./types.js";
+  import { type ChartTheme } from "./theme.js";
+  import type { ConcretePositionScale, XYFrameProxy } from "./types.js";
 
   const borderWidth = 8;
 
@@ -16,28 +16,26 @@
     proxy: XYFrameProxy;
     mode: "x" | "y" | "xy";
     value: Value | null;
-    colorScheme?: "light" | "dark";
+    theme: ChartTheme;
     onChange: (newValue: Value | null) => void;
   }
 
-  let { proxy, mode, value, onChange, colorScheme }: Props = $props();
-
-  let colors = $derived(chartColors[colorScheme ?? "light"]);
+  let { proxy, mode, value, onChange, theme }: Props = $props();
 
   let baseRect: SVGRectElement;
 
   let xRange = $derived(
-    proxy.xScale != null && value?.x != null ? proxy.xScale.applyBand(value.x) : [0, proxy.plotWidth],
+    proxy.scale.x != null && value?.x != null ? proxy.scale.x.applyBand(value.x) : [0, proxy.plotWidth],
   );
   let yRange = $derived(
-    proxy.yScale != null && value?.y != null ? proxy.yScale.applyBand(value.y) : [0, proxy.plotHeight],
+    proxy.scale.y != null && value?.y != null ? proxy.scale.y.applyBand(value.y) : [0, proxy.plotHeight],
   );
 
   function isInterval(v: [number, number] | string | null | undefined): boolean {
     return v instanceof Array && v.length == 2 && typeof v[0] == "number" && typeof v[1] == "number";
   }
 
-  function invertScale(scale: ConcreteScale, position: number, type?: "string" | "number"): any {
+  function invertScale(scale: ConcretePositionScale, position: number, type?: "string" | "number"): any {
     let value = scale.invert(position, type);
     if (scale.domain.length == 2 && typeof scale.domain[0] == "number" && typeof value == "number") {
       let [a, b] = scale.domain;
@@ -61,8 +59,8 @@
       let baseY = baseRect.getBoundingClientRect().top;
       let x0 = e1.clientX - baseX;
       let y0 = e1.clientY - baseY;
-      let vx0 = proxy.xScale ? invertScale(proxy.xScale, x0) : null;
-      let vy0 = proxy.yScale ? invertScale(proxy.yScale, y0) : null;
+      let vx0 = proxy.scale.x ? invertScale(proxy.scale.x, x0) : null;
+      let vy0 = proxy.scale.y ? invertScale(proxy.scale.y, y0) : null;
       if (vx0 == null && (mode == "x" || mode == "xy")) {
         return;
       }
@@ -72,11 +70,13 @@
       let resolve = (a: any, b: any) =>
         typeof a == "number" && typeof b == "number" ? (a != b ? [Math.min(a, b), Math.max(a, b)] : null) : b;
 
+      let typeOf = (v: any) => (v == null ? undefined : typeof v == "number" ? "number" : "string");
+
       let resolveXY = (e2: CursorValue) => {
         let x1 = e2.clientX - baseX;
         let y1 = e2.clientY - baseY;
-        let vx1 = proxy.xScale ? invertScale(proxy.xScale, x1, typeof vx0 == "number" ? "number" : undefined) : null;
-        let vy1 = proxy.yScale ? invertScale(proxy.yScale, y1, typeof vy0 == "number" ? "number" : undefined) : null;
+        let vx1 = proxy.scale.x ? (invertScale(proxy.scale.x, x1, typeOf(vx0)) ?? vx0) : null;
+        let vy1 = proxy.scale.y ? (invertScale(proxy.scale.y, y1, typeOf(vy0)) ?? vy0) : null;
         let r: Value = {};
         if (mode == "x" || mode == "xy") {
           r.x = resolve(vx0, vx1);
@@ -106,7 +106,7 @@
         return;
       }
       let currentValue = { ...value };
-      let { xScale, yScale } = proxy;
+      let { x: xScale, y: yScale } = proxy.scale;
       let isXInterval = isInterval(currentValue.x);
       let isYInterval = isInterval(currentValue.y);
       // Record the previous positions in [x0, x1, y0, y1] format (matching the order of the mask)
@@ -187,8 +187,16 @@
     style:user-select="none"
     style:cursor="crosshair"
     use:interactionHandler={{
-      click: () => {
-        onChange(null);
+      click: (e) => {
+        if (value != null) {
+          onChange(null);
+        } else {
+          let d = startCreate()(e);
+          if (d) {
+            d.move(e);
+            d.up(e);
+          }
+        }
       },
       drag: startCreate(),
     }}
@@ -200,7 +208,7 @@
       width={Math.abs(xRange[0] - xRange[1])}
       y={Math.min(yRange[0], yRange[1])}
       height={Math.abs(yRange[0] - yRange[1])}
-      style:stroke={colors.brushBorderBack}
+      style:stroke={theme.brushBorderBack}
       style:fill="none"
       style:stroke-width={2}
     />
@@ -209,8 +217,8 @@
       width={Math.abs(xRange[0] - xRange[1])}
       y={Math.min(yRange[0], yRange[1])}
       height={Math.abs(yRange[0] - yRange[1])}
-      style:stroke={colors.brushBorder}
-      style:fill={colors.brushFill}
+      style:stroke={theme.brushBorder}
+      style:fill={theme.brushFill}
       style:cursor="move"
       use:interactionHandler={{ drag: startDrag([1, 1, 1, 1]) }}
       role="none"

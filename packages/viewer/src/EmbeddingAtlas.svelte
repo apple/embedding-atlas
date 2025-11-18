@@ -31,6 +31,7 @@
 
   import type { EmbeddingAtlasProps, EmbeddingAtlasState } from "./api.js";
   import { ChartContextCache, type ChartContext, type RowID } from "./charts/chart.js";
+  import { type ChartThemeConfig } from "./charts/common/theme.js";
   import { defaultCharts } from "./charts/default_charts.js";
   import { EMBEDDING_ATLAS_VERSION } from "./constants.js";
   import { type ColumnStyle } from "./renderers/index.js";
@@ -45,8 +46,10 @@
     data,
     initialState,
     searcher: specifiedSearcher,
+    defaultChartsConfig,
     embeddingViewConfig = null,
     embeddingViewLabels = null,
+    chartTheme,
     colorScheme: colorSchemeProp,
     tableCellRenderers,
     onExportApplication,
@@ -248,7 +251,6 @@
   });
 
   onMount(async () => {
-    let exclude = [data.projection?.x, data.projection?.y].filter((x) => x != null);
     columns = (await columnDescriptions(coordinator, data.table)).filter((x) => !x.name.startsWith("__"));
     chartContext.columns = columns;
 
@@ -256,14 +258,17 @@
       loadState(initialState);
     }
     if (Object.keys(charts).length == 0) {
-      let newCharts = await defaultCharts(coordinator, data.table, data.id, {
-        exclude: exclude,
+      let newCharts = await defaultCharts({
+        coordinator,
+        table: data.table,
+        id: data.id,
         projection: data.projection
           ? {
               ...data.projection,
               text: data.text ?? undefined,
             }
           : undefined,
+        config: defaultChartsConfig ?? undefined,
       });
       charts = Object.fromEntries(newCharts.map((spec, i) => [`${i + 1}`, spec]));
     }
@@ -282,6 +287,11 @@
     }
   }
 
+  let chartThemeStore = writable<ChartThemeConfig | undefined>(chartTheme ?? undefined);
+  $effect.pre(() => {
+    chartThemeStore.set(chartTheme ?? undefined);
+  });
+
   let chartContext: ChartContext = {
     coordinator: coordinator,
     filter: crossFilter,
@@ -289,6 +299,7 @@
     id: data.id,
     columns: [],
     colorScheme: colorScheme,
+    theme: chartThemeStore,
     columnStyles: resolvedColumnStyles,
     cache: new ChartContextCache(),
     persistentCache: cache ?? { get: async () => null, set: async (key, value) => {} },
@@ -318,7 +329,7 @@
       {#if initialized}
         <!-- Left side -->
         <div class="flex flex-row flex-1 justify-between min-w-[180px]">
-          {#if searcher}
+          {#if searchMode.length > 0}
             <div class="relative w-full">
               <Input type="search" placeholder="Search..." className="w-full max-w-[400px] " bind:value={searchQuery} />
               {#if searchModes.filter((x) => x != "neighbors").length > 1}
@@ -392,14 +403,14 @@
             value={layout}
             onChange={(v) => (layout = v)}
             options={[
-              { value: "list", icon: IconListLayout },
-              { value: "dashboard", icon: IconDashboardLayout },
+              { value: "list", icon: IconListLayout, title: "List layout" },
+              { value: "dashboard", icon: IconDashboardLayout, title: "Dashboard layout" },
             ]}
           />
           {#if colorSchemeProp == null}
             <Button
               icon={$colorScheme == "dark" ? IconLightMode : IconDarkMode}
-              title="Toggle dark mode"
+              title="Toggle light / dark mode"
               onClick={() => {
                 $userColorScheme = $colorScheme == "light" ? "dark" : "light";
               }}
@@ -419,40 +430,42 @@
                 />
               {/if}
               <!-- Export -->
-              <h4 class="text-slate-500 dark:text-slate-400 select-none">Export</h4>
-              <div class="flex flex-col gap-2">
-                {#if onExportSelection}
-                  <div class="flex flex-row gap-2">
+              {#if onExportSelection || onExportApplication}
+                <h4 class="text-slate-500 dark:text-slate-400 select-none">Export</h4>
+                <div class="flex flex-col gap-2">
+                  {#if onExportSelection}
+                    <div class="flex flex-row gap-2">
+                      <ActionButton
+                        icon={IconExport}
+                        label="Export Selection"
+                        title="Export the selected points"
+                        class="w-48"
+                        onClick={() => onExportSelection(currentPredicate(), exportFormat)}
+                      />
+                      <Select
+                        label="Format"
+                        value={exportFormat}
+                        onChange={(v) => (exportFormat = v)}
+                        options={[
+                          { value: "parquet", label: "Parquet" },
+                          { value: "jsonl", label: "JSONL" },
+                          { value: "json", label: "JSON" },
+                          { value: "csv", label: "CSV" },
+                        ]}
+                      />
+                    </div>
+                  {/if}
+                  {#if onExportApplication}
                     <ActionButton
-                      icon={IconExport}
-                      label="Export Selection"
-                      title="Export the selected points"
+                      icon={IconDownload}
+                      label="Export Application"
+                      title="Download a self-contained static web application"
                       class="w-48"
-                      onClick={() => onExportSelection(currentPredicate(), exportFormat)}
+                      onClick={onExportApplication}
                     />
-                    <Select
-                      label="Format"
-                      value={exportFormat}
-                      onChange={(v) => (exportFormat = v)}
-                      options={[
-                        { value: "parquet", label: "Parquet" },
-                        { value: "jsonl", label: "JSONL" },
-                        { value: "json", label: "JSON" },
-                        { value: "csv", label: "CSV" },
-                      ]}
-                    />
-                  </div>
-                {/if}
-                {#if onExportApplication}
-                  <ActionButton
-                    icon={IconDownload}
-                    label="Export Application"
-                    title="Download a self-contained static web application"
-                    class="w-48"
-                    onClick={onExportApplication}
-                  />
-                {/if}
-              </div>
+                  {/if}
+                </div>
+              {/if}
               <h4 class="text-slate-500 dark:text-slate-400 select-none">About</h4>
               <div>Embedding Atlas, {EMBEDDING_ATLAS_VERSION}</div>
             </div>

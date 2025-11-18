@@ -3,11 +3,11 @@
 import { defaultCategoryColors } from "@embedding-atlas/component";
 import type { Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
-import { format } from "d3-format";
+import * as d3 from "d3";
 
 import { distinctCount, jsTypeFromDBType } from "../../utils/database.js";
 import { inferBinning } from "../common/binning.js";
-import { defaultOrdinalColors } from "../common/colors.js";
+import { defaultOrdinalColors } from "../common/theme.js";
 
 export interface EmbeddingLegend {
   indexColumn: string;
@@ -204,7 +204,7 @@ async function makeBinnedNumericColumn(
 
   let legend: EmbeddingLegend["legend"] = [];
 
-  let fmt = format(".6");
+  let fmt = d3.format(".6");
 
   if (minIndex != null && maxIndex != null) {
     let colors = defaultOrdinalColors(maxIndex - minIndex + 1);

@@ -38,13 +38,12 @@
 
 <script lang="ts">
   import { type Selection, makeClient } from "@uwdata/mosaic-core";
-  import { format } from "d3-format";
-  import { scaleLinear } from "d3-scale";
+  import * as d3 from "d3";
 
   import Container from "../common/Container.svelte";
 
   import type { ChartViewProps } from "../chart.js";
-  import { chartColors } from "../common/colors.js";
+  import { resolveChartTheme } from "../common/theme.js";
 
   const MAX_BARS = 10;
   const MAX_BARS_EXPANDED = 100;
@@ -70,7 +69,7 @@
     onStateChange,
   }: ChartViewProps<Spec, State> = $props();
 
-  let colorScheme = context.colorScheme;
+  let { colorScheme, theme: themeConfig } = context;
   let { selection } = $derived(chartState);
 
   interface Bin {
@@ -88,12 +87,12 @@
   let chartWidth = $state.raw(400);
 
   let maxCount = $derived(chartData?.items.reduce((a, b) => Math.max(a, b.total), 0) ?? 0);
-  let xScale = $derived(scaleLinear([0, Math.max(1, maxCount)], [0, chartWidth - 250]));
+  let xScale = $derived(d3.scaleLinear([0, Math.max(1, maxCount)], [0, chartWidth - 250]));
 
   // Adjust scale so the minimum width for non-zero count is 1px.
   let xScaleAdjusted = $derived((v: number) => (v != 0 ? Math.max(1, xScale(v)) : 0));
 
-  let colors = $derived(chartColors[$colorScheme]);
+  let theme = $derived(resolveChartTheme($colorScheme, $themeConfig));
 
   function initializeClient(coordinator: Coordinator, table: string, field: string, filter: Selection, limit: number) {
     let stats: any | null = $state.raw(null);
@@ -235,7 +234,7 @@
     }
   }
 
-  const fmt = format(".6");
+  const fmt = d3.format(".6");
   function display(x: string | [number, number]) {
     if (typeof x == "string") {
       return x;
@@ -275,24 +274,24 @@
             {#if selected}
               <div
                 class="absolute left-0 top-0 bottom-0 rounded-sm"
-                style:background={colors.markColorFade}
+                style:background={theme.markColorFade}
                 style:width="{xScaleAdjusted(bar.total)}px"
               ></div>
 
               <div
                 class="absolute left-0 top-0 bottom-0 rounded-sm"
-                style:background={colors.markColor}
+                style:background={theme.markColor}
                 style:width="{xScaleAdjusted(bar.selected)}px"
               ></div>
             {:else}
               <div
                 class="absolute left-0 top-0 bottom-0 rounded-sm"
-                style:background={colors.markColorGrayFade}
+                style:background={theme.markColorGrayFade}
                 style:width="{xScaleAdjusted(bar.total)}px"
               ></div>
               <div
                 class="absolute left-0 top-0 bottom-0 rounded-sm"
-                style:background={colors.markColorGray}
+                style:background={theme.markColorGray}
                 style:width="{xScaleAdjusted(bar.selected)}px"
               ></div>
             {/if}

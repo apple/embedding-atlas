@@ -3,6 +3,7 @@
   import { interactionHandler, type CursorValue } from "@embedding-atlas/utils";
   import { fade } from "svelte/transition";
 
+  import ConfirmButton from "../../charts/builder/ConfirmButton.svelte";
   import SpecEditor from "../../charts/builder/SpecEditor.svelte";
   import CornerButton from "../../widgets/CornerButton.svelte";
 
@@ -59,6 +60,8 @@
   let isEditing = $state(false);
   let supportsEditMode = $derived(findChartTypeOptions(spec).supportsEditMode ?? false);
   let chartMode: "edit" | "view" = $derived(supportsEditMode && isEditing ? "edit" : "view");
+
+  let editingSpec = $state.raw<any | undefined>();
 
   function dragHandler(mask: [number, number, number, number]) {
     return (e1: CursorValue) => {
@@ -148,6 +151,9 @@
           icon={chartMode == "edit" ? IconCheck : IconEdit}
           onClick={() => {
             isEditing = !isEditing;
+            if (isEditing) {
+              editingSpec = spec;
+            }
           }}
         />
         <CornerButton icon={IconClose} onClick={onRemove} />
@@ -157,13 +163,23 @@
       {#if !(chartMode == "view" && isEditing && onSpecChange)}
         {@render chartView({ id: id, width: "container", height: "container", mode: chartMode })}
       {:else}
-        <div class="p-2 h-full">
+        <div class="p-2 h-full flex flex-col gap-2">
           <SpecEditor
-            spec={spec}
+            class="w-full flex-1 min-h-0"
+            initialValue={editingSpec}
             colorScheme={$colorScheme}
-            onSpecChange={(s) => {
-              onSpecChange?.(s);
-              isEditing = false;
+            onChange={(s) => {
+              editingSpec = s;
+            }}
+          />
+          <ConfirmButton
+            label="Confirm"
+            disabled={editingSpec == undefined}
+            onClick={() => {
+              if (editingSpec != undefined) {
+                onSpecChange(editingSpec);
+                isEditing = false;
+              }
             }}
           />
         </div>
