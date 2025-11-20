@@ -1,7 +1,14 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 export function isWebGPUAvailable(): boolean {
-  if (navigator.gpu == undefined || navigator.gpu.requestAdapter == undefined) {
+  if (
+    navigator.gpu == undefined ||
+    navigator.gpu.requestAdapter == undefined ||
+    navigator.gpu.wgslLanguageFeatures == undefined
+  ) {
+    return false;
+  }
+  if (!navigator.gpu.wgslLanguageFeatures.has("unrestricted_pointer_parameters")) {
     return false;
   }
   return true;
