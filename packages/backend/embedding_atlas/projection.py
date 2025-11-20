@@ -183,6 +183,13 @@ def _projection_for_texts(
     if text_projector is None:
         text_projector = _project_text_with_sentence_transformers
 
+    # Some arguments may contain sensitive info (e.g., API keys) or do not invalidate the cache, so we exclude them
+    excluded_text_projector_args = {"api_key", "api_base", "sync"}
+    hashed_text_projector_args = {
+        k: v
+        for k, v in (text_projector_args or {}).items()
+        if k not in excluded_text_projector_args
+    }
     hasher = Hasher()
     hasher.update(
         {
@@ -190,7 +197,7 @@ def _projection_for_texts(
             "texts": texts,
             "model": model,
             "batch_size": batch_size,
-            **(text_projector_args or {}),
+            **hashed_text_projector_args,
             "text_projector": text_projector.__name__,
             "umap_args": umap_args,
         }
