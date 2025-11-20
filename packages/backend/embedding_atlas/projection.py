@@ -197,7 +197,7 @@ def _projection_for_texts(
             "texts": texts,
             "model": model,
             "batch_size": batch_size,
-            **hashed_text_projector_args,
+            "text_projector_args": hashed_text_projector_args,
             "text_projector": text_projector.__name__,
             "umap_args": umap_args,
         }
