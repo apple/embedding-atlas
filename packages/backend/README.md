@@ -65,3 +65,7 @@ embedding-atlas path_to_dataset.parquet --x projection_x --y projection_y --neig
 
 The `neighbors` column should have values in the following format: `{"ids": [id1, id2, ...], "distances": [d1, d2, ...]}`.
 If this column is specified, you'll be able to see nearest neighbors for a selected point in the tool.
+
+## Local Development
+
+Launch Embedding Altas with a wine reviews dataset with `./start.sh` and the MNIST dataset with `./start_image.sh`.
