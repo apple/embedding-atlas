@@ -6,8 +6,8 @@
 
   import type { EmbeddingAtlasProps } from "../api.js";
   import { initializeDatabase } from "../utils/database.js";
-  import { downloadBuffer } from "../utils/download";
-  import { exportMosaicSelection, type ExportFormat } from "../utils/mosaic_exporter";
+  import { downloadBuffer } from "../utils/download.js";
+  import { exportMosaicSelection, type ExportFormat } from "../utils/mosaic_exporter.js";
   import type { DataSource } from "./data_source.js";
 
   export class TestDataSource implements DataSource {
