@@ -382,7 +382,7 @@
             </button>
           </div>
         </div>
-        <div class="flex flex-none flex-row gap-0.5">
+        <div class="flex flex-none flex-row gap-2">
           <div class="grid grid-cols-1 grid-rows-1 justify-items-end items-center">
             {#key layout}
               <div transition:scale class="col-start-1 row-start-1">
