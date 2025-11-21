@@ -6,10 +6,14 @@
 
   import type { EmbeddingAtlasProps } from "../api.js";
   import { initializeDatabase } from "../utils/database.js";
+  import { downloadBuffer } from "../utils/download";
+  import { exportMosaicSelection, type ExportFormat } from "../utils/mosaic_exporter";
   import type { DataSource } from "./data_source.js";
 
   export class TestDataSource implements DataSource {
     private count: number;
+
+    downloadSelection: ((predicate: string | null, format: ExportFormat) => Promise<void>) | undefined = undefined;
 
     constructor(count: number) {
       this.count = count;
@@ -54,6 +58,11 @@
         UPDATE ${table} SET x = x + 5 * fmod(floor(var_uniform * 24 + random()), 5);
         UPDATE ${table} SET y = y + 5 * floor(floor(var_uniform * 24 + random()) / 5);
       `);
+
+      this.downloadSelection = async (predicate, format) => {
+        let [bytes, name] = await exportMosaicSelection(coordinator, table, predicate, format);
+        downloadBuffer(bytes, name);
+      };
 
       return {
         data: {
