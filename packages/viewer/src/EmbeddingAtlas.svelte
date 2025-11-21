@@ -20,6 +20,7 @@
   import Spinner from "./widgets/Spinner.svelte";
 
   import {
+    IconClose,
     IconDarkMode,
     IconDashboardLayout,
     IconDownload,
@@ -370,13 +371,15 @@
           {/if}
         </div>
         <!-- Right side -->
-        <div class="flex flex-none gap-2 items-center">
+        <div
+          class="flex flex-none gap-2 items-center pl-2 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
+        >
           <FilteredCount coordinator={coordinator} filter={crossFilter} table={data.table} />
           <div class="flex flex-row gap-1 items-center">
-            <Button label="Clear" title="Clear filters" onClick={resetFilter} />
+            <Button icon={IconClose} title="Clear filters" onClick={resetFilter} class="border-none px-0" />
 
             {#if onExportSelection}
-              <PopupButton label="Export" title="Export Selection">
+              <PopupButton icon={IconExport} title="Export Selection" buttonClass="border-none">
                 <div class="min-w-[420px] flex flex-col gap-2">
                   <div class="flex flex-row gap-2">
                     <ActionButton
