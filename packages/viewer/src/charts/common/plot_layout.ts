@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import { solveExtents } from "./solve_extents.js";
 import type { IntermediatePositionScale, PlotLayout } from "./types.js";
 

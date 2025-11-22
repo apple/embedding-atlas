@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 export function solveExtents(
   data: [number, number][],
   length: number,
