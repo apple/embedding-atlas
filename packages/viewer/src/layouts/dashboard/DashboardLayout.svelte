@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { fade } from "svelte/transition";
 
   import DashboardChartPanel from "./DashboardChartPanel.svelte";
@@ -75,6 +75,7 @@
   });
 
   function removeChart(id: string) {
+    onStateChange({ grids: { [gridKey]: { placements: { ...placements, [id]: undefined as any } } } });
     onChartsChange({ [id]: undefined });
     onChartStatesChange({ [id]: undefined });
   }
@@ -90,6 +91,27 @@
     onChartsChange({ [id]: { type: "builder", title: "New" } });
     onStateChange({ grids: { [gridKey]: { placements: { [id]: placement } } } });
   }
+
+  let chartPanels = $state<Record<string, DashboardChartPanel | null>>({});
+  onMount(() => {
+    let chartIDs = new Set(Object.keys(charts));
+    $effect(() => {
+      let oldIDs = chartIDs;
+      chartIDs = new Set(Object.keys(charts));
+      if (chartIDs.size != oldIDs.size + 1) {
+        return;
+      }
+      let diff: string[] = [];
+      for (let id of chartIDs) {
+        if (!oldIDs.has(id)) {
+          diff.push(id);
+        }
+      }
+      if (diff.length == 1) {
+        chartPanels[diff[0]]?.scrollIntoView();
+      }
+    });
+  });
 </script>
 
 <div
@@ -123,6 +145,7 @@
 
     {#each Object.keys(charts) as id (id)}
       <DashboardChartPanel
+        bind:this={chartPanels[id]}
         context={context}
         id={id}
         spec={charts[id]}

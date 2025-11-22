@@ -63,6 +63,8 @@
 
   let editingSpec = $state.raw<any | undefined>();
 
+  let container: HTMLDivElement;
+
   function dragHandler(mask: [number, number, number, number]) {
     return (e1: CursorValue) => {
       let numColumns = grid.numColumns;
@@ -115,11 +117,16 @@
       };
     };
   }
+
+  export function scrollIntoView() {
+    container?.scrollIntoView({ block: "nearest" });
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
+  bind:this={container}
   class="absolute"
   style:left="{x}px"
   style:top="{y}px"
