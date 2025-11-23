@@ -5,15 +5,13 @@
     checked: boolean;
     label?: string | null;
     icon?: any | null;
-    class?: string | null;
   }
 
-  let { title = "", checked = $bindable(), label = null, icon = null, class: className }: Props = $props();
+  let { title = "", checked = $bindable(), label = null, icon = null }: Props = $props();
 </script>
 
 <button
-  class="rounded-md px-1.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 flex select-none items-center focus-visible:outline-2 outline-blue-600 -outline-offset-1 {className ??
-    ''}"
+  class="rounded-md px-1.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 flex select-none items-center focus-visible:outline-2 outline-blue-600 -outline-offset-1"
   class:text-slate-400={!checked}
   class:dark:text-slate-500={!checked}
   title={title}

@@ -375,7 +375,7 @@
           class="flex flex-none gap-2 items-center pl-2 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
         >
           <FilteredCount coordinator={coordinator} filter={crossFilter} table={data.table} />
-          <div class="flex flex-row gap-1 items-center">
+          <div class="flex flex-row items-center">
             <button
               title="Clear filters"
               onclick={resetFilter}
@@ -390,7 +390,7 @@
                   <button
                     title="Export Selection"
                     onclick={toggle}
-                    class="rounded-md px-1.5 py-1.5 bg-white dark:bg-slate-900 flex select-none items-center focus-visible:outline-2 outline-blue-600 -outline-offset-1"
+                    class="rounded-md px-1.5 py-1.5 flex select-none items-center focus-visible:outline-2 outline-blue-600 -outline-offset-1"
                     class:text-slate-400={!visible}
                     class:dark:text-slate-500={!visible}
                   >
