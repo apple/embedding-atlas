@@ -65,7 +65,6 @@
     "svelte-check": "^4.3.1",
     "svelte-spa-router": "^4.0.1",
     "tailwindcss": "^4.1.11",
-    "tailwind-merge": "^3.4.0",
     "ts-json-schema-generator": "^2.4.0",
     "tslib": "^2.8.1",
     "typescript": "^5.9.2",

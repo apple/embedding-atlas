@@ -2,7 +2,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
 
-  import Button from "../widgets/Button.svelte";
   import ComboBox from "../widgets/ComboBox.svelte";
   import Select from "../widgets/Select.svelte";
 
@@ -209,12 +208,13 @@
   </div>
   <div class="w-full flex flex-row items-center mt-4">
     <div class="flex-1"></div>
-    <Button
-      label="Confirm"
-      class="w-40 justify-center"
-      onClick={() => {
+    <button
+      class="w-40 justify-center rounded-md flex select-none items-center px-1.5 py-1.5 border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 dark:text-slate-400 focus-visible:outline-2 outline-blue-600 -outline-offset-1"
+      onclick={() => {
         confirm();
       }}
-    />
+    >
+      <span class="mx-1">Confirm</span>
+    </button>
   </div>
 </div>

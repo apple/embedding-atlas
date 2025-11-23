@@ -1,24 +1,19 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { twMerge } from "tailwind-merge";
-
   interface Props {
     label?: string | null;
     icon?: any | null;
     title?: string;
     order?: number | null;
-    class?: string | null;
     onClick?: () => void;
   }
 
-  let { label = null, icon = null, title = "", order = null, onClick, class: className }: Props = $props();
+  let { label = null, icon = null, title = "", order = null, onClick }: Props = $props();
+
 </script>
 
 <button
-  class={twMerge(
-    "rounded-md flex select-none items-center px-1.5 py-1.5 border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 dark:text-slate-400 focus-visible:outline-2 outline-blue-600 -outline-offset-1",
-    className,
-  )}
+  class="rounded-md flex select-none items-center px-1.5 py-1.5 border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 dark:text-slate-400 focus-visible:outline-2 outline-blue-600 -outline-offset-1"
   style:order={order}
   title={title}
   onclick={() => {

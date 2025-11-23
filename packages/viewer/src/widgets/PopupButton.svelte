@@ -11,13 +11,17 @@
     label?: string | null;
     icon?: any | null;
     anchor?: "left" | "right";
-    buttonClass?: string | null;
+    button?: Snippet<[{ visible: boolean; toggle: () => void }]>;
     children?: Snippet;
   }
 
-  let { title = "", label = null, icon = null, anchor = "right", children, buttonClass }: Props = $props();
+  let { title = "", label = null, icon = null, anchor = "right", children, button }: Props = $props();
 
   let visible: boolean = $state(false);
+
+  function toggle() {
+    visible = !visible;
+  }
   let container: HTMLDivElement;
 
   function onKeyDown(e: KeyboardEvent) {
@@ -51,7 +55,11 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="relative" bind:this={container} onkeydown={onKeyDown}>
-  <ToggleButton icon={icon} title={title} label={label} bind:checked={visible} class={buttonClass} />
+  {#if button}
+    {@render button({ visible, toggle })}
+  {:else}
+    <ToggleButton icon={icon} title={title} label={label} bind:checked={visible} />
+  {/if}
   <div
     bind:this={popoverElement}
     class="absolute px-3 py-3 rounded-md z-20 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-lg"

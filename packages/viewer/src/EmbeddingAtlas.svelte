@@ -376,10 +376,27 @@
         >
           <FilteredCount coordinator={coordinator} filter={crossFilter} table={data.table} />
           <div class="flex flex-row gap-1 items-center">
-            <Button icon={IconClose} title="Clear filters" onClick={resetFilter} class="border-none px-0" />
+            <button
+              title="Clear filters"
+              onclick={resetFilter}
+              class="rounded-md flex select-none items-center p-1.5 text-slate-400 dark:text-slate-500 focus-visible:outline-2 outline-blue-600 -outline-offset-1"
+            >
+              <IconClose class="w-5 h-5" />
+            </button>
 
             {#if onExportSelection}
-              <PopupButton icon={IconExport} title="Export Selection" buttonClass="border-none">
+              <PopupButton title="Export Selection">
+                {#snippet button({ visible, toggle })}
+                  <button
+                    title="Export Selection"
+                    onclick={toggle}
+                    class="rounded-md px-1.5 py-1.5 bg-white dark:bg-slate-900 flex select-none items-center focus-visible:outline-2 outline-blue-600 -outline-offset-1"
+                    class:text-slate-400={!visible}
+                    class:dark:text-slate-500={!visible}
+                  >
+                    <IconExport class="w-5 h-5" />
+                  </button>
+                {/snippet}
                 <div class="min-w-[420px] flex flex-col gap-2">
                   <div class="flex flex-row gap-2">
                     <ActionButton
