@@ -384,7 +384,7 @@
       setupWebGPURenderer(canvas);
     } else {
       setupWebGLRenderer(canvas);
-      webGPUPrompt = "WebGPU is unavailable. If you are using Safari, please enable the WebGPU feature flag.";
+      webGPUPrompt = "WebGPU is unavailable. Falling back to WebGL.";
     }
   });
 
