@@ -48,6 +48,10 @@ export class Viewport {
     return this._matrix;
   }
 
+  scale(): number {
+    return Math.abs(this._pixel_kx);
+  }
+
   pixelLocation(x: number, y: number): Point {
     return { x: x * this._pixel_kx + this._pixel_bx, y: y * this._pixel_ky + this._pixel_by };
   }

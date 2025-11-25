@@ -648,15 +648,16 @@
   }
 
   async function updateLabels(viewport: ViewportState) {
+    let vp = new Viewport(viewport, 1000, 1000);
     if (renderer == null) {
       return;
     }
     if (labels != null) {
-      clusterLabels = await layoutLabels(width, height, viewport, labels, resolvedTheme.fontFamily);
+      clusterLabels = await layoutLabels(vp.scale(), labels, resolvedTheme.fontFamily);
     } else {
       statusMessage = "Generating labels...";
       let result = await generateLabels(viewport);
-      clusterLabels = await layoutLabels(width, height, viewport, result, resolvedTheme.fontFamily);
+      clusterLabels = await layoutLabels(vp.scale(), result, resolvedTheme.fontFamily);
       statusMessage = null;
     }
   }
@@ -755,10 +756,9 @@
         {#each clusterLabels as label}
           {@const rows = label.text.split("\n")}
           {@const location = pointLocation(label.coordinate.x, label.coordinate.y)}
+          {@const scale = resolvedViewport.scale()}
           {@const isVisible =
-            label.placement != null &&
-            label.placement.minScale <= resolvedViewportState.scale &&
-            resolvedViewportState.scale <= label.placement.maxScale}
+            label.placement != null && label.placement.minScale <= scale && scale <= label.placement.maxScale}
           <g transform="translate({location.x},{location.y})">
             {#if isVisible}
               <g>
