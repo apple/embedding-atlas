@@ -54,6 +54,7 @@
   import { IconSettings } from "../../assets/icons.js";
   import { isolatedWritable } from "../../utils/store.js";
   import type { ChartViewProps, RowID } from "../chart.js";
+  import { resolveChartTheme } from "../common/theme.js";
   import { makeCategoryColumn } from "./category_column.js";
   import type { EmbeddingSpec } from "./types.js";
   import { interpolateViewport } from "./viewport_animation.js";
@@ -71,7 +72,9 @@
     onSpecChange,
   }: ChartViewProps<EmbeddingSpec, State> = $props();
 
-  let { colorScheme, columnStyles, searchResult } = context;
+  let { colorScheme, columnStyles, searchResult, theme: themeConfig } = context;
+  let theme = $derived(resolveChartTheme($colorScheme, $themeConfig));
+
   let highlightStore = isolatedWritable(context.highlight);
 
   let categoryColumn = $derived(spec.data.category);
@@ -85,7 +88,7 @@
   // Update the category mapping and legend.
   $effect.pre(() => {
     let promise = context.cache.value(`embedding/category/${categoryColumn}`, () =>
-      makeCategoryColumn(context.coordinator, context.table, categoryColumn),
+      makeCategoryColumn(context.coordinator, context.table, categoryColumn, theme),
     );
     promise.then((v) => {
       categoryLegend = v;
@@ -200,7 +203,7 @@
     y={spec.data.y}
     text={spec.data.text}
     category={categoryLegend?.indexColumn}
-    categoryColors={categoryLegend?.legend.map((x) => x.color)}
+    categoryColors={categoryLegend?.legend.map((x) => x.color) ?? [theme.embeddingColor]}
     config={{
       colorScheme: $colorScheme,
       ...context.embeddingViewConfig,
