@@ -1,5 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
+  import { debounce } from "@embedding-atlas/utils";
   import { coordinator as defaultCoordinator, DuckDBWASMConnector } from "@uwdata/mosaic-core";
   import { literal } from "@uwdata/mosaic-sql";
 
@@ -9,11 +10,13 @@
   import FileUpload from "./FileUpload.svelte";
   import MessagesView, { appendedMessages, type Message } from "./MessagesView.svelte";
 
+  import { type EmbeddingAtlasState } from "../api.js";
   import { computeEmbedding } from "../embedding/index.js";
   import { systemColorScheme } from "../utils/color_scheme.js";
   import { initializeDatabase } from "../utils/database.js";
   import { downloadBuffer } from "../utils/download.js";
   import { exportMosaicSelection, type ExportFormat } from "../utils/mosaic_exporter.js";
+  import { getQueryPayload, setQueryPayload } from "../utils/query_payload.js";
 
   const coordinator = defaultCoordinator();
   const databaseInitialized = initializeDatabase(coordinator, "wasm", null);
@@ -96,7 +99,13 @@
       return;
     }
 
+    initialState = await getQueryPayload();
+
     stage = "ready";
+  }
+
+  function onStateChange(state: EmbeddingAtlasState) {
+    setQueryPayload({ ...state, predicate: undefined });
   }
 
   async function onExportSelection(predicate: string | null, format: ExportFormat) {
@@ -116,6 +125,7 @@
         projection: projectionColumns,
       }}
       initialState={initialState}
+      onStateChange={debounce(onStateChange, 200)}
       onExportSelection={onExportSelection}
     />
   {:else}
