@@ -8,6 +8,10 @@ export interface CountPlotSpec {
   };
   expanded?: boolean;
   percentage?: boolean;
+  /** Sort by total count or selected (filtered) count. Default: "total" */
+  sortBy?: "total" | "selected";
+  /** Sort order. Default: "desc" */
+  sortOrder?: "asc" | "desc";
 }
 
 export interface PredicatesSpec {

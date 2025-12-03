@@ -30,7 +30,7 @@
   }: ChartViewProps<CountPlotSpec, State> = $props();
   let { coordinator, colorScheme, theme: themeConfig } = context;
   let { selection } = $derived(chartState);
-  let { expanded, percentage } = $derived(spec);
+  let { expanded, percentage, sortBy, sortOrder } = $derived(spec);
 
   interface Bin {
     x: string;
@@ -38,7 +38,7 @@
   }
 
   interface ChartData {
-    items: { x: string; total: number; selected: number }[];
+    items: { x: string; total: number; selected: number; isSpecial: boolean }[];
     sumTotal: number;
     sumSelected: number;
     firstSpecialIndex: number;
@@ -48,13 +48,36 @@
   let chartData = $state.raw<ChartData | undefined>(undefined);
   let chartWidth = $state.raw(400);
 
-  let maxCount = $derived(chartData?.items.reduce((a, b) => Math.max(a, percentage ? b.selected : b.total), 0) ?? 0);
+  let sortedItems = $derived(chartData ? sortItems(chartData.items, sortBy, sortOrder) : []);
+
+  let maxCount = $derived(sortedItems.reduce((a, b) => Math.max(a, percentage ? b.selected : b.total), 0));
   let xScale = $derived(d3.scaleLinear([0, Math.max(1, maxCount)], [0, chartWidth - 250]));
 
   // Adjust scale so the minimum width for non-zero count is 1px.
   let xScaleAdjusted = $derived((v: number) => (v != 0 ? Math.max(1, xScale(v)) : 0));
 
   let theme = $derived(resolveChartTheme($colorScheme, $themeConfig));
+
+  function sortItems(
+    items: ChartData["items"],
+    sortBy: "total" | "selected" | undefined,
+    sortOrder: "asc" | "desc" | undefined,
+  ) {
+    // Split into regular items and special items (null, other)
+    let regularItems = items.filter((item) => !item.isSpecial);
+    let specialItems = items.filter((item) => item.isSpecial);
+
+    // Sort regular items
+    let sortField = sortBy ?? "total";
+    let order = sortOrder ?? "desc";
+    regularItems = regularItems.slice().sort((a, b) => {
+      let diff = a[sortField] - b[sortField];
+      return order === "asc" ? diff : -diff;
+    });
+
+    // Special items stay at the end, unsorted
+    return [...regularItems, ...specialItems];
+  }
 
   function initializeClient(coordinator: Coordinator, table: string, field: string, filter: Selection) {
     let stats: FieldStats | undefined = $state.raw(undefined);
@@ -120,11 +143,13 @@
 
           if (allItems.every((d) => typeof d.x == "string")) {
             let specialValues = capturedAggregate.scale.specialValues ?? [];
+            let specialValuesSet = new Set(specialValues);
             let hasOther = specialValues.filter((x) => x != "(null)").length > 0;
             let items = [...capturedAggregate.scale.domain, ...specialValues].map((d) => ({
               x: d,
               total: mapTotal.get(keyfunc(d)) ?? 0,
               selected: mapSelected.get(keyfunc(d)) ?? 0,
+              isSpecial: specialValuesSet.has(d),
             }));
             let sumTotal = items.reduce((a, b) => a + b.total, 0);
             let sumSelected = items.reduce((a, b) => a + b.selected, 0);
@@ -146,6 +171,7 @@
               x: d,
               total: mapTotal.get(keyfunc(d)) ?? 0,
               selected: mapSelected.get(keyfunc(d)) ?? 0,
+              isSpecial: typeof d == "string",
             }));
             let sumTotal = items.reduce((a, b) => a + b.total, 0);
             let sumSelected = items.reduce((a, b) => a + b.selected, 0);
@@ -234,11 +260,12 @@
 <Container width={width} height={height} scrollY={true}>
   <div class="flex flex-col text-sm w-full select-none" bind:clientWidth={chartWidth}>
     {#if chartData}
-      {#each chartData.items as bar, i}
+      {#each sortedItems as bar, i}
         {@const selected =
           selection == undefined || selection.length == 0 || selection.findIndex((x) => isSame(x, bar.x)) >= 0}
-        {@const hasSelection = !chartData.items.every((x) => x.total == x.selected)}
-        {#if i == chartData.firstSpecialIndex}
+        {@const hasSelection = !sortedItems.every((x) => x.total == x.selected)}
+        {@const prevBar = i > 0 ? sortedItems[i - 1] : null}
+        {#if bar.isSpecial && prevBar && !prevBar.isSpecial}
           <hr class="mt-1 mb-1 border-slate-300 dark:border-slate-500 border-dashed" />
         {/if}
         <button
@@ -326,7 +353,23 @@
           {/if}
         </div>
 
-        <div class="flex">
+        <div class="flex gap-1">
+          <InlineSelect
+            options={[
+              { value: "desc", label: "↓" },
+              { value: "asc", label: "↑" },
+            ]}
+            value={sortOrder ?? "desc"}
+            onChange={(v) => onSpecChange({ sortOrder: v as "asc" | "desc" })}
+          />
+          <InlineSelect
+            options={[
+              { value: "total", label: "all" },
+              { value: "selected", label: "sel" },
+            ]}
+            value={sortBy ?? "total"}
+            onChange={(v) => onSpecChange({ sortBy: v as "total" | "selected" })}
+          />
           <InlineSelect
             options={[
               { value: "true", label: "%" },
