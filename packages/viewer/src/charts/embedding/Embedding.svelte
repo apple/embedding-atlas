@@ -61,6 +61,8 @@
 
   const maxCategories = Math.min(20, maxDensityModeCategories());
   const defaultMinimumDensity = 1 / 16;
+  const defaultDownsampleMaxPoints = 4000000;
+  const minDownsampleMaxPoints = 50000;
 
   let {
     context,
@@ -80,6 +82,16 @@
   let categoryColumn = $derived(spec.data.category);
 
   let categoryLegend: EmbeddingLegend | null = $state.raw(null);
+  let totalPointCount: number | null = $state.raw(null);
+
+  // Query total point count for render limit slider
+  $effect.pre(() => {
+    context.coordinator
+      .query(SQL.Query.from(context.table).select({ count: SQL.sql`COUNT(*)::INT` }))
+      .then((result: any) => {
+        totalPointCount = result.get(0).count;
+      });
+  });
 
   let tooltip = $state.raw<DataPoint | null>(null);
   let selection = $state.raw<DataPoint[] | null>(null);
@@ -210,6 +222,7 @@
       mode: spec.mode ?? "points",
       ...(spec.minimumDensity != null ? { minimumDensity: spec.minimumDensity } : {}),
       ...(spec.pointSize != null ? { pointSize: spec.pointSize } : {}),
+      downsampleMaxPoints: spec.downsampleMaxPoints ?? defaultDownsampleMaxPoints,
     }}
     labels={context.embeddingViewLabels}
     cache={context.persistentCache}
@@ -310,6 +323,37 @@
             />
             <Button label="Auto" onClick={() => onSpecChange({ pointSize: undefined })} />
           </div>
+          {#if totalPointCount != null && totalPointCount > minDownsampleMaxPoints}
+            {@const effectiveLimit = spec.downsampleMaxPoints ?? Math.min(defaultDownsampleMaxPoints, totalPointCount)}
+            {@const isMaxed = effectiveLimit >= totalPointCount}
+            <div class="text-slate-500 dark:text-slate-400 select-none">
+              Max Points: {isMaxed
+                ? "All"
+                : effectiveLimit >= 1000000
+                  ? (effectiveLimit / 1000000).toFixed(1) + "M"
+                  : (effectiveLimit / 1000).toFixed(0) + "K"}
+              {#if !isMaxed}
+                <span class="text-slate-400 dark:text-slate-500"
+                  >/ {totalPointCount >= 1000000
+                    ? (totalPointCount / 1000000).toFixed(1) + "M"
+                    : (totalPointCount / 1000).toFixed(0) + "K"}</span
+                >
+              {/if}
+            </div>
+            <div class="flex gap-2 items-center">
+              <Slider
+                bind:value={
+                  () =>
+                    spec.downsampleMaxPoints ??
+                    Math.min(defaultDownsampleMaxPoints, totalPointCount ?? defaultDownsampleMaxPoints),
+                  (v) => onSpecChange({ downsampleMaxPoints: v })
+                }
+                min={minDownsampleMaxPoints}
+                max={totalPointCount}
+                step={Math.max(10000, Math.floor(totalPointCount / 100 / 10000) * 10000)}
+              />
+            </div>
+          {/if}
         </div>
       </PopupButton>
     </div>

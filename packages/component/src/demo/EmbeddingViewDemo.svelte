@@ -5,7 +5,7 @@
 
   import EmbeddingView from "../lib/embedding_view/EmbeddingView.svelte";
 
-  let dataset = generateSampleDataset({ numPoints: 500000, numCategories: 3, numSubClusters: 32 });
+  let dataset = generateSampleDataset({ numPoints: 5000000, numCategories: 3, numSubClusters: 32 });
   let data = {
     x: new Float32Array(dataset.map((r) => r.x)),
     y: new Float32Array(dataset.map((r) => r.y)),
@@ -19,6 +19,7 @@
   let mode: "points" | "density" = $state.raw("density");
   let colorScheme: "light" | "dark" = $state.raw("light");
   let minimumDensity: number = $state.raw(1 / 16);
+  let downsampleMaxPoints: number | null = $state.raw(4000000);
   let viewportState: ViewportState | null = $state.raw(null);
 
   async function querySelection(x: number, y: number, unitDistance: number): Promise<DataPoint | null> {
@@ -59,15 +60,37 @@
     </select>
   </label>
 
-  <input type="range" bind:value={minimumDensity} min={0} max={0.2} step={0.0001} />
-  {minimumDensity.toFixed(4)}
+  <label style="display:flex;align-items:center;gap:4px">
+    Min Density:
+    <input type="range" bind:value={minimumDensity} min={0} max={0.2} step={0.0001} />
+    {minimumDensity.toFixed(4)}
+  </label>
+
+  <label style="display:flex;align-items:center;gap:4px">
+    Max Points:
+    {#if downsampleMaxPoints != null}
+      <input type="range" bind:value={downsampleMaxPoints} min={50000} max={50000000} step={50000} />
+      {downsampleMaxPoints >= 1000000
+        ? (downsampleMaxPoints / 1000000).toFixed(1) + "M"
+        : (downsampleMaxPoints / 1000).toFixed(0) + "K"}
+      <button onclick={() => (downsampleMaxPoints = null)}>Disable</button>
+    {:else}
+      <span>Disabled</span>
+      <button onclick={() => (downsampleMaxPoints = 4000000)}>Enable</button>
+    {/if}
+  </label>
 </div>
 
 <div style="display:flex;gap:8px">
   <div style:border="1px solid black">
     <EmbeddingView
       data={data}
-      config={{ mode: mode, colorScheme: colorScheme, minimumDensity: minimumDensity }}
+      config={{
+        mode: mode,
+        colorScheme: colorScheme,
+        minimumDensity: minimumDensity,
+        downsampleMaxPoints: downsampleMaxPoints,
+      }}
       tooltip={tooltip}
       onTooltip={(v) => {
         tooltip = v;
