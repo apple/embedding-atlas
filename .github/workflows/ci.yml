@@ -88,7 +88,7 @@ jobs:
           path: packages/backend/dist/
 
       - name: Upload docs artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: packages/docs/.vitepress/dist/
 
@@ -146,7 +146,7 @@ jobs:
           path: dist/
 
       - name: Publish release distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@v1
         with:
           packages-dir: dist/
 
