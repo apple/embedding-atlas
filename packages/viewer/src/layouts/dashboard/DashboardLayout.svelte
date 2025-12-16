@@ -123,6 +123,7 @@
 >
   <div
     bind:this={innerContainer}
+    style:z-index={0}
     style:width="{containerWidth}px"
     style:height="{innerHeight}px"
     style:position="relative"
