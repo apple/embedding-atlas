@@ -64,7 +64,7 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
                 ``{ "ids": [id1, id2, ...], "distances": [distance1, distance2, ...] }``.
 
                 - ``"ids"`` should be an array of row ids of the neighbors
-                  (if ``row_id`` is specified, match the value in row_id, otherwise use the row index),
+                  (if ``row_id`` is specified, match the value in row_id, otherwise use zero-based row index),
                   sorted by distance.
                 - ``"distances"`` should contain the corresponding distances to each neighbor.
 
@@ -99,7 +99,7 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
         _ = data_frame  # used by DuckDB
 
         table_name = "embedding_atlas"
-        row_id_column = options.get("row_id", "__row_id__")
+        row_id_column = options.get("row_id", "__row_index__")
 
         props = make_embedding_atlas_props(
             **(options | {"table": table_name, "row_id": row_id_column}),
@@ -116,10 +116,8 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
             # Create the row_id_column if it does not exist.
             connection.sql(
                 f"""
-                ALTER TABLE {table_name} ADD COLUMN {row_id_column} INTEGER;
-                CREATE TEMPORARY SEQUENCE row_id_sequence;
-                UPDATE {table_name} SET {row_id_column} = nextval('row_id_sequence');
-                DROP SEQUENCE row_id_sequence;
+                CREATE TEMPORARY SEQUENCE row_id_sequence MINVALUE 0 START 0;
+                ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {row_id_column} INTEGER DEFAULT nextval('row_id_sequence');
                 """
             )
 

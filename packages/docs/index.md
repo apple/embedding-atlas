@@ -16,8 +16,8 @@ hero:
       link: /demo/
       target: _self
     - theme: brand
-      text: Upload Data
-      link: /upload/
+      text: Load Data
+      link: /app/
       target: _self
     - theme: alt
       text: Documentation

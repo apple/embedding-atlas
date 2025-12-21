@@ -19,6 +19,7 @@ export class ImageRenderer {
     if (dataUrl != null) {
       let size = props.size ?? 100;
       let img = document.createElement("img");
+      img.referrerPolicy = "no-referrer";
       img.src = dataUrl;
       img.style.maxHeight = size + "px";
       img.style.maxWidth = size + "px";

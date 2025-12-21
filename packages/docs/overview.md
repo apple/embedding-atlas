@@ -2,7 +2,7 @@
 
 Embedding Atlas is a tool that provides interactive visualizations for large embeddings. It allows you to visualize, cross-filter, and search embeddings and metadata.
 
-You can use Embedding Atlas directly from this website by [loading your own data](https://apple.github.io/embedding-atlas/upload/). Embedding Atlas will compute the embedding and projection in your browser. Your data does not leave your machine.
+You can use Embedding Atlas directly from this website by [loading your own data](https://apple.github.io/embedding-atlas/app/). Embedding Atlas will compute the embedding and projection in your browser. Your data does not leave your machine.
 
 Embedding Atlas is released as two packages:
 

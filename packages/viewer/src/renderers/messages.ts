@@ -103,6 +103,7 @@ export class MessagesRenderer {
                   return E("img", {
                     class: "max-w-120 max-h-120 object-contain",
                     attrs: {
+                      referrerpolicy: "no-referrer",
                       src: c.imageUrl,
                     },
                   });

@@ -2,15 +2,18 @@
 <script lang="ts">
   import { untrack } from "svelte";
 
-  import Button from "../widgets/Button.svelte";
-  import ComboBox from "../widgets/ComboBox.svelte";
-  import Select from "../widgets/Select.svelte";
+  import Button from "../../widgets/Button.svelte";
+  import ComboBox from "../../widgets/ComboBox.svelte";
+  import SegmentedControl from "../../widgets/SegmentedControl.svelte";
+  import Select from "../../widgets/Select.svelte";
 
-  import { jsTypeFromDBType } from "../utils/database.js";
+  import { EMBEDDING_ATLAS_VERSION } from "../../constants.js";
+  import { jsTypeFromDBType } from "../../utils/database.js";
 
   // Predefined embedding models. The default is the first model.
   const textModels = [
     "Xenova/all-MiniLM-L6-v2",
+    "Xenova/paraphrase-multilingual-mpnet-base-v2",
     "Xenova/multilingual-e5-small",
     "Xenova/multilingual-e5-base",
     "Xenova/multilingual-e5-large",
@@ -25,59 +28,66 @@
     "Xenova/dino-vits16",
   ];
 
-  export interface Value {
-    text: string | null;
-    embedding:
+  export interface Settings {
+    version: string;
+    text?: string;
+    embedding?:
       | {
-          precomputed: { x: string; y: string };
+          precomputed: { x: string; y: string; neighbors?: string };
         }
-      | { compute: { column: string; type: "text" | "image"; model: string } }
-      | null;
+      | { compute: { column: string; type: "text" | "image"; model: string } };
   }
 
   interface Props {
     columns: { column_name: string; column_type: string }[];
-    onConfirm: (value: Value) => void;
+    onConfirm: (value: Settings) => void;
   }
 
   let { columns, onConfirm }: Props = $props();
 
   let embeddingMode = $state<"precomputed" | "from-text" | "from-image" | "none">("precomputed");
 
-  let embeddingXColumn: string | null = $state(null);
-  let embeddingYColumn: string | null = $state(null);
-  let embeddingTextColumn: string | null = $state(null);
-  let embeddingTextModel: string | null = $state(null);
-  let embeddingImageColumn: string | null = $state(null);
-  let embeddingImageModel: string | null = $state(null);
+  let textColumn: string | undefined = $state(undefined);
 
-  let textColumn: string | null = $state(null);
+  let embeddingXColumn: string | undefined = $state(undefined);
+  let embeddingYColumn: string | undefined = $state(undefined);
+  let embeddingNeighborsColumn: string | undefined = $state(undefined);
+  let embeddingTextColumn: string | undefined = $state(undefined);
+  let embeddingTextModel: string | undefined = $state(undefined);
+  let embeddingImageColumn: string | undefined = $state(undefined);
+  let embeddingImageModel: string | undefined = $state(undefined);
 
   let numericalColumns = $derived(columns.filter((x) => jsTypeFromDBType(x.column_type) == "number"));
   let stringColumns = $derived(columns.filter((x) => jsTypeFromDBType(x.column_type) == "string"));
 
   $effect.pre(() => {
     let c = textColumn;
-    if (untrack(() => embeddingTextColumn == null)) {
+    if (untrack(() => embeddingTextColumn == undefined)) {
       embeddingTextColumn = c;
     }
   });
 
   function confirm() {
-    let value: Value = { text: textColumn, embedding: null };
-    if (embeddingMode == "precomputed" && embeddingXColumn != null && embeddingYColumn != null) {
-      value.embedding = { precomputed: { x: embeddingXColumn, y: embeddingYColumn } };
+    let value: Settings = { version: EMBEDDING_ATLAS_VERSION, text: textColumn };
+    if (embeddingMode == "precomputed" && embeddingXColumn != undefined && embeddingYColumn != undefined) {
+      value.embedding = {
+        precomputed: {
+          x: embeddingXColumn,
+          y: embeddingYColumn,
+          neighbors: embeddingNeighborsColumn != undefined ? embeddingNeighborsColumn : undefined,
+        },
+      };
     }
-    if (embeddingMode == "from-text" && embeddingTextColumn != null) {
+    if (embeddingMode == "from-text" && embeddingTextColumn != undefined) {
       let model = embeddingTextModel?.trim() ?? "";
-      if (model == null || model == "") {
+      if (model == undefined || model == "") {
         model = textModels[0];
       }
       value.embedding = { compute: { column: embeddingTextColumn, type: "text", model: model } };
     }
-    if (embeddingMode == "from-image" && embeddingImageColumn != null) {
+    if (embeddingMode == "from-image" && embeddingImageColumn != undefined) {
       let model = embeddingImageModel?.trim() ?? "";
-      if (model == null || model == "") {
+      if (model == undefined || model == "") {
         model = imageModels[0];
       }
       value.embedding = { compute: { column: embeddingImageColumn, type: "image", model: model } };
@@ -97,13 +107,13 @@
       such as a description, chat messages, or a summary.
     </p>
     <div class="w-full flex flex-row items-center">
-      <div class="w-[4rem] dark:text-slate-400">Text</div>
+      <div class="w-[6rem] dark:text-slate-400">Text</div>
       <Select
-        class="flex-1"
+        class="flex-1 min-w-0"
         value={textColumn}
         onChange={(v) => (textColumn = v)}
         options={[
-          { value: null, label: "(none)" },
+          { value: undefined, label: "(none)" },
           ...stringColumns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${x.column_type})` })),
         ]}
       />
@@ -116,58 +126,75 @@
       column and compute the embedding projection in browser. For large data, it's recommended to pre-compute the
       embedding and its 2D projection.
     </p>
-    <div class="flex rounded overflow-hidden size-fit gap-[1px] bg-slate-100 dark:bg-slate-800 mb-2">
-      {#each [["precomputed", "Precomputed"], ["from-text", "From Text"], ["from-image", "From Image"], ["none", "Disabled"]] as [mode, label]}
-        <button
-          class="bg-slate-200 dark:bg-slate-700 dark:text-slate-400 px-2 py-1"
-          class:!bg-slate-500={mode == embeddingMode}
-          class:!text-slate-100={mode == embeddingMode}
-          onclick={() => (embeddingMode = mode as any)}
-        >
-          {label}
-        </button>
-      {/each}
+    <div class="flex items-start">
+      <SegmentedControl
+        value={embeddingMode}
+        onChange={(v) => (embeddingMode = v as any)}
+        options={[
+          { value: "precomputed", label: "Pre-computed" },
+          { value: "from-text", label: "From Text" },
+          { value: "from-image", label: "From Image" },
+          { value: "none", label: "None" },
+        ]}
+      />
     </div>
     {#if embeddingMode == "precomputed"}
       <div class="w-full flex flex-row items-center">
-        <div class="w-[4rem] dark:text-slate-400">X</div>
+        <div class="w-[6rem] dark:text-slate-400">X</div>
         <Select
-          class="flex-1"
+          class="flex-1 min-w-0"
           value={embeddingXColumn}
           onChange={(v) => (embeddingXColumn = v)}
           options={[
-            { value: null, label: "(none)" },
+            { value: undefined, label: "(none)" },
             ...numericalColumns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${x.column_type})` })),
           ]}
         />
       </div>
       <div class="w-full flex flex-row items-center">
-        <div class="w-[4rem] dark:text-slate-400">Y</div>
+        <div class="w-[6rem] dark:text-slate-400">Y</div>
         <Select
-          class="flex-1"
+          class="flex-1 min-w-0"
           value={embeddingYColumn}
           onChange={(v) => (embeddingYColumn = v)}
           options={[
-            { value: null, label: "(none)" },
+            { value: undefined, label: "(none)" },
             ...numericalColumns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${x.column_type})` })),
           ]}
         />
       </div>
+      <div class="w-full flex flex-row items-center">
+        <div class="w-[6rem] dark:text-slate-400">Neighbors</div>
+        <Select
+          class="flex-1 min-w-0"
+          value={embeddingNeighborsColumn}
+          onChange={(v) => (embeddingNeighborsColumn = v)}
+          options={[
+            { value: undefined, label: "(none)" },
+            ...columns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${x.column_type})` })),
+          ]}
+        />
+      </div>
+      <p class="text-sm text-slate-400 dark:text-slate-600">
+        Neighbors column should contain pre-computed nearest neighbors in format: <code
+          >{`{ "ids": [n1, n2, ...], "distances": [d1, d2, ...] }`}</code
+        >. IDs should be zero-based row indices.
+      </p>
     {:else if embeddingMode == "from-text"}
       <div class="w-full flex flex-row items-center">
-        <div class="w-[4rem] dark:text-slate-400">Text</div>
+        <div class="w-[6rem] dark:text-slate-400">Text</div>
         <Select
-          class="flex-1"
+          class="flex-1 min-w-0"
           value={embeddingTextColumn}
           onChange={(v) => (embeddingTextColumn = v)}
           options={[
-            { value: null, label: "(none)" },
+            { value: undefined, label: "(none)" },
             ...stringColumns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${x.column_type})` })),
           ]}
         />
       </div>
       <div class="w-full flex flex-row items-center">
-        <div class="w-[4rem] dark:text-slate-400">Model</div>
+        <div class="w-[6rem] dark:text-slate-400">Model</div>
         <ComboBox
           className="flex-1"
           value={embeddingTextModel}
@@ -177,23 +204,24 @@
         />
       </div>
       <p class="text-sm text-slate-400 dark:text-slate-600">
-        Computing the embedding and 2D projection in browser may take a while.
+        Computing the embedding and 2D projection in browser may take a while. The model will be loaded with
+        Transformers.js.
       </p>
     {:else if embeddingMode == "from-image"}
       <div class="w-full flex flex-row items-center">
-        <div class="w-[4rem] dark:text-slate-400">Image</div>
+        <div class="w-[6rem] dark:text-slate-400">Image</div>
         <Select
-          class="flex-1"
+          class="flex-1 min-w-0"
           value={embeddingImageColumn}
           onChange={(v) => (embeddingImageColumn = v)}
           options={[
-            { value: null, label: "(none)" },
+            { value: undefined, label: "(none)" },
             ...columns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${x.column_type})` })),
           ]}
         />
       </div>
       <div class="w-full flex flex-row items-center">
-        <div class="w-[4rem] dark:text-slate-400">Model</div>
+        <div class="w-[6rem] dark:text-slate-400">Model</div>
         <ComboBox
           className="flex-1"
           value={embeddingImageModel}
@@ -203,7 +231,8 @@
         />
       </div>
       <p class="text-sm text-slate-400 dark:text-slate-600">
-        Computing the embedding and 2D projection in browser may take a while.
+        Computing the embedding and 2D projection in browser may take a while. The model will be loaded with
+        Transformers.js.
       </p>
     {/if}
   </div>

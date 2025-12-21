@@ -2,10 +2,11 @@
 <script lang="ts">
   interface Props {
     extensions?: string[];
-    onUpload: (file: File) => void;
+    multiple?: boolean;
+    onUpload: (files: File[]) => void;
   }
 
-  let { extensions, onUpload }: Props = $props();
+  let { extensions, multiple = false, onUpload }: Props = $props();
 
   let isDragging = $state(false);
   let fileInput: HTMLInputElement;
@@ -22,20 +23,18 @@
   function handleDrop(event: any) {
     event.preventDefault();
     isDragging = false;
-    if (event.dataTransfer.files && event.dataTransfer.files.length == 1) {
-      let file = event.dataTransfer.files[0];
-      if (isValidFile(file)) {
-        onUpload(file);
+    if (event.dataTransfer.files) {
+      let files: File[] = Array.from(event.dataTransfer.files);
+      if ((multiple || files.length == 1) && files.length > 0 && files.every(isValidFile)) {
+        onUpload(files);
       }
     }
   }
 
   function handleFileSelect(event: any) {
-    const selectedFiles: File[] = Array.from(event.target.files);
-    if (selectedFiles.length == 1) {
-      if (isValidFile(selectedFiles[0])) {
-        onUpload(selectedFiles[0]);
-      }
+    let files: File[] = Array.from(event.target.files);
+    if ((multiple || files.length == 1) && files.length > 0 && files.every(isValidFile)) {
+      onUpload(files);
     }
   }
 
@@ -54,7 +53,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <button
-  class="flex flex-col items-center w-[40rem] justify-center py-20 border-2 border-dashed rounded-md transition-all
+  class="flex flex-col items-center w-full justify-center py-20 border-2 border-dashed rounded-md transition-all
     {isDragging
     ? 'bg-slate-50 border-slate-500 dark:bg-slate-900 dark:border-slate-500'
     : 'bg-slate-50 border-slate-300 dark:bg-slate-900 dark:border-slate-700'}"
@@ -71,5 +70,12 @@
     </p>
     <p class="text-sm text-slate-400 dark:text-slate-600">Accepted file types: JSON, CSV, Parquet</p>
   </div>
-  <input bind:this={fileInput} type="file" class="hidden" accept={extensions?.join(",")} onchange={handleFileSelect} />
+  <input
+    bind:this={fileInput}
+    type="file"
+    class="hidden"
+    accept={extensions?.join(",")}
+    multiple={multiple}
+    onchange={handleFileSelect}
+  />
 </button>

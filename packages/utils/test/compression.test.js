@@ -147,17 +147,15 @@ describe("compression", () => {
     });
 
     it("should handle data that requires padding", () => {
-      const original1 = new Uint8Array([1]);
-      const encoded1 = base64Encode(original1);
-      expect(encoded1.endsWith("==") || !encoded1.includes("=")).toBe(true);
-
-      const original2 = new Uint8Array([1, 2]);
-      const encoded2 = base64Encode(original2);
-      expect(encoded2.endsWith("=") || !encoded2.includes("=")).toBe(true);
-
-      const original3 = new Uint8Array([1, 2, 3]);
-      const encoded3 = base64Encode(original3);
-      expect(!encoded3.includes("=")).toBe(true);
+      for (let length = 0; length < 1000; length++) {
+        const original = new Uint8Array(length);
+        for (let i = 0; i < length; i++) {
+          original[i] = Math.floor(Math.random() * 256);
+        }
+        const encoded = base64Encode(original);
+        const decoded = base64Decode(encoded);
+        expect(decoded).toEqual(original);
+      }
     });
   });
 
