@@ -51,7 +51,10 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          cd packages/backend && uv sync --frozen
+          df -lh
 
       - uses: actions/cache@v5
         id: cache-demo-data
@@ -61,7 +64,7 @@ jobs:
 
       - name: Generate demo data
         if: steps.cache-demo-data.outputs.cache-hit != 'true'
-        run: cd packages/docs && uv run generate_demo_data.py
+        run: cd packages/docs && uv run --project ../backend python generate_demo_data.py
 
       - name: Build WASM modules
         run: ./scripts/build_wasm.sh

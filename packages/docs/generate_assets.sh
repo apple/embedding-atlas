@@ -2,10 +2,10 @@
 
 set -euxo pipefail
 
-# Create the upload page
-rm -rf public/upload
-cp -r ../viewer/dist public/upload
-sed 's/viewer/upload/g' ../viewer/dist/index.html > public/upload/index.html
+# Create the /app page
+rm -rf public/app
+cp -r ../viewer/dist public/app
+sed 's/backend-viewer/file-viewer/g' ../viewer/dist/index.html > public/app/index.html
 
 # Create the demo page
 if [ -d "demo-data" ]; then

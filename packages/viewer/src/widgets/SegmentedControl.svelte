@@ -15,7 +15,7 @@
 </script>
 
 <div
-  class="flex rounded-md select-none items-center overflow-hidden border border-slate-300 dark:border-slate-600 dark:text-slate-400"
+  class="flex rounded-md select-none items-center overflow-hidden border border-slate-300 dark:border-slate-600 dark:text-slate-400 bg-slate-200 dark:bg-slate-800"
 >
   {#each options as opt}
     {@const isSelected = value == opt.value}

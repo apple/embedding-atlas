@@ -44,12 +44,10 @@ async function createView(data_frame: ArrowTable, props: Partial<EmbeddingAtlasP
   let conn = await connector.getConnection();
   const ipcBuffer = data_frame.serialize().data;
   await conn.insertArrowFromIPCStream(ipcBuffer, { name: "dataframe" });
-  const row_id_column = "__row_id__";
+  const row_id_column = "__row_index__";
   await coordinator.exec(`
-    ALTER TABLE dataframe ADD COLUMN ${row_id_column} INTEGER;
-    CREATE TEMPORARY SEQUENCE row_id_sequence;
-    UPDATE dataframe SET ${row_id_column} = nextval('row_id_sequence');
-    DROP SEQUENCE row_id_sequence;
+    CREATE SEQUENCE row_id_sequence MINVALUE 0 START 0;
+    ALTER TABLE dataframe ADD COLUMN IF NOT EXISTS ${row_id_column} INTEGER DEFAULT nextval('row_id_sequence');
   `);
   view = new EmbeddingAtlas(container, {
     ...props,

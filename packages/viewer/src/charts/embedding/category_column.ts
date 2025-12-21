@@ -52,7 +52,7 @@ async function makeDiscreteCategoryColumn(
   maxCategories: number,
   theme: ChartTheme,
 ): Promise<EmbeddingLegend> {
-  let indexColumnName = `_ev_${column}_id`;
+  let indexColumnName = `__ev_${column}_id`;
   let values = Array.from(
     await coordinator.query(
       SQL.Query.from(table)
@@ -161,7 +161,7 @@ async function makeBinnedNumericColumn(
     )
   ).get(0) as any;
   let binning = inferBinning(stats);
-  let indexColumnName = `_ev_${column}_id`;
+  let indexColumnName = `__ev_${column}_id`;
 
   let expr: SQL.ExprNode = SQL.cast(SQL.column(column), "DOUBLE");
   expr = binning.scale.expr(expr, binning.scale.constant ?? 0);
