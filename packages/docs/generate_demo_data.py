@@ -1,9 +1,3 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["click", "datasets", "pandas", "sentence-transformers", "umap-learn", "duckdb"]
-# ///
-
-
 import json
 import shutil
 from pathlib import Path
