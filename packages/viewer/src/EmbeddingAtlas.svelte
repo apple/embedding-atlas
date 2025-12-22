@@ -36,9 +36,10 @@
   import { defaultCharts } from "./charts/default_charts.js";
   import { EMBEDDING_ATLAS_VERSION } from "./constants.js";
   import { type ColumnStyle } from "./renderers/index.js";
-  import { querySearchResultItems, resolveSearcher, type SearchResultItem } from "./search/search.js";
+  import { performSearch, querySearchResultItems, resolveSearcher, type SearchResultItem } from "./search/search.js";
   import { makeColorSchemeStore } from "./utils/color_scheme.js";
   import { columnDescriptions, predicateToString, type ColumnDesc } from "./utils/database.js";
+  import { latestAsync } from "./utils/latest_async.js";
 
   const searchLimit = 500;
 
@@ -130,78 +131,69 @@
   let searchQuery = $state("");
   let searcherStatus = $state("");
   let searchResultVisible = $state(false);
-  let searchResult: {
+  let searchResultStore = writable<{
+    query: any;
+    mode: string;
+    ids: RowID[];
     label: string;
     highlight: string;
     items: SearchResultItem[];
-  } | null = $state.raw(null);
-  let searchResultStore = writable<{ query: any; mode: string; ids: RowID[] } | null>(null);
+  } | null>(null);
 
-  async function doSearch(query: any, mode: string) {
-    if (searcher == null || searchModes.indexOf(mode) < 0) {
-      clearSearch();
-      return;
-    }
+  const doSearch = latestAsync(
+    async (query: any, mode: string) => {
+      searchResultVisible = true;
 
-    searchResultVisible = true;
-    searcherStatus = "Searching...";
-
-    let predicate = currentPredicate();
-    let searcherResult: { id: any }[] = [];
-    let highlight: string = "";
-    let label = query.toString();
-
-    if (mode == "full-text" && searcher.fullTextSearch != null) {
-      query = query.trim();
-      searcherResult = await searcher.fullTextSearch(query, {
-        limit: searchLimit,
+      let predicate = currentPredicate();
+      let searcherResult = await performSearch({
+        searcher: searcher,
         predicate: predicate,
-        onStatus: (status: string) => {
+        query: query,
+        mode: mode,
+        limit: searchLimit,
+        onStatus: (status) => {
           searcherStatus = status;
         },
       });
-      highlight = query;
-    } else if (mode == "vector" && searcher.vectorSearch != null) {
-      query = query.trim();
-      searcherResult = await searcher.vectorSearch(query, {
-        limit: searchLimit,
-        predicate: predicate,
-        onStatus: (status: string) => {
-          searcherStatus = status;
-        },
-      });
-      highlight = query;
-    } else if (mode == "neighbors" && searcher.nearestNeighbors != null) {
-      label = "Neighbors of #" + query.toString();
-      searcherResult = await searcher.nearestNeighbors(query, {
-        limit: searchLimit,
-        predicate: predicate,
-        onStatus: (status: string) => {
-          searcherStatus = status;
-        },
-      });
-    }
 
-    // Apply predicate in case the searcher does not handle predicate.
-    // And convert the search result ids to tuples.
-    let result = await querySearchResultItems(
-      coordinator,
-      data.table,
-      { id: data.id, x: data.projection?.x, y: data.projection?.y, text: data.text },
-      Object.fromEntries(columns.map((c) => [c.name, c.name])),
-      predicate,
-      searcherResult,
-    );
+      // Apply predicate in case the searcher does not handle predicate.
+      // And convert the search result ids to tuples.
+      let result = await querySearchResultItems(
+        coordinator,
+        data.table,
+        { id: data.id, x: data.projection?.x, y: data.projection?.y, text: data.text },
+        Object.fromEntries(columns.map((c) => [c.name, c.name])),
+        predicate,
+        searcherResult,
+      );
 
-    searcherStatus = "";
-    searchResult = { label: label, highlight: highlight, items: result };
-    searchResultStore.set({ query: query, mode: mode, ids: result.map((x) => x.id) });
-  }
+      let label = query.toString().trim();
+      let highlight = query.toString().trim();
+
+      if (mode == "neighbors") {
+        label = "Neighbors of #" + query.toString();
+        highlight = "";
+      }
+
+      searcherStatus = "";
+
+      return {
+        query: query,
+        mode: mode,
+        ids: result.map((x) => x.id),
+        label: label,
+        highlight: highlight,
+        items: result,
+      };
+    },
+    (result) => {
+      searchResultStore.set(result);
+    },
+  );
 
   const debouncedSearch = debounce(doSearch, 500);
 
   function clearSearch() {
-    searchResult = null;
     searchResultStore.set(null);
     searchResultVisible = false;
   }
@@ -346,18 +338,21 @@
                   class="absolute w-96 left-0 top-[32px] rounded-md right-0 z-20 border border-slate-300 dark:border-slate-600 overflow-hidden resize shadow-lg bg-white/75 dark:bg-slate-800/75 backdrop-blur-sm"
                   style:height="48em"
                 >
-                  {#if searchResult != null}
-                    <SearchResultList
-                      items={searchResult.items}
-                      label={searchResult.label}
-                      highlight={searchResult.highlight}
-                      limit={searchLimit}
-                      onClick={async (item) => {
-                        chartContext.highlight.set(item.id);
-                      }}
-                      onClose={clearSearch}
-                      columnStyles={$resolvedColumnStyles}
-                    />
+                  {#if $searchResultStore != null}
+                    {@const searchResult = $searchResultStore}
+                    {#key searchResult}
+                      <SearchResultList
+                        items={searchResult.items}
+                        label={searchResult.label}
+                        highlight={searchResult.highlight}
+                        limit={searchLimit}
+                        onClick={async (item) => {
+                          chartContext.highlight.set(item.id);
+                        }}
+                        onClose={clearSearch}
+                        columnStyles={$resolvedColumnStyles}
+                      />
+                    {/key}
                   {:else if searcherStatus != null}
                     <div class="p-2">
                       <Spinner status={searcherStatus} />
