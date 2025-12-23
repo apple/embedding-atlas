@@ -5,6 +5,8 @@ export { default as IconImport } from "~icons/fluent/arrow-import-16-filled";
 export { default as IconReset } from "~icons/fluent/arrow-reset-24-filled";
 export { default as IconCheck } from "~icons/fluent/checkmark-16-filled";
 export { default as IconChevronDown, default as IconDown } from "~icons/fluent/chevron-down-16-filled";
+export { default as IconLeft } from "~icons/fluent/chevron-left-16-filled";
+export { default as IconRight } from "~icons/fluent/chevron-right-16-filled";
 export { default as IconChevronUp, default as IconUp } from "~icons/fluent/chevron-up-16-filled";
 export { default as IconAnnotation } from "~icons/fluent/comment-text-16-filled";
 export { default as IconEmbeddingView } from "~icons/fluent/data-scatter-20-filled";

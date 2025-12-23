@@ -78,6 +78,9 @@ jobs:
       - name: Run tests
         run: npm run test
 
+      - name: Run code format check
+        run: npm run check-format
+
       - name: Upload node package artifact
         uses: actions/upload-artifact@v6
         with:

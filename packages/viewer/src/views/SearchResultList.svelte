@@ -2,6 +2,7 @@
 <script lang="ts">
   import Mark from "mark.js";
 
+  import Paginator from "../widgets/Paginator.svelte";
   import TooltipContent from "./TooltipContent.svelte";
 
   import { IconClose } from "../assets/icons.js";
@@ -55,28 +56,34 @@
   </div>
   <hr class="border-slate-300 dark:border-slate-600" />
   <div class="flex flex-col overflow-x-hidden overflow-y-scroll">
-    {#each items as item (item)}
-      <button
-        class="m-1 p-2 text-left rounded-md hover:outline outline-slate-500"
-        onclick={() => {
-          onClick?.(item);
-        }}
-      >
-        {#if item.distance != null}
-          <div class="flex pb-1 text-sm">
-            <span class="px-2 flex gap-2 bg-slate-200 text-slate-500 dark:bg-slate-600 dark:text-slate-300 rounded-md">
-              <div class="text-slate-400 dark:text-slate-400 font-medium">Distance</div>
-              <div class="text-ellipsis whitespace-nowrap overflow-hidden max-w-72">
-                {item.distance.toFixed(5)}
+    <Paginator count={items.length}>
+      {#snippet children({ start, end })}
+        {#each items.slice(start, end) as item (item)}
+          <button
+            class="m-1 p-2 text-left rounded-md hover:outline outline-slate-500"
+            onclick={() => {
+              onClick?.(item);
+            }}
+          >
+            {#if item.distance != null}
+              <div class="flex pb-1 text-sm">
+                <span
+                  class="px-2 flex gap-2 bg-slate-200 text-slate-500 dark:bg-slate-600 dark:text-slate-300 rounded-md"
+                >
+                  <div class="text-slate-400 dark:text-slate-400 font-medium">Distance</div>
+                  <div class="text-ellipsis whitespace-nowrap overflow-hidden max-w-72">
+                    {item.distance.toFixed(5)}
+                  </div>
+                </span>
               </div>
-            </span>
-          </div>
-        {/if}
-        <div class="overflow-hidden text-ellipsis line-clamp-4 leading-5" use:markHighlight={highlight}>
-          <TooltipContent values={item.fields} columnStyles={columnStyles ?? {}} />
-        </div>
-      </button>
-      <hr class="border-slate-300 dark:border-slate-600" />
-    {/each}
+            {/if}
+            <div class="overflow-hidden text-ellipsis line-clamp-4 leading-5" use:markHighlight={highlight}>
+              <TooltipContent values={item.fields} columnStyles={columnStyles ?? {}} />
+            </div>
+          </button>
+          <hr class="border-slate-300 dark:border-slate-600" />
+        {/each}
+      {/snippet}
+    </Paginator>
   </div>
 </div>
