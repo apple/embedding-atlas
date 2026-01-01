@@ -2,6 +2,7 @@
 <script lang="ts">
   import { IconClose, IconPlus } from "../assets/icons.js";
   import type { ChartContext, RowID } from "../charts/chart.js";
+  import { MediaPreview, isImageValue as isMediaImage, isVideoValue as isMediaVideo } from "../media/index.js";
   import ContentRenderer from "../renderers/ContentRenderer.svelte";
   import { isImage, isLink, type ColumnStyle } from "../renderers/index.js";
   import { imageToDataUrl } from "../utils/image.js";
@@ -68,13 +69,11 @@
   }
 
   function isImageValue(value: any): boolean {
-    return isImage(value) || (typeof value === "string" && /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(value));
+    return isImage(value) || isMediaImage(value);
   }
 
   function isVideoValue(value: any): boolean {
-    if (typeof value !== "string") return false;
-    return /\.(mp4|webm|ogg|mov)$/i.test(value) ||
-           /youtube\.com|youtu\.be|vimeo\.com/i.test(value);
+    return isMediaVideo(value);
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -169,40 +168,14 @@
             <h3 class="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">
               {primaryContent.column}
             </h3>
-            {#if primaryContent.type === "image"}
-              <div class="flex justify-center bg-slate-100 dark:bg-slate-800 rounded-lg p-4">
-                <img
+            {#if primaryContent.type === "image" || primaryContent.type === "video"}
+              <div class="bg-slate-100 dark:bg-slate-800 rounded-lg overflow-hidden">
+                <MediaPreview
                   src={isImage(primaryContent.value) ? imageToDataUrl(primaryContent.value) : primaryContent.value}
-                  alt=""
-                  class="max-w-full max-h-96 object-contain rounded"
-                  referrerpolicy="no-referrer"
+                  alt={primaryContent.column}
+                  maxHeight={400}
+                  controls={true}
                 />
-              </div>
-            {:else if primaryContent.type === "video"}
-              <div class="flex justify-center bg-slate-100 dark:bg-slate-800 rounded-lg p-4">
-                {#if /youtube\.com|youtu\.be/i.test(primaryContent.value)}
-                  {@const videoId = primaryContent.value.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/)?.[1]}
-                  {#if videoId}
-                    <iframe
-                      width="100%"
-                      height="315"
-                      src="https://www.youtube.com/embed/{videoId}"
-                      title="YouTube video player"
-                      frameborder="0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowfullscreen
-                      class="rounded"
-                    ></iframe>
-                  {/if}
-                {:else}
-                  <video
-                    src={primaryContent.value}
-                    controls
-                    class="max-w-full max-h-96 rounded"
-                  >
-                    <track kind="captions" />
-                  </video>
-                {/if}
               </div>
             {:else}
               <div class="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 max-h-64 overflow-auto">

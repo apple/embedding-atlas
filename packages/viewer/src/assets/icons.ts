@@ -27,3 +27,4 @@ export { default as IconSpinner } from "~icons/svg-spinners/270-ring-with-bg";
 export { default as IconTag } from "~icons/fluent/tag-16-filled";
 export { default as IconSidebar } from "~icons/fluent/panel-left-16-filled";
 export { default as IconMemo } from "~icons/fluent/note-16-filled";
+export { default as IconFolder } from "~icons/fluent/folder-16-filled";

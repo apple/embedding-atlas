@@ -17,15 +17,26 @@
     "Xenova/multilingual-e5-small",
     "Xenova/multilingual-e5-base",
     "Xenova/multilingual-e5-large",
+    "Xenova/bge-small-en-v1.5",
+    "Xenova/bge-base-en-v1.5",
   ];
   const imageModels = [
+    // DINOv2 models (recommended for qualitative analysis)
     "Xenova/dinov2-small",
     "Xenova/dinov2-base",
     "Xenova/dinov2-large",
+    // Original DINO models
     "Xenova/dino-vitb8",
     "Xenova/dino-vits8",
     "Xenova/dino-vitb16",
     "Xenova/dino-vits16",
+    // CLIP models (good for image-text alignment)
+    "Xenova/clip-vit-base-patch32",
+    "Xenova/clip-vit-base-patch16",
+    // SigLIP models
+    "Xenova/siglip-base-patch16-224",
+    // Note: I-JEPA models require custom implementation
+    // Add "facebook/ijepa_vith14_1k" when available in Transformers.js
   ];
 
   export interface Settings {
