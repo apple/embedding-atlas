@@ -23,3 +23,7 @@ export { default as IconSettings } from "~icons/fluent/settings-16-filled";
 export { default as IconDarkMode } from "~icons/fluent/weather-moon-16-filled";
 export { default as IconLightMode } from "~icons/fluent/weather-sunny-16-filled";
 export { default as IconSpinner } from "~icons/svg-spinners/270-ring-with-bg";
+// Coding-specific icons
+export { default as IconTag } from "~icons/fluent/tag-16-filled";
+export { default as IconSidebar } from "~icons/fluent/panel-left-16-filled";
+export { default as IconMemo } from "~icons/fluent/note-16-filled";

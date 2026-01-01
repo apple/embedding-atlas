@@ -11,6 +11,7 @@ import Component from "./EmbeddingAtlas.svelte";
 
 import type { ChartThemeConfig } from "./charts/common/theme.js";
 import type { DefaultChartsConfig } from "./charts/default_charts.js";
+import type { CodingState } from "./coding/types.js";
 
 import cssCode from "./app.css?inline";
 
@@ -87,6 +88,17 @@ export interface EmbeddingAtlasProps {
 
   /** A cache to speed up initialization of the viewer. */
   cache?: Cache | null;
+
+  // Qualitative Coding Options
+
+  /** Enable the qualitative coding panel. Default is false. */
+  enableCoding?: boolean;
+
+  /** Initial state for the qualitative coding system. */
+  initialCodingState?: CodingState | null;
+
+  /** A callback when the coding state changes. */
+  onCodingStateChange?: ((state: CodingState) => void) | null;
 }
 
 export interface EmbeddingAtlasState {

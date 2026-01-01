@@ -28,7 +28,16 @@
     IconLightMode,
     IconListLayout,
     IconSettings,
+    IconTag,
   } from "./assets/icons.js";
+
+  // Qualitative coding imports
+  import CodingPanel from "./coding/CodingPanel.svelte";
+  import EmbeddingDetailsModal from "./coding/EmbeddingDetailsModal.svelte";
+  import SelectionToolbar from "./coding/SelectionToolbar.svelte";
+  import { createCodingStore } from "./coding/store.svelte.js";
+  import { createSelectionStore } from "./coding/selection.svelte.js";
+  import type { CodingState } from "./coding/types.js";
 
   import type { EmbeddingAtlasProps, EmbeddingAtlasState } from "./api.js";
   import { ChartContextCache, type ChartContext, type RowID } from "./charts/chart.js";
@@ -42,6 +51,8 @@
   import { latestAsync } from "./utils/latest_async.js";
 
   const searchLimit = 500;
+
+  import * as SQL from "@uwdata/mosaic-sql";
 
   let {
     coordinator,
@@ -58,6 +69,10 @@
     onExportSelection,
     onStateChange,
     cache,
+    // Qualitative coding props
+    enableCoding = false,
+    initialCodingState = null,
+    onCodingStateChange,
   }: EmbeddingAtlasProps = $props();
 
   const { colorScheme, userColorScheme } = makeColorSchemeStore();
@@ -309,6 +324,129 @@
   let chartStates = $state.raw<Record<string, any>>({});
   let layout = $state.raw("list");
   let layoutStates = $state.raw<Record<string, any>>({});
+
+  // Qualitative Coding State
+  const codingStore = createCodingStore(initialCodingState ?? undefined);
+  const selectionStore = createSelectionStore();
+
+  let showCodingPanel = $state(enableCoding);
+  let showDetailsModal = $state(false);
+  let detailsDataPointId = $state<RowID | null>(null);
+  let detailsData = $state<Record<string, any> | null>(null);
+
+  // Track coding state changes
+  $effect(() => {
+    if (enableCoding && onCodingStateChange) {
+      const state = codingStore.exportState();
+      onCodingStateChange(state);
+    }
+  });
+
+  // Query data for the details modal
+  async function queryDataPoint(id: RowID): Promise<Record<string, any> | null> {
+    try {
+      const visibleColumns = columns.map((c) => c.name);
+      const result = await coordinator.query(
+        SQL.Query.from(data.table)
+          .select(Object.fromEntries(visibleColumns.map((c) => [c, SQL.column(c)])))
+          .where(SQL.eq(SQL.column(data.id), SQL.literal(id)))
+      );
+      if (result.numRows > 0) {
+        return Object.fromEntries(
+          visibleColumns.map((col) => [col, result.get(0)[col]])
+        );
+      }
+      return null;
+    } catch (e) {
+      console.error("Failed to query data point:", e);
+      return null;
+    }
+  }
+
+  // Open details modal for a data point
+  async function openDetailsModal(id: RowID) {
+    detailsDataPointId = id;
+    detailsData = await queryDataPoint(id);
+    showDetailsModal = true;
+  }
+
+  // Handle row click from table - open details if coding enabled
+  function handleRowClickWithCoding(rowId: RowID) {
+    if (enableCoding) {
+      selectionStore.handleClick(rowId, { shiftKey: false, ctrlKey: false, metaKey: false });
+    }
+    chartContext.highlight.set(rowId);
+  }
+
+  // Navigation in details modal
+  let allDataPoints = $state<RowID[]>([]);
+
+  async function loadAllDataPoints() {
+    try {
+      const result = await coordinator.query(
+        SQL.Query.from(data.table)
+          .select({ id: SQL.column(data.id) })
+          .orderby(data.id)
+      );
+      allDataPoints = Array.from(result).map((row: any) => row.id);
+    } catch (e) {
+      console.error("Failed to load data points:", e);
+    }
+  }
+
+  async function navigateDetails(direction: "prev" | "next") {
+    if (allDataPoints.length === 0) {
+      await loadAllDataPoints();
+    }
+
+    const currentIndex = detailsDataPointId !== null ? allDataPoints.indexOf(detailsDataPointId) : -1;
+    if (currentIndex === -1) return;
+
+    let newIndex: number;
+    if (direction === "prev") {
+      newIndex = currentIndex > 0 ? currentIndex - 1 : allDataPoints.length - 1;
+    } else {
+      newIndex = currentIndex < allDataPoints.length - 1 ? currentIndex + 1 : 0;
+    }
+
+    const newId = allDataPoints[newIndex];
+    detailsDataPointId = newId;
+    detailsData = await queryDataPoint(newId);
+  }
+
+  // Export/import coding state
+  function handleExportCodes() {
+    const state = codingStore.exportState();
+    const blob = new Blob([JSON.stringify(state, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "qualitative-codes.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportCodes() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const state = JSON.parse(text) as CodingState;
+        codingStore.importState(state);
+      } catch (err) {
+        console.error("Failed to import codes:", err);
+        alert("Failed to import codes. Please check the file format.");
+      }
+    };
+    input.click();
+  }
 </script>
 
 <div class="embedding-atlas-root" style:width="100%" style:height="100%">
@@ -453,6 +591,13 @@
               }}
             />
           {/if}
+          {#if enableCoding}
+            <Button
+              icon={IconTag}
+              title={showCodingPanel ? "Hide coding panel" : "Show coding panel"}
+              onClick={() => (showCodingPanel = !showCodingPanel)}
+            />
+          {/if}
           <PopupButton icon={IconSettings} title="Options">
             <div class="min-w-[420px] flex flex-col gap-2">
               <!-- Text style settings -->
@@ -487,20 +632,67 @@
       {/if}
     </div>
     <!-- Main Content -->
-    <div class="flex-1 overflow-hidden h-full ml-2 mr-2 mb-2">
-      {#if initialized}
-        <LayoutView
-          context={chartContext}
-          layout={layout}
-          layoutStates={layoutStates}
-          charts={charts}
-          chartStates={chartStates}
-          onChartsChange={(v) => (charts = v)}
-          onChartStatesChange={(v) => (chartStates = v)}
-          onLayoutStatesChange={(v) => (layoutStates = v)}
-        />
+    <div class="flex-1 overflow-hidden h-full ml-2 mr-2 mb-2 flex">
+      <!-- Main layout area -->
+      <div class="flex-1 overflow-hidden">
+        {#if initialized}
+          <LayoutView
+            context={chartContext}
+            layout={layout}
+            layoutStates={layoutStates}
+            charts={charts}
+            chartStates={chartStates}
+            onChartsChange={(v) => (charts = v)}
+            onChartStatesChange={(v) => (chartStates = v)}
+            onLayoutStatesChange={(v) => (layoutStates = v)}
+          />
+        {/if}
+      </div>
+
+      <!-- Coding Panel Sidebar -->
+      {#if enableCoding && showCodingPanel}
+        <div class="w-80 flex-shrink-0 ml-2">
+          <CodingPanel
+            {codingStore}
+            onExport={handleExportCodes}
+            onImport={handleImportCodes}
+            onCodeClick={(code: import("./coding/types.js").Code) => {
+              // Future: filter to show only items with this code
+              console.log("Code clicked:", code);
+            }}
+          />
+        </div>
       {/if}
     </div>
+
+    <!-- Selection Toolbar (floating at bottom) -->
+    {#if enableCoding}
+      <SelectionToolbar
+        {selectionStore}
+        {codingStore}
+        onViewDetails={() => {
+          const selected = selectionStore.selectedArray;
+          if (selected.length === 1) {
+            openDetailsModal(selected[0]);
+          }
+        }}
+      />
+    {/if}
+
+    <!-- Details Modal -->
+    {#if enableCoding}
+      <EmbeddingDetailsModal
+        open={showDetailsModal}
+        dataPointId={detailsDataPointId}
+        data={detailsData}
+        context={chartContext}
+        {codingStore}
+        columnStyles={$resolvedColumnStyles}
+        visibleColumns={columns.map((c) => c.name)}
+        onClose={() => (showDetailsModal = false)}
+        onNavigate={navigateDetails}
+      />
+    {/if}
   </div>
 </div>
 <svelte:window onkeydown={onWindowKeydown} />
