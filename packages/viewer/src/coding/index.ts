@@ -10,6 +10,9 @@ export * from "./editable.js";
 export * from "./data_import.js";
 export * from "./data_export.js";
 
+// Code relationships
+export * from "./code_relationships.js";
+
 // Components
 export { default as CodingPanel } from "./CodingPanel.svelte";
 export { default as SelectionToolbar } from "./SelectionToolbar.svelte";
@@ -19,3 +22,7 @@ export { default as QualitativeCodingView } from "./QualitativeCodingView.svelte
 export { default as FolderUpload } from "./FolderUpload.svelte";
 export { default as ColumnEditor } from "./ColumnEditor.svelte";
 export { default as ExportPanel } from "./ExportPanel.svelte";
+export { default as MemoEditor } from "./MemoEditor.svelte";
+export { default as MemoPanel } from "./MemoPanel.svelte";
+export { default as SaturationTracker } from "./SaturationTracker.svelte";
+export { default as CodeRelationshipEditor } from "./CodeRelationshipEditor.svelte";
