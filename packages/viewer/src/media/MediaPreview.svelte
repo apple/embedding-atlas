@@ -146,7 +146,7 @@
     >
       <track kind="captions" />
     </video>
-  {:else if isDataUrl(src) || isHttpUrl(src)}
+  {:else if src && (isDataUrl(src) || isHttpUrl(src))}
     <!-- Unknown type but valid URL - try as image -->
     <img
       {src}
@@ -156,7 +156,7 @@
       onload={() => handleLoad()}
       onerror={() => handleError("Failed to load content")}
     />
-  {:else}
+  {:else if src}
     <!-- Text content -->
     <div class="text-content">
       <p class="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{src}</p>

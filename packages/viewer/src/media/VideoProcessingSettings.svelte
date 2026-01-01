@@ -24,6 +24,27 @@
 
   let showAdvancedSettings = $state(showAdvanced);
 
+  // Local state for text inputs (bound via bind:value)
+  let startTimeInput = $state(String(options.frameExtraction.startTime));
+  let endTimeInput = $state(options.frameExtraction.endTime?.toString() ?? "");
+
+  // Sync input changes to options
+  $effect(() => {
+    const val = parseFloat(startTimeInput);
+    if (!isNaN(val) && val !== options.frameExtraction.startTime) {
+      updateFrameExtraction({ startTime: val });
+    }
+  });
+
+  $effect(() => {
+    const val = parseFloat(endTimeInput);
+    if (endTimeInput === "" && options.frameExtraction.endTime !== undefined) {
+      updateFrameExtraction({ endTime: undefined });
+    } else if (!isNaN(val) && val !== options.frameExtraction.endTime) {
+      updateFrameExtraction({ endTime: val });
+    }
+  });
+
   function updateOptions(updates: Partial<VideoProcessingOptions>) {
     onOptionsChange({ ...options, ...updates });
   }
@@ -144,8 +165,7 @@
         </label>
         <Input
           type="number"
-          value={String(options.frameExtraction.startTime)}
-          onChange={(e) => updateFrameExtraction({ startTime: parseFloat(e.currentTarget.value) || 0 })}
+          bind:value={startTimeInput}
           className="w-32"
         />
       </div>
@@ -157,11 +177,7 @@
         </label>
         <Input
           type="number"
-          value={options.frameExtraction.endTime?.toString() ?? ""}
-          onChange={(e) => {
-            const val = parseFloat(e.currentTarget.value);
-            updateFrameExtraction({ endTime: isNaN(val) ? undefined : val });
-          }}
+          bind:value={endTimeInput}
           className="w-32"
         />
       </div>
