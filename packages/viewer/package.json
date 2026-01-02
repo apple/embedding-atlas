@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "uv run python scripts/download_duckdb_extensions.py && vite build && vite build --config vite.config.lib.js",
+    "build:pages": "uv run python scripts/download_duckdb_extensions.py && vite build --config vite.config.pages.js",
     "check": "svelte-check",
     "package": "npm run build && publint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:pages": "vite preview --outDir dist-pages"
   },
   "files": [
     "distlib"
