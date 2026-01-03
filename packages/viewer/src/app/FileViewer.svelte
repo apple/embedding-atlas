@@ -5,10 +5,8 @@
   import { onMount } from "svelte";
 
   import EmbeddingAtlas from "../EmbeddingAtlas.svelte";
-  import FileUpload from "./components/FileUpload.svelte";
+  import DatasetSetupView, { type Settings } from "./components/DatasetSetupView.svelte";
   import MessagesView, { appendedMessages, type Message } from "./components/MessagesView.svelte";
-  import SettingsView, { type Settings } from "./components/SettingsView.svelte";
-  import URLInput from "./components/URLInput.svelte";
 
   import { IconClose } from "../assets/icons.js";
 
@@ -24,11 +22,12 @@
   const coordinator = defaultCoordinator();
   const databaseInitialized = initializeDatabase(coordinator, "wasm", null);
 
-  let stage: "load-data" | "columns" | "ready" | "messages" = $state.raw("load-data");
+  let stage: "setup" | "ready" | "messages" = $state.raw("setup");
   let messages = $state.raw<Message[]>([]);
   let props = $state<Omit<EmbeddingAtlasProps, "coordinator"> | undefined>(undefined);
   let describe: { column_name: string; column_type: string }[] = $state.raw([]);
   let hashParams = $state.raw<{ data?: string; settings?: any; state?: any }>({});
+  let dataLoaded = $state(false);
 
   function log(text: string, progress?: number, progressText?: string) {
     messages = appendedMessages(messages, { text: text, progress: progress, progressText: progressText });
@@ -64,6 +63,7 @@
   /** Load data from inputs (list of files or urls) */
   async function loadData(inputs: (File | { url: string })[]) {
     stage = "messages";
+    dataLoaded = false;
     try {
       log("Initializing database...");
       await databaseInitialized;
@@ -80,7 +80,7 @@
         ALTER TABLE dataset ADD COLUMN IF NOT EXISTS __row_index__ INTEGER DEFAULT nextval('__row_index_sequence__');
       `);
     } catch (e: any) {
-      stage = "messages";
+      stage = "setup";
       logError(e.message);
       return;
     }
@@ -89,7 +89,8 @@
       setQueryPayload("data", inputs[0].url, "text");
     }
 
-    stage = "columns";
+    dataLoaded = true;
+    stage = "setup";
 
     if (hashParams.settings != undefined) {
       await loadSettings(hashParams.settings);
@@ -160,6 +161,11 @@
     let [bytes, name] = await exportMosaicSelection(coordinator, "dataset", predicate, format);
     downloadBuffer(bytes, name);
   }
+
+  function handleChangeDataset() {
+    dataLoaded = false;
+    describe = [];
+  }
 </script>
 
 <div class="fixed left-0 right-0 top-0 bottom-0">
@@ -175,14 +181,18 @@
       class="w-full h-full grid place-content-center select-none text-slate-800 bg-slate-200 dark:text-slate-200 dark:bg-slate-800"
       class:dark={$systemColorScheme == "dark"}
     >
-      {#if stage == "load-data"}
-        <div class="w-[40rem] flex flex-col gap-2">
-          <FileUpload extensions={[".csv", ".parquet", ".json", ".jsonl"]} multiple={true} onUpload={loadData} />
-          <div class="w-full text-center text-slate-400 dark:text-slate-500">&mdash; or &mdash;</div>
-          <URLInput onConfirm={(url) => loadData([{ url: url }])} />
-          {#if hashParams.settings != undefined || hashParams.state != undefined}
+      {#if stage == "setup"}
+        <div class="flex flex-col gap-2 items-center">
+          <DatasetSetupView
+            columns={describe}
+            onLoadData={loadData}
+            onConfirm={loadSettings}
+            onChangeDataset={handleChangeDataset}
+            dataLoaded={dataLoaded}
+          />
+          {#if !dataLoaded && (hashParams.settings != undefined || hashParams.state != undefined)}
             <div
-              class="text-slate-600 dark:text-slate-300 mt-4 flex flex-col items-start gap-1 border-l-2 pl-2 border-slate-400 dark:border-slate-600"
+              class="max-w-4xl text-slate-600 dark:text-slate-300 mt-4 flex flex-col items-start gap-1 border-l-2 pl-2 border-slate-400 dark:border-slate-600"
             >
               <div>A saved view is available in the URL. It will be restored after the data loads.</div>
               <button
@@ -194,12 +204,7 @@
               </button>
             </div>
           {/if}
-          <div class="text-slate-400 dark:text-slate-500 mt-4">
-            All data remains confined to the browser and is not transmitted elsewhere.
-          </div>
         </div>
-      {:else if stage == "columns"}
-        <SettingsView columns={describe} onConfirm={(settings) => loadSettings(settings)} />
       {:else if stage == "messages"}
         <MessagesView messages={messages} />
       {/if}
