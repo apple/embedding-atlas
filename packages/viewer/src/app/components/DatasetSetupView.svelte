@@ -37,6 +37,8 @@
     "Xenova/clip-vit-base-patch16",
     // SigLIP models
     "Xenova/siglip-base-patch16-224",
+    // Note: I-JEPA models require custom implementation
+    // Add "facebook/ijepa_vith14_1k" when available in Transformers.js
   ];
 
   export interface Settings {
