@@ -3,6 +3,7 @@
 import { type Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 
+import { computeEmbeddingBackend, requiresBackend, checkBackendCapabilities } from "./backend.js";
 import { WorkerRPC } from "./worker_helper.js";
 
 let _rpc: Promise<(name: string, ...args: any[]) => Promise<any>> | null = null;
@@ -87,6 +88,22 @@ export async function computeEmbedding(options: {
   model: string;
   callback?: (message: string, progress?: number) => void;
 }) {
+  // Check if this model requires backend computation
+  if (requiresBackend(options.model, options.type)) {
+    // Check if backend is available
+    const capabilities = await checkBackendCapabilities();
+    if (capabilities && capabilities.embedding_computation) {
+      // Use backend for computation
+      return computeEmbeddingBackend(options);
+    } else {
+      throw new Error(
+        `Model ${options.model} requires backend computation, but backend is not available. ` +
+        `Please run the application with the Python backend server.`
+      );
+    }
+  }
+
+  // Use browser-based computation for Transformers.js compatible models
   function progress(message: string, progress?: number) {
     options.callback?.(message, progress);
   }

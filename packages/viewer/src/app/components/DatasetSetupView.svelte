@@ -1,6 +1,7 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
   import { untrack } from "svelte";
+  import { onMount } from "svelte";
 
   import Button from "../../widgets/Button.svelte";
   import ComboBox from "../../widgets/ComboBox.svelte";
@@ -11,9 +12,10 @@
   import { IconImport } from "../../assets/icons.js";
   import { EMBEDDING_ATLAS_VERSION } from "../../constants.js";
   import { jsTypeFromDBType } from "../../utils/database.js";
+  import { checkBackendCapabilities, type BackendCapabilities } from "../../embedding/backend.js";
 
-  // Predefined embedding models. The default is the first model.
-  const textModels = [
+  // Browser-compatible embedding models (via Transformers.js)
+  const browserTextModels = [
     "Xenova/all-MiniLM-L6-v2",
     "Xenova/paraphrase-multilingual-mpnet-base-v2",
     "Xenova/multilingual-e5-small",
@@ -22,7 +24,8 @@
     "Xenova/bge-small-en-v1.5",
     "Xenova/bge-base-en-v1.5",
   ];
-  const imageModels = [
+
+  const browserImageModels = [
     // DINOv2 models (recommended for qualitative analysis)
     "Xenova/dinov2-small",
     "Xenova/dinov2-base",
@@ -37,9 +40,29 @@
     "Xenova/clip-vit-base-patch16",
     // SigLIP models
     "Xenova/siglip-base-patch16-224",
-    // Note: I-JEPA models require custom implementation
-    // Add "facebook/ijepa_vith14_1k" when available in Transformers.js
   ];
+
+  // Backend-only models (require Python backend)
+  const backendImageModels = [
+    "facebook/ijepa_vith14_1k",  // I-JEPA (recommended for video/image analysis)
+    "facebook/dinov2-small",
+    "facebook/dinov2-base",
+    "facebook/dinov2-large",
+    "google/vit-base-patch16-384",
+    "openai/clip-vit-base-patch32",
+  ];
+
+  // Backend capabilities
+  let backendCapabilities = $state<BackendCapabilities | null>(null);
+  let backendAvailable = $derived(backendCapabilities !== null && backendCapabilities.embedding_computation);
+
+  // Combined model lists based on backend availability
+  let textModels = $derived(browserTextModels);
+  let imageModels = $derived(
+    backendAvailable
+      ? [...browserImageModels, ...backendImageModels]
+      : browserImageModels
+  );
 
   export interface Settings {
     version: string;
@@ -90,6 +113,25 @@
       embeddingTextColumn = c;
     }
   });
+
+  // Check backend capabilities on mount
+  onMount(async () => {
+    backendCapabilities = await checkBackendCapabilities();
+  });
+
+  // Helper function to determine if a model requires backend
+  function isBackendModel(model: string): boolean {
+    return backendImageModels.includes(model);
+  }
+
+  // Helper function to get model label with backend indicator
+  function getModelLabel(model: string): string {
+    const isBackend = isBackendModel(model);
+    if (model === "facebook/ijepa_vith14_1k") {
+      return isBackend ? "I-JEPA ViT-H/14 (backend)" : "I-JEPA ViT-H/14";
+    }
+    return isBackend ? `${model} (backend)` : model;
+  }
 
   // File upload handlers
   function handleDragOver(event: any) {
@@ -372,13 +414,27 @@
                 value={embeddingImageModel}
                 placeholder="(default {imageModels[0]})"
                 onChange={(v) => (embeddingImageModel = v)}
-                options={imageModels}
+                options={imageModels.map(m => ({
+                  value: m,
+                  label: getModelLabel(m)
+                }))}
               />
             </div>
-            <p class="text-sm text-slate-400 dark:text-slate-600">
-              Computing the embedding and 2D projection in browser may take a while. The model will be loaded with
-              Transformers.js.
-            </p>
+            {#if embeddingImageModel && isBackendModel(embeddingImageModel)}
+              <p class="text-sm text-amber-600 dark:text-amber-400">
+                This model requires the Python backend for computation. Ensure the backend server is running.
+              </p>
+            {:else}
+              <p class="text-sm text-slate-400 dark:text-slate-600">
+                Computing the embedding and 2D projection in browser may take a while. The model will be loaded with
+                Transformers.js.
+              </p>
+            {/if}
+            {#if backendAvailable && backendImageModels.length > 0}
+              <p class="text-sm text-green-600 dark:text-green-400">
+                ✓ Backend available - I-JEPA and other advanced models are enabled
+              </p>
+            {/if}
           {/if}
         </div>
       </div>

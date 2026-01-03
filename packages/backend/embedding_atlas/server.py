@@ -10,12 +10,14 @@ from functools import lru_cache
 from typing import Callable
 
 import duckdb
+import numpy as np
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .data_source import DataSource
+from .projection import _projection_for_images, _projection_for_texts, _project_text_with_sentence_transformers
 from .utils import arrow_to_bytes, to_parquet_bytes
 
 
@@ -162,6 +164,115 @@ def make_server(
         return await asyncio.get_running_loop().run_in_executor(
             executor, lambda: handle_selection(data)
         )
+
+    def handle_compute_embedding(request_data: dict):
+        """
+        Compute embeddings using Python backend.
+        Request format:
+        {
+            "data": [...],  # list of strings (text) or image data (base64 or bytes)
+            "type": "text" | "image",
+            "model": "model-name",
+            "batch_size": 32,  # optional
+            "umap_args": {}  # optional UMAP parameters
+        }
+        """
+        try:
+            data_list = request_data["data"]
+            embedding_type = request_data["type"]
+            model = request_data["model"]
+            batch_size = request_data.get("batch_size", None)
+            umap_args = request_data.get("umap_args", {})
+
+            if embedding_type == "text":
+                # Use the text projection function
+                proj = _projection_for_texts(
+                    texts=data_list,
+                    model=model,
+                    batch_size=batch_size,
+                    text_projector=_project_text_with_sentence_transformers,
+                    umap_args=umap_args,
+                )
+            elif embedding_type == "image":
+                # Convert base64 image data if needed
+                from io import BytesIO
+                import base64
+
+                processed_images = []
+                for img_data in data_list:
+                    if isinstance(img_data, str) and img_data.startswith("data:image"):
+                        # Extract base64 part
+                        base64_data = img_data.split(",", 1)[1] if "," in img_data else img_data
+                        img_bytes = base64.b64decode(base64_data)
+                        processed_images.append({"bytes": img_bytes})
+                    elif isinstance(img_data, dict) and "bytes" in img_data:
+                        # Already in the right format
+                        processed_images.append(img_data)
+                    else:
+                        # Assume it's raw bytes or string bytes
+                        if isinstance(img_data, str):
+                            img_bytes = base64.b64decode(img_data)
+                        else:
+                            img_bytes = img_data
+                        processed_images.append({"bytes": img_bytes})
+
+                proj = _projection_for_images(
+                    images=processed_images,
+                    model=model,
+                    batch_size=batch_size,
+                    umap_args=umap_args,
+                )
+            else:
+                return JSONResponse(
+                    {"error": f"Invalid embedding type: {embedding_type}"},
+                    status_code=400
+                )
+
+            # Return projection results
+            return JSONResponse({
+                "projection": proj.projection.tolist(),
+                "knn_indices": proj.knn_indices.tolist(),
+                "knn_distances": proj.knn_distances.tolist(),
+            })
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return JSONResponse(
+                {"error": str(e), "traceback": traceback.format_exc()},
+                status_code=500
+            )
+
+    @app.post("/api/compute-embedding")
+    async def compute_embedding(req: Request):
+        """Compute embeddings using the Python backend"""
+        body = await req.body()
+        data = json.loads(body)
+        return await asyncio.get_running_loop().run_in_executor(
+            executor, lambda: handle_compute_embedding(data)
+        )
+
+    @app.get("/api/capabilities")
+    async def get_capabilities():
+        """Return backend capabilities"""
+        return JSONResponse({
+            "embedding_computation": True,
+            "supported_models": {
+                "text": [
+                    "all-MiniLM-L6-v2",
+                    "paraphrase-multilingual-mpnet-base-v2",
+                    "sentence-transformers/all-mpnet-base-v2",
+                ],
+                "image": [
+                    "facebook/ijepa_vith14_1k",
+                    "facebook/dinov2-small",
+                    "facebook/dinov2-base",
+                    "facebook/dinov2-large",
+                    "google/vit-base-patch16-384",
+                    "openai/clip-vit-base-patch32",
+                ],
+            }
+        })
 
     # Static files for the frontend
     app.mount("/", StaticFiles(directory=static_path, html=True))
