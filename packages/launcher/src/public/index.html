@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Embedding Atlas Launcher</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 800px;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 40px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+
+    .header p {
+      opacity: 0.9;
+      font-size: 16px;
+    }
+
+    .content {
+      padding: 40px;
+    }
+
+    .status {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .status.running {
+      background: #d4edda;
+      border: 1px solid #c3e6cb;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #6c757d;
+    }
+
+    .dot.running {
+      background: #28a745;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .upload-zone {
+      border: 3px dashed #cbd5e0;
+      border-radius: 8px;
+      padding: 60px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      margin-bottom: 24px;
+    }
+
+    .upload-zone:hover {
+      border-color: #667eea;
+      background: #f7fafc;
+    }
+
+    .upload-zone.drag-over {
+      border-color: #667eea;
+      background: #edf2f7;
+    }
+
+    .upload-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .upload-zone h3 {
+      font-size: 18px;
+      margin-bottom: 8px;
+      color: #2d3748;
+    }
+
+    .upload-zone p {
+      color: #718096;
+      font-size: 14px;
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    button:hover:not(:disabled) {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    button.danger {
+      background: #dc3545;
+    }
+
+    button.danger:hover:not(:disabled) {
+      background: #c82333;
+    }
+
+    .selected-file {
+      background: #e6fffa;
+      border: 1px solid #81e6d9;
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .file-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .file-icon {
+      font-size: 24px;
+    }
+
+    .file-details h4 {
+      font-size: 14px;
+      margin-bottom: 4px;
+      color: #2d3748;
+    }
+
+    .file-details p {
+      font-size: 12px;
+      color: #718096;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+    }
+
+    .spinner {
+      border: 4px solid #f3f4f6;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .logs {
+      background: #1a202c;
+      color: #e2e8f0;
+      padding: 16px;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 16px;
+    }
+
+    .log-entry {
+      margin-bottom: 4px;
+      line-height: 1.5;
+    }
+
+    .log-entry.error {
+      color: #fc8181;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .actions button {
+      flex: 1;
+    }
+
+    .viewer-link {
+      display: inline-block;
+      margin-top: 16px;
+      color: #667eea;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .viewer-link:hover {
+      text-decoration: underline;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🚀 Embedding Atlas</h1>
+      <p>Upload your data to start visualizing embeddings</p>
+    </div>
+
+    <div class="content">
+      <!-- Status Section -->
+      <div id="status" class="status">
+        <div class="status-indicator">
+          <div id="statusDot" class="dot"></div>
+          <span id="statusText">Backend not running</span>
+        </div>
+        <button id="stopButton" class="danger hidden">Stop Backend</button>
+      </div>
+
+      <!-- Upload Section -->
+      <div id="uploadSection">
+        <div id="uploadZone" class="upload-zone">
+          <div class="upload-icon">📁</div>
+          <h3>Drop your file here or click to browse</h3>
+          <p>Supports: Parquet, CSV, JSON, JSONL (max 1GB)</p>
+          <input type="file" id="fileInput" class="file-input" accept=".parquet,.csv,.json,.jsonl">
+        </div>
+
+        <div id="selectedFile" class="selected-file hidden">
+          <div class="file-info">
+            <div class="file-icon">📄</div>
+            <div class="file-details">
+              <h4 id="fileName"></h4>
+              <p id="fileSize"></p>
+            </div>
+          </div>
+          <button id="clearFile">✕</button>
+        </div>
+
+        <div class="actions">
+          <button id="startButton" disabled>Start Visualization</button>
+        </div>
+      </div>
+
+      <!-- Loading Section -->
+      <div id="loadingSection" class="loading hidden">
+        <div class="spinner"></div>
+        <h3>Starting backend...</h3>
+        <p>This may take a moment for large files</p>
+      </div>
+
+      <!-- Running Section -->
+      <div id="runningSection" class="hidden">
+        <h3>✅ Backend is running!</h3>
+        <p>File: <span id="currentFile"></span></p>
+        <a href="/backend/" target="_blank" class="viewer-link">Open Viewer →</a>
+        <div class="actions">
+          <button id="stopAndRestart">Stop & Upload New File</button>
+        </div>
+      </div>
+
+      <!-- Logs Section -->
+      <div id="logsSection" class="hidden">
+        <h4 style="margin-bottom: 8px; color: #4a5568;">Backend Logs:</h4>
+        <div id="logs" class="logs"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

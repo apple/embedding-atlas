@@ -1,0 +1,21 @@
+{
+  "name": "@embedding-atlas/launcher",
+  "version": "0.0.0",
+  "description": "Web-based launcher for Embedding Atlas",
+  "main": "src/server.js",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "http-proxy-middleware": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12"
+  }
+}
