@@ -24,8 +24,7 @@ function computeDispatch(count: number): [number, number] {
 export interface DownsampleResources {
   uniformBuffer: Node<GPUBuffer>;
   countersBuffer: Node<GPUBuffer>;
-  pointDataBuffer: Node<GPUBuffer>; // Merged: density + visibility + acceptance
-  indexBuffer: Node<GPUBuffer>;
+  pointDataBuffer: Node<GPUBuffer>;
   // Group 3: for compute shaders (read_write access)
   bindGroupLayout: Node<GPUBindGroupLayout>;
   bindGroup: Node<GPUBindGroup>;
@@ -46,25 +45,21 @@ export function makeDownsampleResources(
   count: Node<number>,
   downsampleMaxPoints: Node<number | null>,
 ): DownsampleResources {
-  const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
-
   // Uniform buffer for downsample uniforms (16 bytes: render_limit, frame_seed, density_weight, padding)
   const uniformBuffer = df.statefulDerive(
     [device, df.value(16), GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST],
     gpuBuffer,
   );
 
-  // Counters buffer: [visible_count, max_density_fixed, selected_count] = 12 bytes, pad to 16
-  const countersBuffer = df.statefulDerive([device, df.value(16), usage], gpuBuffer);
+  // Counters buffer: [visible_count, max_density_fixed] = 8 bytes, pad to 16
+  const countersBuffer = df.statefulDerive(
+    [device, df.value(16), GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST],
+    gpuBuffer,
+  );
 
-  // Per-point buffers (4 bytes per point)
+  // Per-point buffers (4 bytes per point), for point_data in the shader
   const pointBufferSize = df.derive([count], (c) => Math.max(4, c * 4));
-  // Merged buffer: stores density (>0 = visible+accepted, <=0 = not visible or rejected)
-  const pointDataBuffer = df.statefulDerive([device, pointBufferSize, usage], gpuBuffer);
-
-  // Index buffer: sized for max points (use default 4M if null)
-  const indexBufferSize = df.derive([downsampleMaxPoints], (limit) => Math.max(4, (limit ?? 4000000) * 4));
-  const indexBuffer = df.statefulDerive([device, indexBufferSize, usage], gpuBuffer);
+  const pointDataBuffer = df.statefulDerive([device, pointBufferSize, GPUBufferUsage.STORAGE], gpuBuffer);
 
   // Bind group layout for group 3 (compute shaders - read_write access)
   // 4 bindings: uniform + 3 storage buffers (removed prefix_sum, now use atomic counter)
@@ -74,22 +69,20 @@ export function makeDownsampleResources(
         { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
         { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }, // counters
         { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }, // point_data
-        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }, // index_buffer_write
       ],
     }),
   );
 
   // Bind group for group 3 (compute)
   const bindGroup = df.derive(
-    [device, bindGroupLayout, uniformBuffer, countersBuffer, pointDataBuffer, indexBuffer],
-    (device, layout, uniform, counters, pointData, index) =>
+    [device, bindGroupLayout, uniformBuffer, countersBuffer, pointDataBuffer],
+    (device, layout, uniform, counters, pointData) =>
       device.createBindGroup({
         layout,
         entries: [
           { binding: 0, resource: { buffer: uniform } },
           { binding: 1, resource: { buffer: counters } },
           { binding: 2, resource: { buffer: pointData } },
-          { binding: 3, resource: { buffer: index } },
         ],
       }),
   );
@@ -102,10 +95,10 @@ export function makeDownsampleResources(
   );
 
   // Bind group for indexed draw pipeline group 2 (vertex)
-  const vertexBindGroup = df.derive([device, vertexBindGroupLayout, indexBuffer], (device, layout, index) =>
+  const vertexBindGroup = df.derive([device, vertexBindGroupLayout, pointDataBuffer], (device, layout, buffer) =>
     device.createBindGroup({
       layout,
-      entries: [{ binding: 0, resource: { buffer: index } }],
+      entries: [{ binding: 0, resource: { buffer: buffer } }],
     }),
   );
 
@@ -113,7 +106,6 @@ export function makeDownsampleResources(
     uniformBuffer,
     countersBuffer,
     pointDataBuffer,
-    indexBuffer,
     bindGroupLayout,
     bindGroup,
     vertexBindGroupLayout,
@@ -132,10 +124,10 @@ export function makeDownsampleCommand(
   group1: Node<GPUBindGroup>,
   downsampleResources: DownsampleResources,
   dataBuffers: DataBuffers,
-): Node<(encoder: GPUCommandEncoder, config: DownsampleConfig) => number> {
+): Node<(encoder: GPUCommandEncoder, config: DownsampleConfig) => void> {
   // Create a minimal bind group layout for blur_buffer (just 1 storage buffer)
   // This keeps viewport_cull under the 8 storage buffer limit:
-  // group1 (3) + blurOnly (1) + group4 (4) = 8
+  // group1 (3) + blurOnly (1) + group3 (4) = 8
   // Note: Must match shader declaration which uses read_write (even though we only read)
   const blurOnlyLayout = df.derive([device], (device) =>
     device.createBindGroupLayout({
@@ -150,7 +142,7 @@ export function makeDownsampleCommand(
     }),
   );
 
-  // Create empty layouts for unused group 3 in viewport_cull
+  // Create empty layouts for unused group 2 in density_sample pipeline
   const emptyLayout = df.derive([device], (device) => device.createBindGroupLayout({ entries: [] }));
   const emptyBindGroup = df.derive([device, emptyLayout], (device, layout) =>
     device.createBindGroup({ layout, entries: [] }),
@@ -178,22 +170,11 @@ export function makeDownsampleCommand(
       }),
   );
 
-  // Stream compaction using atomic counter (no prefix sum needed)
-  const compactPipeline = df.derive(
-    [device, module, group0Layout, group1Layout, emptyLayout, downsampleResources.bindGroupLayout],
-    (device, module, group0, group1, empty, group3) =>
-      device.createComputePipeline({
-        layout: device.createPipelineLayout({ bindGroupLayouts: [group0, group1, empty, group3] }),
-        compute: { module, entryPoint: "downsample_compact" },
-      }),
-  );
-
   return df.derive(
     [
       device,
       viewportCullPipeline,
       densitySamplePipeline,
-      compactPipeline,
       group0,
       group1,
       blurOnlyBindGroup,
@@ -207,7 +188,6 @@ export function makeDownsampleCommand(
       device,
       viewportCullPipeline,
       densitySamplePipeline,
-      compactPipeline,
       group0,
       group1,
       group2Blur,
@@ -261,22 +241,6 @@ export function makeDownsampleCommand(
           pass.dispatchWorkgroups(workgroupsX, workgroupsY);
           pass.end();
         }
-
-        // Pass 3: Stream compaction using atomic counter
-        {
-          const pass = encoder.beginComputePass();
-          pass.setPipeline(compactPipeline);
-          pass.setBindGroup(0, group0);
-          pass.setBindGroup(1, group1);
-          pass.setBindGroup(2, emptyGroup);
-          pass.setBindGroup(3, group3);
-          pass.dispatchWorkgroups(workgroupsX, workgroupsY);
-          pass.end();
-        }
-
-        // Return the max points as the max possible count
-        // The actual count will be determined by the GPU, but we use maxPoints as upper bound
-        return Math.min(count, config.maxPoints);
       },
   );
 }

@@ -64,11 +64,11 @@ export function makeDrawPointsCommand(
 
 /**
  * Draw points using an index buffer for downsampled rendering.
- * Uses points_indexed_vs vertex shader that reads point indices from the index buffer.
+ * Uses points_downsampled_vs vertex shader that reads point indices from the index buffer.
  * Note: Uses group 2 for the vertex shader (read-only index buffer access).
  * Pipeline layout: group 0 (uniforms), group 1 (data buffers), group 2 (index buffer read).
  */
-export function makeDrawPointsIndexedCommand(
+export function makeDrawPointsDownsampledCommand(
   df: Dataflow,
   device: Node<GPUDevice>,
   module: Node<GPUShaderModule>,
@@ -83,7 +83,7 @@ export function makeDrawPointsIndexedCommand(
         layout: device.createPipelineLayout({
           bindGroupLayouts: [layouts.group0, layouts.group1, group5Layout],
         }),
-        vertex: { entryPoint: "points_indexed_vs", module: module },
+        vertex: { entryPoint: "points_downsampled_vs", module: module },
         fragment: {
           entryPoint: "points_fs",
           module: module,

@@ -61,14 +61,13 @@ struct FragmentOutput {
 // WebGPU has a default limit of 4 bind groups, so we use group 3 (not 4)
 // 3 storage buffers to stay within 8-buffer limit (3 from group1 + 1 from group2 + 3 from group3 = 7)
 @group(3) @binding(0) var<uniform> downsample_uniforms: DownsampleUniforms;
-@group(3) @binding(1) var<storage, read_write> downsample_counters: array<atomic<u32>>; // [visible_count, max_density_fixed, selected_count]
-@group(3) @binding(2) var<storage, read_write> point_data: array<f32>; // density (>0 = visible with density, <=0 = not visible or not accepted)
-@group(3) @binding(3) var<storage, read_write> index_buffer_write: array<u32>; // output indices (compute write)
+@group(3) @binding(1) var<storage, read_write> downsample_counters: array<atomic<u32>>; // [visible_count, max_density_fixed]
+@group(3) @binding(2) var<storage, read_write> point_data: array<f32>; // density (>= 0 means visible with density, < 0 means not visible or not accepted)
 
-// Separate binding for vertex shader in indexed draw pipeline
-// Uses group 2 since the indexed draw pipeline only needs groups 0, 1, 2
+// Separate binding for vertex shader in downsampled draw pipeline
+// Uses group 2 since the pipeline only needs groups 0, 1, 2
 // (read-only access required by WebGPU for vertex shaders)
-@group(2) @binding(0) var<storage, read> index_buffer_read: array<u32>; // output indices (vertex read)
+@group(2) @binding(0) var<storage, read> point_data_read: array<f32>; // same as point_data above
 
 fn get_point(index: u32) -> PointData {
   var result: PointData;
@@ -118,7 +117,9 @@ fn accumulate(@builtin(global_invocation_id) id: vec3<u32>) {
   increment_count(ix + 1, iy + 1, point.category, w4);
 }
 
+// =====================================================
 // Draw Discrete Points
+// =====================================================
 
 struct PointsVertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -154,7 +155,9 @@ fn points_fs(in: PointsVertexOutput) -> FragmentOutput {
   return out;
 }
 
+// =====================================================
 // Draw Density Map
+// =====================================================
 
 struct DrawDensityMapVertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -252,7 +255,9 @@ fn draw_density_map_fs(in: DrawDensityMapVertexOutput) -> FragmentOutput {
   return out;
 }
 
+// =====================================================
 // Gamma Correction
+// =====================================================
 
 struct GammaCorrectionVertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -285,7 +290,9 @@ fn gamma_correction_fs(in: GammaCorrectionVertexOutput) -> @location(0) vec4<f32
   return vec4(rgb, 1.0);
 }
 
+// =====================================================
 // Gaussian Blur
+// =====================================================
 
 @compute @workgroup_size(64, 1)
 fn gaussian_blur_stage_1(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -384,6 +391,7 @@ fn deriche_conv_1d(
 // =====================================================
 // Downsampling: PCG hash for deterministic randomness
 // =====================================================
+
 fn pcg_hash(input: u32) -> u32 {
   var state = input * 747796405u + 2891336453u;
   let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
@@ -399,6 +407,7 @@ fn random_float(seed: u32) -> f32 {
 // =====================================================
 // Uses 2D dispatch for large point counts (>65K workgroups)
 // Stride: 256 workgroups * 256 threads = 65536 threads per row
+
 const DOWNSAMPLE_STRIDE: u32 = 65536u;
 
 @compute @workgroup_size(256)
@@ -431,20 +440,22 @@ fn downsample_viewport_cull(@builtin(global_invocation_id) id: vec3<u32>) {
       density += f32(blur_buffer[offset]);
     }
     // Store density (positive = visible). Add small epsilon to ensure > 0.
-    point_data[index] = max(density, 0.0001);
+    density = min(max(density, 0.0001), 65535.0);
+    point_data[index] = density;
 
     // Track max density using fixed-point atomics
     let density_fixed = u32(density * 65536.0);
     atomicMax(&downsample_counters[1], density_fixed);
   } else {
-    // Not visible: store 0
-    point_data[index] = 0.0;
+    // Not visible: store -1.0
+    point_data[index] = -1.0;
   }
 }
 
 // =====================================================
 // Downsampling Pass 2: Probabilistic acceptance
 // =====================================================
+
 @compute @workgroup_size(256)
 fn downsample_density_sample(@builtin(global_invocation_id) id: vec3<u32>) {
   let index = id.y * DOWNSAMPLE_STRIDE + id.x;
@@ -452,9 +463,9 @@ fn downsample_density_sample(@builtin(global_invocation_id) id: vec3<u32>) {
 
   let density = point_data[index];
 
-  // Not visible (density == 0)
-  if (density <= 0.0) {
-    return; // Already 0, means not accepted
+  // Not visible (density < 0)
+  if (density < 0.0) {
+    return;
   }
 
   let visible_count = atomicLoad(&downsample_counters[0]);
@@ -490,45 +501,31 @@ fn downsample_density_sample(@builtin(global_invocation_id) id: vec3<u32>) {
   if (rand >= final_prob) {
     point_data[index] = -1.0;
   }
-  // If accepted, keep positive value
 }
 
 // =====================================================
-// Downsampling Pass 3: Stream compaction using atomics
+// Draw points with downsampling
 // =====================================================
-// Simplified approach: use atomic counter to assign output indices
-// This works across any number of points without complex prefix sum
-@compute @workgroup_size(256)
-fn downsample_compact(@builtin(global_invocation_id) id: vec3<u32>) {
-  let index = id.y * DOWNSAMPLE_STRIDE + id.x;
-  if (index >= uniforms.count) { return; }
 
-  // point_data > 0 means accepted
-  if (point_data[index] > 0.0) {
-    // Atomically get next output index
-    let output_index = atomicAdd(&downsample_counters[2], 1u);
-    if (output_index < downsample_uniforms.render_limit) {
-      index_buffer_write[output_index] = index;
-    }
-  }
-}
-
-// =====================================================
-// Draw Points with Index Buffer (indexed instancing)
-// =====================================================
 @vertex
-fn points_indexed_vs(
+fn points_downsampled_vs(
   @builtin(instance_index) instance: u32,
   @builtin(vertex_index) part: u32,
 ) -> PointsVertexOutput {
-  let index = index_buffer_read[instance];
+  var out: PointsVertexOutput;
+
+  let point_data = point_data_read[instance];
+  if (point_data < 0.0) {
+    // To discard a point, we set a out-of-viewport position. This avoids fragment costs.
+    out.position = vec4<f32>(-1000, -1000, 0.0, 1.0);
+    return out;
+  }
+
   let framebuffer_size = vec2(f32(uniforms.framebuffer_width), f32(uniforms.framebuffer_height));
   let alpha = uniforms.point_alpha * uniforms.points_alpha;
   let dp = vec2<f32>(f32(part % 2), f32(part / 2)) * 2.0 - 1.0;
-  let point = get_point(index);
+  let point = get_point(instance);
   let pos = uniforms.matrix * point.position;
-
-  var out: PointsVertexOutput;
   out.position = vec4<f32>(pos.xy + dp * uniforms.point_size / framebuffer_size * 2.0, 0.0, 1.0);
   out.dp = vec3(dp, uniforms.point_size);
   out.color = uniforms.category_colors[point.category] * alpha;

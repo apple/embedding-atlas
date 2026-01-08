@@ -20,7 +20,7 @@ import { makeAccumulateCommand } from "./accumulate.js";
 import { makeBindGroups } from "./bind_groups.js";
 import { makeDownsampleCommand, makeDownsampleResources, type DownsampleConfig } from "./downsample.js";
 import { makeDrawDensityMapCommand } from "./draw_density_map.js";
-import { makeDrawPointsCommand, makeDrawPointsIndexedCommand } from "./draw_points.js";
+import { makeDrawPointsCommand, makeDrawPointsDownsampledCommand } from "./draw_points.js";
 import { makeGammaCorrectionCommand } from "./gamma_correction.js";
 import { makeGaussianBlurCommand } from "./gaussian_blur.js";
 import { kdeConfig } from "./kde_config.js";
@@ -315,7 +315,7 @@ function makeRenderCommand(
 
   let accumulate = makeAccumulateCommand(df, device, module, bindGroups, dataBuffers, auxiliaryResources);
   let drawPoints = makeDrawPointsCommand(df, device, module, bindGroups, dataBuffers, auxiliaryResources);
-  let drawPointsIndexed = makeDrawPointsIndexedCommand(
+  let drawPointsDownsampled = makeDrawPointsDownsampledCommand(
     df,
     device,
     module,
@@ -368,7 +368,7 @@ function makeRenderCommand(
       inputs.matrix,
       categoryColors,
       drawPoints,
-      drawPointsIndexed,
+      drawPointsDownsampled,
       gammaCorrection,
       accumulate,
       gaussianBlur,
@@ -387,7 +387,7 @@ function makeRenderCommand(
       positionMatrix: Matrix3,
       categoryColors,
       drawPoints,
-      drawPointsIndexed,
+      drawPointsDownsampled,
       gammaCorrection,
       accumulate,
       gaussianBlur,
@@ -442,17 +442,19 @@ function makeRenderCommand(
           gaussianBlur(encoder);
 
           // Run downsampling pipeline with fixed seed for deterministic sampling
-          // Using 0 ensures the same points are always accepted/rejected
+          // Using 42 ensures the same points are always accepted/rejected
           // Viewport culling handles which points are visible
           const downsampleConfig: DownsampleConfig = {
             maxPoints: effectiveMaxPoints!,
             densityWeight: props.downsampleDensityWeight,
-            frameSeed: 0,
+            frameSeed: 42,
           };
-          const sampledCount = downsample(encoder, downsampleConfig);
+
+          // Perform downsample, this fills the point_data buffer.
+          downsample(encoder, downsampleConfig);
 
           // Draw downsampled points
-          drawPointsIndexed(encoder, sampledCount);
+          drawPointsDownsampled(encoder, count);
 
           // If in density mode, also draw density overlay (using all points, already computed)
           if (props.mode == "density") {
