@@ -5,7 +5,9 @@
 
   import EmbeddingView from "../lib/embedding_view/EmbeddingView.svelte";
 
-  let dataset = generateSampleDataset({ numPoints: 5000000, numCategories: 3, numSubClusters: 32 });
+  const numPoints = 2000000;
+
+  let dataset = generateSampleDataset({ numPoints: numPoints, numCategories: 3, numSubClusters: 32 });
   let data = {
     x: new Float32Array(dataset.map((r) => r.x)),
     y: new Float32Array(dataset.map((r) => r.y)),
@@ -19,7 +21,7 @@
   let mode: "points" | "density" = $state.raw("density");
   let colorScheme: "light" | "dark" = $state.raw("light");
   let minimumDensity: number = $state.raw(1 / 16);
-  let downsampleMaxPoints: number | null = $state.raw(4000000);
+  let downsampleMaxPoints: number | null = $state.raw(numPoints);
   let viewportState: ViewportState | null = $state.raw(null);
 
   async function querySelection(x: number, y: number, unitDistance: number): Promise<DataPoint | null> {
@@ -69,7 +71,7 @@
   <label style="display:flex;align-items:center;gap:4px">
     Max Points:
     {#if downsampleMaxPoints != null}
-      <input type="range" bind:value={downsampleMaxPoints} min={50000} max={50000000} step={50000} />
+      <input type="range" bind:value={downsampleMaxPoints} min={5000} max={numPoints} step={5000} />
       {downsampleMaxPoints >= 1000000
         ? (downsampleMaxPoints / 1000000).toFixed(1) + "M"
         : (downsampleMaxPoints / 1000).toFixed(0) + "K"}

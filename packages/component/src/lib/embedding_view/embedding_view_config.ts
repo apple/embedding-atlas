@@ -29,9 +29,11 @@ export interface EmbeddingViewConfig {
   /** The stop words for automatic label generation. By default use NLTK stop words. */
   autoLabelStopWords?: string[] | null;
 
-  /** Maximum number of points to render when downsampling is active.
+  /** Approximate maximum number of points to render when downsampling is active.
    * Points are sampled with bias toward sparse regions (fewer points kept in dense areas).
-   * Default: 4000000. Set to null or Infinity to disable downsampling. */
+   * The sampling probability is given by this formula:
+   * P(i) = (downsampleMaxPoints / numPointsInViewport) * (2 / (1 + density(p_i) / maxDensity * downsampleDensityWeight))
+   * Default: 4,000,000. Set to null or Infinity to disable downsampling. */
   downsampleMaxPoints?: number | null;
 
   /** Density weight for downsampling (0-10).

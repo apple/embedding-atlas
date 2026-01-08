@@ -33,7 +33,7 @@ export interface EmbeddingRendererProps {
   width: number;
   height: number;
 
-  /** Maximum points to render. null/Infinity = no limit. Default: 4000000 */
+  /** Approximate maximum points to render. null/Infinity = no limit. Default: 4,000,000 */
   downsampleMaxPoints: number | null;
   /** Density weight for downsampling (0-10). Default: 5 */
   downsampleDensityWeight: number;
