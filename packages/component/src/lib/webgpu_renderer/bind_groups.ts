@@ -16,6 +16,7 @@ export interface BindGroups {
   group2A: Node<GPUBindGroup>;
   group2B: Node<GPUBindGroup>;
   group3: Node<GPUBindGroup>;
+  // Note: group4 for downsampling is managed separately in downsample.ts
 }
 
 export function makeBindGroupLayouts(device: GPUDevice): {

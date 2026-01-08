@@ -4,7 +4,7 @@
 
   import Button from "./Button.svelte";
 
-  import { IconClose } from "../assets/icons.js";
+  import { IconError } from "../assets/icons.js";
 
   interface Props {
     label?: string | null;
@@ -23,19 +23,23 @@
     if (!onClick) {
       return;
     }
+    if (state == "running") {
+      return;
+    }
     state = "running";
     try {
       await onClick();
       state = "ready";
     } catch (e) {
       state = "error";
+      console.error(e);
     }
   }
 </script>
 
 <Button
   label={label}
-  icon={state == "ready" ? icon : state == "running" ? SvgSpinner : IconClose}
+  icon={state == "ready" ? icon : state == "running" ? SvgSpinner : IconError}
   title={title}
   order={order}
   class={additionalClasses}

@@ -2,15 +2,22 @@
 <script lang="ts">
   import Router from "svelte-spa-router";
 
-  import AdhocViewer from "./AdhocViewer.svelte";
-  import Home from "./Home.svelte";
-  import Test from "./Test.svelte";
+  import BackendViewer from "./BackendViewer.svelte";
+  import FileViewer from "./FileViewer.svelte";
+  import TestDataViewer from "./TestDataViewer.svelte";
 
-  const routes = {
-    "/": (window as any)?.EMBEDDING_ATLAS_HOME == "upload" ? AdhocViewer : Home,
-    "/test": Test,
-    "/upload": AdhocViewer,
+  import { resolveAppConfig } from "./app_config.js";
+
+  const config = resolveAppConfig();
+
+  const routes: any = {
+    "/": config.home == "file-viewer" ? FileViewer : BackendViewer,
   };
+
+  if (import.meta.env.DEV) {
+    routes["/test"] = TestDataViewer;
+    routes["/file"] = FileViewer;
+  }
 </script>
 
 <Router routes={routes} />

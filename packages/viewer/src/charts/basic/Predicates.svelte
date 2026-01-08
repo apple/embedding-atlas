@@ -6,16 +6,18 @@
 
   import Button from "../../widgets/Button.svelte";
   import CodeEditor from "../../widgets/CodeEditor.svelte";
+  import CornerButton from "../../widgets/CornerButton.svelte";
   import Input from "../../widgets/Input.svelte";
   import Container from "../common/Container.svelte";
 
   import { IconClose, IconEdit } from "../../assets/icons.js";
+
   import { predicateToString } from "../../utils/database.js";
   import type { ChartViewProps } from "../chart.js";
   import type { PredicatesSpec } from "./types.js";
 
   interface State {
-    selectedPredicates?: string[];
+    selection?: string[];
   }
 
   interface Item {
@@ -36,7 +38,7 @@
   let { colorScheme } = context;
 
   let items = $derived(spec.items ?? []);
-  let selectedPredicates = $derived(chartState.selectedPredicates ?? []);
+  let selection = $derived(chartState.selection ?? []);
 
   let editingEnabled = $state(false);
   let editingItem = $state.raw<Item | null>(null);
@@ -55,9 +57,7 @@
       items: newItems,
     });
     onStateChange({
-      selectedPredicates: (chartState.selectedPredicates ?? []).filter(
-        (x) => newItems.find((item) => item.predicate == x) != null,
-      ),
+      selection: (chartState.selection ?? []).filter((x) => newItems.find((item) => item.predicate == x) != null),
     });
   }
 
@@ -90,13 +90,13 @@
 
     let source = {
       reset: () => {
-        onStateChange({ selectedPredicates: [] });
+        onStateChange({ selection: [] });
       },
     };
 
     // Sync selection predicate.
     $effect(() => {
-      if (selectedPredicates.length == 0) {
+      if (selection.length == 0) {
         context.filter.update({
           source: source,
           clients: new Set<MosaicClient>([client]),
@@ -104,7 +104,7 @@
           value: null,
         });
       } else {
-        let preds = selectedPredicates.map((x) => "(" + x + ")").join(" OR ");
+        let preds = selection.map((x) => "(" + x + ")").join(" OR ");
         context.filter.update({
           source: source,
           clients: new Set<MosaicClient>([client]),
@@ -115,6 +115,12 @@
     });
 
     return () => {
+      context.filter.update({
+        source: source,
+        clients: new Set<MosaicClient>([client]),
+        predicate: null,
+        value: null,
+      });
       client.destroy();
     };
   });
@@ -123,7 +129,7 @@
 <Container width={width} height={height} scrollY={true}>
   <div class="flex flex-col gap-1">
     {#each items as item}
-      {@const isSelected = selectedPredicates.indexOf(item.predicate) >= 0}
+      {@const isSelected = selection.indexOf(item.predicate) >= 0}
       <div
         class="flex gap-4 w-full bg-white dark:bg-slate-800 p-2 rounded-md border border-slate-200 dark:border-slate-600 select-none"
         class:!bg-blue-100={isSelected}
@@ -135,14 +141,14 @@
           class="flex-1 overflow-hidden text-left"
           onclick={(e) => {
             if (e.shiftKey) {
-              selectedPredicates = isSelected
-                ? selectedPredicates.filter((x) => x != item.predicate)
-                : [...selectedPredicates, item.predicate];
+              onStateChange({
+                selection: isSelected ? selection.filter((x) => x != item.predicate) : [...selection, item.predicate],
+              });
             } else {
               if (isSelected) {
-                selectedPredicates = [];
+                onStateChange({ selection: [] });
               } else {
-                selectedPredicates = [item.predicate];
+                onStateChange({ selection: [item.predicate] });
               }
             }
           }}
@@ -152,8 +158,8 @@
             <code class="text-xs whitespace-nowrap" title={item.predicate}>{item.predicate}</code>
           </div>
         </button>
-        <div class="flex-none flex gap-1">
-          <Button
+        <div class="flex-none flex gap-1 items-start">
+          <CornerButton
             icon={IconEdit}
             onClick={() => {
               editingItem = item;
@@ -162,7 +168,7 @@
               editingEnabled = true;
             }}
           />
-          <Button
+          <CornerButton
             icon={IconClose}
             onClick={() => {
               setItems(items.filter((x) => x !== item));
@@ -230,9 +236,8 @@
         <button
           class="text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
           onclick={() => (editingPredicate = predicateToString(context.filter.predicate(null)) ?? "")}
+          >Current Predicate</button
         >
-          Current Predicate
-        </button>
       </div>
     </div>
   {/if}

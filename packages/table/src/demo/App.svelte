@@ -24,7 +24,6 @@
   onMount(async () => {
     const wasm = await wasmConnector();
     coordinator().databaseConnector(wasm);
-    let rootURL = `${window.location.protocol}//${window.location.host}`;
     let parquetURL = `https://huggingface.co/datasets/polygraf-ai/ACL-abstracts/resolve/main/data/train-00000-of-00001.parquet`;
     await coordinator().exec(loadParquet("data_table", parquetURL, {}));
     await coordinator().exec(`

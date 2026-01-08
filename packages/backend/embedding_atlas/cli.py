@@ -373,7 +373,7 @@ def main(
             else:
                 raise RuntimeError("unreachable")
 
-    id_column = find_column_name(df.columns, "_row_index")
+    id_column = find_column_name(df.columns, "__row_index__")
     df[id_column] = range(df.shape[0])
 
     stop_words_resolved = None

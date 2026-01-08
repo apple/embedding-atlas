@@ -1,5 +1,5 @@
 .vitepress/cache
 .vitepress/dist
-public/upload
+public/app
 public/demo
 demo-data

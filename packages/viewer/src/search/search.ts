@@ -49,7 +49,7 @@ export class FullTextSearcher implements Searcher {
   columns: { text: string; id: string };
 
   backend: SearchWorkerAPI;
-  currentIndex: { predicate: string | null } | null = null;
+  currentIndex: { predicate: string | null; promise: Promise<void> } | null = null;
 
   constructor(
     coordinator: Coordinator,
@@ -74,37 +74,51 @@ export class FullTextSearcher implements Searcher {
     }
   }
 
-  async buildIndexIfNeeded(predicate: any | null) {
-    let predicateString = this.predicateString(predicate);
-    if (this.currentIndex != null && this.currentIndex.predicate == predicateString) {
-      return;
-    }
-    let result: any;
-    if (predicateString != null) {
-      result = await this.coordinator.query(`
+  buildIndexIfNeeded(predicate: any | null): Promise<void> {
+    let builder = async () => {
+      let result: any;
+      if (predicateString != null) {
+        result = await this.coordinator.query(`
         SELECT
           ${SQL.column(this.columns.id)} AS id,
           ${SQL.column(this.columns.text)} AS text
         FROM ${this.table}
         WHERE ${predicateString}
       `);
-    } else {
-      result = await this.coordinator.query(`
+      } else {
+        result = await this.coordinator.query(`
         SELECT
           ${SQL.column(this.columns.id)} AS id,
           ${SQL.column(this.columns.text)} AS text
         FROM ${this.table}
       `);
+      }
+      await this.backend.clear();
+      await this.backend.addPoints(Array.from(result));
+    };
+
+    let predicateString = this.predicateString(predicate);
+    if (this.currentIndex != null) {
+      if (this.currentIndex.predicate != predicateString) {
+        let promise = this.currentIndex.promise.then(() => builder());
+        this.currentIndex = { predicate: predicateString, promise: promise };
+      }
+    } else {
+      let promise = builder();
+      this.currentIndex = { predicate: predicateString, promise: promise };
     }
-    await this.backend.clear();
-    await this.backend.addPoints(Array.from(result));
-    this.currentIndex = { predicate: predicateString };
+    return this.currentIndex.promise;
   }
 
-  async fullTextSearch(query: string, options: { limit?: number; predicate?: any } = {}): Promise<{ id: any }[]> {
+  async fullTextSearch(
+    query: string,
+    options: { limit?: number; predicate?: any; onStatus?: (status: string) => void } = {},
+  ): Promise<{ id: any }[]> {
     let limit = options.limit ?? 100;
     let predicate = options.predicate;
+    options?.onStatus?.("Indexing...");
     await this.buildIndexIfNeeded(predicate);
+    options?.onStatus?.("Searching...");
     let resultIDs = await this.backend.query(query, limit);
     return resultIDs.map((id) => ({ id: id }));
   }
@@ -234,4 +248,55 @@ export function resolveSearcher(options: {
   }
 
   return result;
+}
+
+export async function performSearch({
+  searcher,
+  predicate,
+  query,
+  mode,
+  limit,
+  onStatus,
+}: {
+  searcher: Searcher;
+  predicate: string | null;
+  query: any;
+  mode: string;
+  limit: number;
+  onStatus: (status: string) => void;
+}): Promise<{ id: any; distance?: number }[]> {
+  onStatus("Searching...");
+
+  let searcherResult: { id: any; distance?: number }[] = [];
+  let highlight: string = "";
+  let label = query.toString();
+
+  if (mode == "full-text" && searcher.fullTextSearch != null) {
+    query = query.trim();
+    searcherResult = await searcher.fullTextSearch(query, {
+      limit: limit,
+      predicate: predicate,
+      onStatus: onStatus,
+    });
+    highlight = query;
+  } else if (mode == "vector" && searcher.vectorSearch != null) {
+    query = query.trim();
+    searcherResult = await searcher.vectorSearch(query, {
+      limit: limit,
+      predicate: predicate,
+      onStatus: onStatus,
+    });
+    highlight = query;
+  } else if (mode == "neighbors" && searcher.nearestNeighbors != null) {
+    label = "Neighbors of #" + query.toString();
+    searcherResult = await searcher.nearestNeighbors(query, {
+      limit: limit,
+      predicate: predicate,
+      onStatus: onStatus,
+    });
+  } else {
+    return [];
+  }
+
+  return searcherResult;
 }

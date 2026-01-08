@@ -125,19 +125,19 @@ export interface Searcher {
   /** Perform a full text search with the given query */
   fullTextSearch?(
     query: string,
-    options?: { limit: number; predicate: string | null; onStatus: (status: string) => void },
+    options?: { limit?: number; predicate?: string | null; onStatus?: (status: string) => void },
   ): Promise<{ id: any }[]>;
 
   /** Perform a vector search with the given query */
   vectorSearch?(
     query: string,
-    options?: { limit: number; predicate: string | null; onStatus: (status: string) => void },
+    options?: { limit?: number; predicate?: string | null; onStatus?: (status: string) => void },
   ): Promise<{ id: any; distance?: number }[]>;
 
   /** Find nearest neighbors of the row of the given id */
   nearestNeighbors?(
     id: any,
-    options?: { limit: number; predicate: string | null; onStatus: (status: string) => void },
+    options?: { limit?: number; predicate?: string | null; onStatus?: (status: string) => void },
   ): Promise<{ id: any; distance?: number }[]>;
 }
 

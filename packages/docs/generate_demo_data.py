@@ -1,9 +1,3 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["click", "datasets", "pandas", "sentence-transformers", "umap-learn", "duckdb"]
-# ///
-
-
 import json
 import shutil
 from pathlib import Path
@@ -41,7 +35,7 @@ def add_embedding_projection(df: pd.DataFrame, text: str):
 
     df["projection_x"] = proj[:, 0]  # type: ignore
     df["projection_y"] = proj[:, 1]  # type: ignore
-    df["__neighbors"] = [{"distances": b, "ids": a} for a, b in zip(knn[0], knn[1])]
+    df["neighbors"] = [{"distances": b, "ids": a} for a, b in zip(knn[0], knn[1])]
 
 
 @click.command()
@@ -65,7 +59,7 @@ def main(output: str):
 
     ds = load_dataset(name, split="train")
     df = ds.to_pandas()[columns]  # type: ignore
-    df["_row_index"] = range(len(df))
+    df["__row_index__"] = range(len(df))
 
     add_embedding_projection(df, text="description")
 
@@ -93,10 +87,10 @@ def main(output: str):
     metadata = {
         "props": {
             "data": {
-                "id": "_row_index",
+                "id": "__row_index__",
                 "text": "description",
                 "projection": {"x": "projection_x", "y": "projection_y"},
-                "neighbors": "__neighbors",
+                "neighbors": "neighbors",
             }
         },
         "isStatic": True,

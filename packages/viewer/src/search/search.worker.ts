@@ -1,8 +1,13 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import { Index } from "flexsearch";
+import { Charset, Index, type IndexOptions } from "flexsearch";
 
-let index = new Index();
+const options: IndexOptions = {
+  tokenize: "forward",
+  encoder: Charset.LatinBalance,
+};
+
+let index = new Index(options);
 
 export interface ClearRequest {
   type: "clear";
@@ -25,7 +30,9 @@ export interface QueryRequest {
 self.onmessage = (e: MessageEvent<ClearRequest | PointsRequest | QueryRequest>) => {
   switch (e.data.type) {
     case "clear":
-      index = new Index();
+      index.clear();
+      index.cleanup();
+      index = new Index(options);
       postMessage({ identifier: e.data.identifier });
       break;
     case "points":

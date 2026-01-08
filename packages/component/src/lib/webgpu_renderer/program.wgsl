@@ -26,6 +26,13 @@ struct Uniforms {
   category_colors: array<vec4<f32>, 256>,
 }
 
+struct DownsampleUniforms {
+  render_limit: u32,
+  frame_seed: u32,
+  density_weight: f32,
+  _padding: f32,
+}
+
 struct PointData {
   position: vec3<f32>,
   category: u32,
@@ -49,6 +56,18 @@ struct FragmentOutput {
 @group(3) @binding(0) var framebuffer_sampler: sampler;
 @group(3) @binding(1) var color_texture: texture_2d<f32>;
 @group(3) @binding(2) var log1malpha_texture: texture_2d<f32>;
+
+// Downsampling bind groups (group 3 for compute shaders)
+// WebGPU has a default limit of 4 bind groups, so we use group 3 (not 4)
+// 3 storage buffers to stay within 8-buffer limit (3 from group1 + 1 from group2 + 3 from group3 = 7)
+@group(3) @binding(0) var<uniform> downsample_uniforms: DownsampleUniforms;
+@group(3) @binding(1) var<storage, read_write> downsample_counters: array<atomic<u32>>; // [visible_count, max_density_fixed]
+@group(3) @binding(2) var<storage, read_write> point_data: array<f32>; // density (>= 0 means visible with density, < 0 means not visible or not accepted)
+
+// Separate binding for vertex shader in downsampled draw pipeline
+// Uses group 2 since the pipeline only needs groups 0, 1, 2
+// (read-only access required by WebGPU for vertex shaders)
+@group(2) @binding(0) var<storage, read> point_data_read: array<f32>; // same as point_data above
 
 fn get_point(index: u32) -> PointData {
   var result: PointData;
@@ -98,7 +117,9 @@ fn accumulate(@builtin(global_invocation_id) id: vec3<u32>) {
   increment_count(ix + 1, iy + 1, point.category, w4);
 }
 
+// =====================================================
 // Draw Discrete Points
+// =====================================================
 
 struct PointsVertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -134,7 +155,9 @@ fn points_fs(in: PointsVertexOutput) -> FragmentOutput {
   return out;
 }
 
+// =====================================================
 // Draw Density Map
+// =====================================================
 
 struct DrawDensityMapVertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -232,7 +255,9 @@ fn draw_density_map_fs(in: DrawDensityMapVertexOutput) -> FragmentOutput {
   return out;
 }
 
+// =====================================================
 // Gamma Correction
+// =====================================================
 
 struct GammaCorrectionVertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -265,7 +290,9 @@ fn gamma_correction_fs(in: GammaCorrectionVertexOutput) -> @location(0) vec4<f32
   return vec4(rgb, 1.0);
 }
 
+// =====================================================
 // Gaussian Blur
+// =====================================================
 
 @compute @workgroup_size(64, 1)
 fn gaussian_blur_stage_1(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -359,4 +386,148 @@ fn deriche_conv_1d(
       (*dst)[offset] = f16(f32((*dst)[offset]) + y0);
     }
   }
+}
+
+// =====================================================
+// Downsampling: PCG hash for deterministic randomness
+// =====================================================
+
+fn pcg_hash(input: u32) -> u32 {
+  var state = input * 747796405u + 2891336453u;
+  let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+  return (word >> 22u) ^ word;
+}
+
+fn random_float(seed: u32) -> f32 {
+  return f32(pcg_hash(seed)) / 4294967295.0;
+}
+
+// =====================================================
+// Downsampling Pass 1: Viewport culling + density lookup
+// =====================================================
+// Uses 2D dispatch for large point counts (>65K workgroups)
+// Stride: 256 workgroups * 256 threads = 65536 threads per row
+
+const DOWNSAMPLE_STRIDE: u32 = 65536u;
+
+@compute @workgroup_size(256)
+fn downsample_viewport_cull(@builtin(global_invocation_id) id: vec3<u32>) {
+  let index = id.y * DOWNSAMPLE_STRIDE + id.x;
+  if (index >= uniforms.count) { return; }
+
+  let point = get_point(index);
+  let pos = uniforms.matrix * point.position;
+
+  // Check if point is in viewport [-1, 1]
+  let in_viewport = pos.x >= -1.0 && pos.x <= 1.0 && pos.y >= -1.0 && pos.y <= 1.0;
+
+  if (in_viewport) {
+    // Increment visible count
+    atomicAdd(&downsample_counters[0], 1u);
+
+    // Lookup density at this point's location from blur_buffer
+    let width = uniforms.density_width;
+    let height = uniforms.density_height;
+    let dx = (pos.x + 1.0) / 2.0 * f32(width) - 0.5;
+    let dy = (pos.y + 1.0) / 2.0 * f32(height) - 0.5;
+    let ix = clamp(i32(dx), 0, width - 1);
+    let iy = clamp(i32(dy), 0, height - 1);
+
+    // Sum density across all categories at this grid cell
+    var density: f32 = 0.0;
+    for (var c: u32 = 0; c < uniforms.category_count; c++) {
+      let offset = iy * width + ix + i32(c) * (width * height);
+      density += f32(blur_buffer[offset]);
+    }
+    // Store density (positive = visible). Add small epsilon to ensure > 0.
+    density = min(max(density, 0.0001), 65535.0);
+    point_data[index] = density;
+
+    // Track max density using fixed-point atomics
+    let density_fixed = u32(density * 65536.0);
+    atomicMax(&downsample_counters[1], density_fixed);
+  } else {
+    // Not visible: store -1.0
+    point_data[index] = -1.0;
+  }
+}
+
+// =====================================================
+// Downsampling Pass 2: Probabilistic acceptance
+// =====================================================
+
+@compute @workgroup_size(256)
+fn downsample_density_sample(@builtin(global_invocation_id) id: vec3<u32>) {
+  let index = id.y * DOWNSAMPLE_STRIDE + id.x;
+  if (index >= uniforms.count) { return; }
+
+  let density = point_data[index];
+
+  // Not visible (density < 0)
+  if (density < 0.0) {
+    return;
+  }
+
+  let visible_count = atomicLoad(&downsample_counters[0]);
+  let render_limit = downsample_uniforms.render_limit;
+
+  // If visible count is within limit, accept all visible points (keep positive density)
+  if (visible_count <= render_limit) {
+    return; // Keep positive value = accepted
+  }
+
+  // Compute acceptance probability based on density
+  let max_density_fixed = atomicLoad(&downsample_counters[1]);
+  let max_density = f32(max_density_fixed) / 65536.0;
+
+  // Base acceptance rate
+  let base_rate = f32(render_limit) / f32(visible_count);
+
+  // Density-based modulation: lower density = higher acceptance
+  let normalized_density = select(0.0, density / max_density, max_density > 0.0001);
+  let density_weight = downsample_uniforms.density_weight;
+
+  // Inverse density weighting: sparse areas get higher probability
+  let inverse_weight = 1.0 / (1.0 + normalized_density * density_weight);
+
+  // Compute final probability (scale by ~2 to compensate for average inverse_weight)
+  let final_prob = min(1.0, base_rate * inverse_weight * 2.0);
+
+  // Deterministic random for frame stability (based on point index + frame seed)
+  let seed = index ^ downsample_uniforms.frame_seed;
+  let rand = random_float(seed);
+
+  // If not accepted, set to negative (marks as rejected)
+  if (rand >= final_prob) {
+    point_data[index] = -1.0;
+  }
+}
+
+// =====================================================
+// Draw points with downsampling
+// =====================================================
+
+@vertex
+fn points_downsampled_vs(
+  @builtin(instance_index) instance: u32,
+  @builtin(vertex_index) part: u32,
+) -> PointsVertexOutput {
+  var out: PointsVertexOutput;
+
+  let point_data = point_data_read[instance];
+  if (point_data < 0.0) {
+    // To discard a point, we set a out-of-viewport position. This avoids fragment costs.
+    out.position = vec4<f32>(-1000, -1000, 0.0, 1.0);
+    return out;
+  }
+
+  let framebuffer_size = vec2(f32(uniforms.framebuffer_width), f32(uniforms.framebuffer_height));
+  let alpha = uniforms.point_alpha * uniforms.points_alpha;
+  let dp = vec2<f32>(f32(part % 2), f32(part / 2)) * 2.0 - 1.0;
+  let point = get_point(instance);
+  let pos = uniforms.matrix * point.position;
+  out.position = vec4<f32>(pos.xy + dp * uniforms.point_size / framebuffer_size * 2.0, 0.0, 1.0);
+  out.dp = vec3(dp, uniforms.point_size);
+  out.color = uniforms.category_colors[point.category] * alpha;
+  return out;
 }

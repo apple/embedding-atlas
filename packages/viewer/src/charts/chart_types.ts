@@ -136,7 +136,7 @@ registerChartBuilder({
 
 registerChartBuilder({
   icon: "chart-line",
-  description: "Create a histogram of a field",
+  description: "Create a line chart of two fields",
   ui: [
     { field: { key: "x", label: "X Field", types: ["number", "string"], required: true } }, //
     { field: { key: "y", label: "Y Field", types: ["number"], required: true } }, //

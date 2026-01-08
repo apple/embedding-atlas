@@ -1,13 +1,12 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import { defaultCategoryColors } from "@embedding-atlas/component";
 import type { Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 import * as d3 from "d3";
 
 import { distinctCount, jsTypeFromDBType } from "../../utils/database.js";
 import { inferBinning } from "../common/binning.js";
-import { defaultOrdinalColors } from "../common/theme.js";
+import { type ChartTheme } from "../common/theme.js";
 
 export interface EmbeddingLegend {
   indexColumn: string;
@@ -23,6 +22,7 @@ export async function makeCategoryColumn(
   coordinator: Coordinator,
   table: string,
   column: string | null | undefined,
+  theme: ChartTheme,
 ): Promise<EmbeddingLegend | null> {
   if (column == null) {
     return null;
@@ -33,13 +33,13 @@ export async function makeCategoryColumn(
   }
   let jsType = jsTypeFromDBType(desc.column_type);
   if (jsType == "string") {
-    return await makeDiscreteCategoryColumn(coordinator, table, column, 10);
+    return await makeDiscreteCategoryColumn(coordinator, table, column, 10, theme);
   } else if (jsType == "number") {
     let distinct = await distinctCount(coordinator, table, column);
     if (distinct <= 10) {
-      return await makeDiscreteCategoryColumn(coordinator, table, column, 10);
+      return await makeDiscreteCategoryColumn(coordinator, table, column, 10, theme);
     } else {
-      return await makeBinnedNumericColumn(coordinator, table, column);
+      return await makeBinnedNumericColumn(coordinator, table, column, theme);
     }
   }
   return null;
@@ -50,8 +50,9 @@ async function makeDiscreteCategoryColumn(
   table: string,
   column: string,
   maxCategories: number,
+  theme: ChartTheme,
 ): Promise<EmbeddingLegend> {
-  let indexColumnName = `_ev_${column}_id`;
+  let indexColumnName = `__ev_${column}_id`;
   let values = Array.from(
     await coordinator.query(
       SQL.Query.from(table)
@@ -90,7 +91,7 @@ async function makeDiscreteCategoryColumn(
   let otherCount = countMap.get(otherIndex) ?? 0;
   let nullCount = countMap.get(nullIndex) ?? 0;
 
-  let colors = defaultCategoryColors(values.length);
+  let colors = resolveCategoryColors(theme, values.length);
 
   let legend: EmbeddingLegend["legend"] = values.map(({ value }, i) => ({
     label: value,
@@ -109,7 +110,7 @@ async function makeDiscreteCategoryColumn(
     ).get(0);
     legend.push({
       label: `(other ${otherCategoryCount.toLocaleString()})`,
-      color: "#9eabc2",
+      color: theme.otherColor,
       predicate:
         values.length > 0
           ? SQL.sql`${SQL.column(column)} IS NOT NULL AND ${SQL.column(column)}::TEXT NOT IN (${values.map((x) => SQL.literal(x.value)).join(",")})`
@@ -128,7 +129,7 @@ async function makeDiscreteCategoryColumn(
     }
     legend.push({
       label: "(null)",
-      color: "#aaaaaa",
+      color: theme.nullColor,
       predicate: SQL.isNull(SQL.column(column)),
       count: nullCount,
     });
@@ -144,6 +145,7 @@ async function makeBinnedNumericColumn(
   coordinator: Coordinator,
   table: string,
   column: string,
+  theme: ChartTheme,
 ): Promise<EmbeddingLegend> {
   let stats = (
     await coordinator.query(
@@ -159,7 +161,7 @@ async function makeBinnedNumericColumn(
     )
   ).get(0) as any;
   let binning = inferBinning(stats);
-  let indexColumnName = `_ev_${column}_id`;
+  let indexColumnName = `__ev_${column}_id`;
 
   let expr: SQL.ExprNode = SQL.cast(SQL.column(column), "DOUBLE");
   expr = binning.scale.expr(expr, binning.scale.constant ?? 0);
@@ -207,7 +209,7 @@ async function makeBinnedNumericColumn(
   let fmt = d3.format(".6");
 
   if (minIndex != null && maxIndex != null) {
-    let colors = defaultOrdinalColors(maxIndex - minIndex + 1);
+    let colors = resolveOrdinalColors(theme, maxIndex - minIndex + 1);
     for (let index = minIndex; index <= maxIndex; index++) {
       let lowerBound = reverse(index * binning.binSize + binning.binStart);
       let upperBound = reverse((index + 1) * binning.binSize + binning.binStart);
@@ -229,7 +231,7 @@ async function makeBinnedNumericColumn(
       `);
     legend.push({
       label: "(null / nan / inf)",
-      color: "#aaaaaa",
+      color: theme.nullColor,
       predicate: SQL.isNull(binIndexExpr),
       count: index2Count.get(null) ?? 0,
     });
@@ -239,4 +241,30 @@ async function makeBinnedNumericColumn(
     indexColumn: indexColumnName,
     legend: legend,
   };
+}
+
+function resolveCategoryColors(theme: ChartTheme, length: number): string[] {
+  if (typeof theme.categoryColors == "function") {
+    return theme.categoryColors(length);
+  } else {
+    let result: string[] = [];
+    for (let i = 0; i < length; i++) {
+      result.push(theme.categoryColors[i % theme.categoryColors.length]);
+    }
+    return result;
+  }
+}
+
+function resolveOrdinalColors(theme: ChartTheme, length: number): string[] {
+  if (typeof theme.ordinalColors == "function") {
+    return theme.ordinalColors(length);
+  } else {
+    if (length == theme.ordinalColors.length) {
+      return theme.ordinalColors.slice();
+    } else {
+      // Re-interpolate
+      let interp = d3.interpolateRgbBasis(theme.ordinalColors);
+      return Array.from({ length: length }).map((_, i) => interp(i / (length - 1)));
+    }
+  }
 }
