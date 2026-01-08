@@ -11,6 +11,7 @@
   import { computeFieldStats, inferAggregate, type AggregateInfo, type FieldStats } from "../common/aggregate.js";
   import { resolveChartTheme } from "../common/theme.js";
   import type { CountPlotSpec } from "./types.js";
+  import { sortItems } from "./sortItems.js";
 
   interface State {
     selection?: string[];
@@ -48,7 +49,7 @@
   let chartData = $state.raw<ChartData | undefined>(undefined);
   let chartWidth = $state.raw(400);
 
-  let sortedItems = $derived(chartData ? sortItems(chartData.items, sortBy, sortOrder) : []);
+  let sortedItems = $derived(chartData ? sortItems(chartData.items, chartData.firstSpecialIndex, sortBy, sortOrder) : []);
 
   let maxCount = $derived(sortedItems.reduce((a, b) => Math.max(a, percentage ? b.selected : b.total), 0));
   let xScale = $derived(d3.scaleLinear([0, Math.max(1, maxCount)], [0, chartWidth - 250]));
@@ -57,27 +58,6 @@
   let xScaleAdjusted = $derived((v: number) => (v != 0 ? Math.max(1, xScale(v)) : 0));
 
   let theme = $derived(resolveChartTheme($colorScheme, $themeConfig));
-
-  function sortItems(
-    items: ChartData["items"],
-    sortBy: "total" | "selected" | undefined,
-    sortOrder: "asc" | "desc" | undefined,
-  ) {
-    // Split into regular items and special items (null, other)
-    let regularItems = items.filter((item) => !item.isSpecial);
-    let specialItems = items.filter((item) => item.isSpecial);
-
-    // Sort regular items
-    let sortField = sortBy ?? "total";
-    let order = sortOrder ?? "desc";
-    regularItems = regularItems.slice().sort((a, b) => {
-      let diff = a[sortField] - b[sortField];
-      return order === "asc" ? diff : -diff;
-    });
-
-    // Special items stay at the end, unsorted
-    return [...regularItems, ...specialItems];
-  }
 
   function initializeClient(coordinator: Coordinator, table: string, field: string, filter: Selection) {
     let stats: FieldStats | undefined = $state.raw(undefined);

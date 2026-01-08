@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "build": "./scripts/build.sh",
-    "test": "npm run test -w @embedding-atlas/density-clustering -w @embedding-atlas/umap-wasm -w @embedding-atlas/utils",
+    "test": "npm run test -w @embedding-atlas/density-clustering -w @embedding-atlas/umap-wasm -w @embedding-atlas/utils -w @embedding-atlas/viewer",
     "check": "npm run check -w @embedding-atlas/component -w @embedding-atlas/table -w @embedding-atlas/viewer -w @embedding-atlas/embedding-atlas -w @embedding-atlas/examples -w @embedding-atlas/backend",
     "check-format": "prettier -c . && uvx ruff check && uvx ruff format --check --exclude '*.ipynb'"
   },
@@ -25,5 +25,6 @@
   },
   "dependencies": {
     "svelte": "^5.43.3"
-  }
+  },
+  "packageManager": "pnpm@10.15.1+sha512.34e538c329b5553014ca8e8f4535997f96180a1d0f614339357449935350d924e22f8614682191264ec33d1462ac21561aff97f6bb18065351c162c7e8f6de67"
 }
