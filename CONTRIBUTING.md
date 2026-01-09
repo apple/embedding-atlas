@@ -7,7 +7,7 @@ Thank you for your interest in contributing to Embedding Atlas!
 If you find a bug or have a feature request, please open a GitHub issue. Try to include:
 
 - A clear and descriptive title
-- Steps to reproduce the problem, expected and actual behavior, and sample data (if applicable)
+- Steps to reproduce the problem, expected, and actual behavior, and sample data (if applicable)
 - Any relevant logs, screenshots, or code snippets
 
 Well-documented issues help us understand and address problems more effectively.
