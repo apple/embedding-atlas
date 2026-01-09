@@ -75,7 +75,7 @@ async function fetchWithProgress(
     res = await fetch(url, init);
   } catch (error) {
     throw new Error(
-      `Failed to fetch data from URL: This may be due to a network issue or the server blocking <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS" target="_blank">cross-origin requests (CORS)</a>. Check that the URL is valid and configured to allow access from this site.`,
+      `Failed to fetch data from URL: This may be due to a network issue or the server blocking <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS" target="_blank" class="underline">cross-origin requests (CORS)</a>. Check that the URL is valid and configured to allow access from this site.`,
     );
   }
 

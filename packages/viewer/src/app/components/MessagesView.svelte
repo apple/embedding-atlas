@@ -47,7 +47,7 @@
         {/if}
       </div>
       <div class="flex-1" class:text-red-400={m.error}>
-        {m.text}
+        {@html m.text}
       </div>
       {#if isLast}
         <div class="flex-none font-mono text-sm">
