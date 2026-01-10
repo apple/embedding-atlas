@@ -5,6 +5,7 @@
     progress?: number;
     progressText?: string;
     error?: boolean;
+    markdown?: boolean;
   }
 
   export function appendedMessages(target: Message[], message: Message): Message[] {
@@ -20,11 +21,21 @@
 
 <script lang="ts">
   import { IconError, IconSpinner } from "../../assets/icons.js";
+  import { marked } from "marked";
+  import DOMPurify from "dompurify";
 
   interface Props {
     messages?: Message[];
   }
   let { messages = [] }: Props = $props();
+
+  function renderText(m: Message): string {
+    if (m.markdown) {
+      const rawHtml = marked.parse(m.text, { async: false }) as string;
+      return DOMPurify.sanitize(rawHtml);
+    }
+    return m.text;
+  }
 </script>
 
 <div
@@ -47,7 +58,13 @@
         {/if}
       </div>
       <div class="flex-1" class:text-red-400={m.error}>
-        {@html m.text}
+        {#if m.markdown}
+          <div class="markdown-content">
+            {@html renderText(m)}
+          </div>
+        {:else}
+          {m.text}
+        {/if}
       </div>
       {#if isLast}
         <div class="flex-none font-mono text-sm">
@@ -62,3 +79,13 @@
     </div>
   {/each}
 </div>
+
+<style>
+  :global(.markdown-content p) {
+    display: inline;
+  }
+
+  :global(.markdown-content a) {
+    text-decoration: underline;
+  }
+</style>

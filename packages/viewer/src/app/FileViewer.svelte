@@ -31,11 +31,19 @@
   let hashParams = $state.raw<{ data?: string; settings?: any; state?: any }>({});
 
   function log(text: string, progress?: number, progressText?: string) {
-    messages = appendedMessages(messages, { text: text, progress: progress, progressText: progressText });
+    messages = appendedMessages(messages, {
+      text: text,
+      progress: progress,
+      progressText: progressText,
+    });
   }
 
-  function logError(text: string) {
-    messages = appendedMessages(messages, { text: text, error: true });
+  function logError(text: string | { markdown: boolean; message: string }) {
+    if (typeof text === "string") {
+      messages = appendedMessages(messages, { text: text, error: true });
+    } else {
+      messages = appendedMessages(messages, { text: text.message, error: true, markdown: text.markdown });
+    }
   }
 
   async function loadHashParams() {
@@ -81,7 +89,11 @@
       `);
     } catch (e: any) {
       stage = "messages";
-      logError(e.message);
+      if (e.markdown) {
+        logError(e);
+      } else {
+        logError(e.message);
+      }
       return;
     }
 
@@ -143,7 +155,11 @@
         initialState: hashParams.state,
       };
     } catch (e: any) {
-      logError(e.message);
+      if (e.markdown) {
+        logError(e);
+      } else {
+        logError(e.message);
+      }
       return;
     }
 
