@@ -13,7 +13,7 @@ export async function importDataTable(
   db: AsyncDuckDB,
   coordinator: Coordinator,
   table: string,
-  onProgress?: (text: string, progress?: number, progressText?: string) => void,
+  onProgress?: (text: string, progress?: number, progressText?: string, markdown?: boolean) => void,
 ) {
   let index = 0;
   for (let input of inputs) {
@@ -31,6 +31,9 @@ export async function importDataTable(
         { referrerPolicy: "no-referrer" },
         (n: number) => {
           onProgress?.("Loading data from URL...", undefined, formatFileSize(n));
+        },
+        (text: string, markdown?: boolean) => {
+          onProgress?.(text, undefined, undefined, markdown);
         },
       );
       data = await fileContents.arrayBuffer();
@@ -68,17 +71,18 @@ async function fetchWithProgress(
   url: string,
   init?: RequestInit,
   onProgress?: (bytesLoaded: number) => void,
+  onInfo?: (text: string, markdown?: boolean) => void,
 ): Promise<Blob> {
   let res: Response;
 
   try {
     res = await fetch(url, init);
   } catch (error) {
-    throw {
-      markdown: true,
-      message:
-        "Failed to fetch data from URL: This may be due to a network issue or the server blocking [cross-origin requests (CORS)](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS). Check that the URL is valid and configured to allow access from this site.",
-    };
+    onInfo?.(
+      "Could not fetch data from URL, which may be due to a network issue or the server blocking [cross-origin requests (CORS)](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS). Check that the URL is valid and configured to allow access from this site.",
+      true,
+    );
+    throw new Error("Failed to fetch data from URL.");
   }
 
   if (!res.ok) {

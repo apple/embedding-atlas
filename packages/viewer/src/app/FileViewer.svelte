@@ -30,11 +30,12 @@
   let describe: { column_name: string; column_type: string }[] = $state.raw([]);
   let hashParams = $state.raw<{ data?: string; settings?: any; state?: any }>({});
 
-  function log(text: string, progress?: number, progressText?: string) {
+  function log(text: string, progress?: number, progressText?: string, markdown?: boolean) {
     messages = appendedMessages(messages, {
       text: text,
       progress: progress,
       progressText: progressText,
+      markdown: markdown,
     });
   }
 
@@ -89,11 +90,7 @@
       `);
     } catch (e: any) {
       stage = "messages";
-      if (e.markdown) {
-        logError(e);
-      } else {
-        logError(e.message);
-      }
+      logError(e.message);
       return;
     }
 
@@ -155,11 +152,7 @@
         initialState: hashParams.state,
       };
     } catch (e: any) {
-      if (e.markdown) {
-        logError(e);
-      } else {
-        logError(e.message);
-      }
+      logError(e.message);
       return;
     }
 

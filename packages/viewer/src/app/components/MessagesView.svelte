@@ -39,14 +39,14 @@
 </script>
 
 <div
-  class="flex flex-col gap-1 p-4 w-[420px] border rounded-md bg-slate-50 border-slate-300 dark:bg-slate-900 dark:border-slate-700"
+  class="flex flex-col gap-1 p-4 w-[420px] border rounded-md bg-slate-50 border-slate-300 dark:bg-slate-900 dark:border-slate-700 select-text"
 >
   {#each messages as m, i}
     {@const isLast = i == messages.length - 1}
     <div
       class="flex items-start leading-5 {isLast
-        ? 'text-slate-500 dark:text-slate-400'
-        : 'text-slate-300 dark:text-slate-600'}"
+        ? 'text-slate-700 dark:text-slate-300'
+        : 'text-slate-500 dark:text-slate-400'}"
     >
       <div class="w-7 flex-none">
         {#if isLast || m.error}
