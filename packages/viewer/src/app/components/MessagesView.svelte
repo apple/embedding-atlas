@@ -21,8 +21,7 @@
 
 <script lang="ts">
   import { IconError, IconSpinner } from "../../assets/icons.js";
-  import { marked } from "marked";
-  import DOMPurify from "dompurify";
+  import { renderMarkdown } from "../../renderers/markdown.js";
 
   interface Props {
     messages?: Message[];
@@ -31,8 +30,7 @@
 
   function renderText(m: Message): string {
     if (m.markdown) {
-      const rawHtml = marked.parse(m.text, { async: false }) as string;
-      return DOMPurify.sanitize(rawHtml);
+      return renderMarkdown(m.text);
     }
     return m.text;
   }
