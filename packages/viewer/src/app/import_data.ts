@@ -4,6 +4,8 @@ import type { AsyncDuckDB } from "@duckdb/duckdb-wasm";
 import type { Coordinator } from "@uwdata/mosaic-core";
 import { literal } from "@uwdata/mosaic-sql";
 
+import { LoggableError, type Logger } from "./logging.js";
+
 function fetchableUrl(url: string) {
   return url;
 }
@@ -13,26 +15,20 @@ export async function importDataTable(
   db: AsyncDuckDB,
   coordinator: Coordinator,
   table: string,
-  onProgress?: (text: string, progress?: number, progressText?: string) => void,
+  logger?: Logger,
 ) {
   let index = 0;
   for (let input of inputs) {
     let data: ArrayBuffer;
     let filename: string;
     if (input instanceof File) {
-      onProgress?.("Loading data from file...");
+      logger?.info("Loading data from file...");
       filename = input.name;
       data = await input.arrayBuffer();
     } else if ("url" in input) {
-      onProgress?.("Loading data from URL...");
+      logger?.info("Loading data from URL...");
       filename = input.url;
-      let fileContents = await fetchWithProgress(
-        fetchableUrl(input.url),
-        { referrerPolicy: "no-referrer" },
-        (n: number) => {
-          onProgress?.("Loading data from URL...", undefined, formatFileSize(n));
-        },
-      );
+      let fileContents = await fetchWithProgress(fetchableUrl(input.url), { referrerPolicy: "no-referrer" }, logger);
       data = await fileContents.arrayBuffer();
     } else {
       throw new Error("invalid input type");
@@ -64,18 +60,15 @@ export async function importDataTable(
   }
 }
 
-async function fetchWithProgress(
-  url: string,
-  init?: RequestInit,
-  onProgress?: (bytesLoaded: number) => void,
-): Promise<Blob> {
+async function fetchWithProgress(url: string, init?: RequestInit, logger?: Logger): Promise<Blob> {
   let res: Response;
 
   try {
     res = await fetch(url, init);
   } catch (error) {
-    throw new Error(
-      `Failed to fetch data from URL: This may be due to a network issue or the server blocking cross-origin requests (CORS). Check that the URL is valid and configured to allow access from this site.`,
+    throw new LoggableError(
+      `Failed to fetch data from URL: This may be due to a network issue or the server blocking [cross-origin requests (CORS)](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS). Check that the URL is valid and configured to allow access from this site.`,
+      { markdown: true },
     );
   }
 
@@ -106,7 +99,7 @@ async function fetchWithProgress(
         bytesLoaded += value.length;
       }
 
-      onProgress?.(bytesLoaded);
+      logger?.info("Loading data from URL...", { progressText: formatFileSize(bytesLoaded) });
     }
 
     return new Blob(chunks);

@@ -6,7 +6,7 @@
 
   import EmbeddingAtlas from "../EmbeddingAtlas.svelte";
   import FileUpload from "./components/FileUpload.svelte";
-  import MessagesView, { appendedMessages, type Message } from "./components/MessagesView.svelte";
+  import MessagesView from "./components/MessagesView.svelte";
   import SettingsView, { type Settings } from "./components/SettingsView.svelte";
   import URLInput from "./components/URLInput.svelte";
 
@@ -20,23 +20,18 @@
   import { exportMosaicSelection, type ExportFormat } from "../utils/mosaic_exporter.js";
   import { getQueryPayload, setQueryPayload } from "../utils/query_payload.js";
   import { importDataTable } from "./import_data.js";
+  import { Logger } from "./logging.js";
 
   const coordinator = defaultCoordinator();
   const databaseInitialized = initializeDatabase(coordinator, "wasm", null);
 
   let stage: "load-data" | "columns" | "ready" | "messages" = $state.raw("load-data");
-  let messages = $state.raw<Message[]>([]);
+  let logger = new Logger();
+  let messages = logger.messages;
+
   let props = $state<Omit<EmbeddingAtlasProps, "coordinator"> | undefined>(undefined);
   let describe: { column_name: string; column_type: string }[] = $state.raw([]);
   let hashParams = $state.raw<{ data?: string; settings?: any; state?: any }>({});
-
-  function log(text: string, progress?: number, progressText?: string) {
-    messages = appendedMessages(messages, { text: text, progress: progress, progressText: progressText });
-  }
-
-  function logError(text: string) {
-    messages = appendedMessages(messages, { text: text, error: true });
-  }
 
   async function loadHashParams() {
     hashParams = {
@@ -65,11 +60,11 @@
   async function loadData(inputs: (File | { url: string })[]) {
     stage = "messages";
     try {
-      log("Initializing database...");
+      logger.info("Initializing database...");
       await databaseInitialized;
 
       let db = await (coordinator.databaseConnector()! as DuckDBWASMConnector).getDuckDB();
-      await importDataTable(inputs, db, coordinator, "dataset", log);
+      await importDataTable(inputs, db, coordinator, "dataset", logger);
 
       let describeResult = await coordinator.query(`DESCRIBE TABLE dataset`);
       describe = Array.from(describeResult) as typeof describe;
@@ -79,9 +74,9 @@
         CREATE OR REPLACE SEQUENCE __row_index_sequence__ MINVALUE 0 START 0;
         ALTER TABLE dataset ADD COLUMN IF NOT EXISTS __row_index__ INTEGER DEFAULT nextval('__row_index_sequence__');
       `);
-    } catch (e: any) {
+    } catch (e: unknown) {
       stage = "messages";
-      logError(e.message);
+      logger.exception(e);
       return;
     }
 
@@ -126,7 +121,7 @@
           yColumn: y,
           model: model,
           callback: (message, progress) => {
-            log(`Embedding: ${message}`, progress);
+            logger.info(`Embedding: ${message}`, { progress: progress });
           },
         });
         projectionColumns = { x, y };
@@ -142,8 +137,8 @@
         },
         initialState: hashParams.state,
       };
-    } catch (e: any) {
-      logError(e.message);
+    } catch (e: unknown) {
+      logger.exception(e);
       return;
     }
 
@@ -201,7 +196,7 @@
       {:else if stage == "columns"}
         <SettingsView columns={describe} onConfirm={(settings) => loadSettings(settings)} />
       {:else if stage == "messages"}
-        <MessagesView messages={messages} />
+        <MessagesView messages={$messages} />
       {/if}
     </div>
   {/if}

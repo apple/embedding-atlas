@@ -69,6 +69,7 @@
       <a
         href={resolvedTheme.brandingLink.href}
         target="_blank"
+        rel="noopener noreferrer"
         style:color="currentColor"
         style:text-decoration="underline"
       >

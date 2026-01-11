@@ -28,7 +28,7 @@
 
 {#if rendererClass == null}
   {#if isLink(value)}
-    <a href={value} class="underline" target="_blank">{value}</a>
+    <a href={value} class="underline" target="_blank" rel="noopener noreferrer">{value}</a>
   {:else if isImage(value)}
     <img src={imageToDataUrl(value)} alt="" referrerpolicy="no-referrer" class="max-w-24 max-h-24" />
   {:else}

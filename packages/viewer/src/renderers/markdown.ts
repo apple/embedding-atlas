@@ -3,6 +3,14 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 
+// Add a hook to make all links open a new window
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+  if ("target" in node) {
+    node.setAttribute("target", "_blank");
+    node.setAttribute("rel", "noopener noreferrer");
+  }
+});
+
 export function renderMarkdown(content: string): string {
   let html = marked(content, { async: false, gfm: true });
   return DOMPurify.sanitize(html);
