@@ -7,14 +7,8 @@
   interface Props {
     messages?: LogMessage[];
   }
-  let { messages = [] }: Props = $props();
 
-  function renderText(m: LogMessage): string {
-    if (m.markdown) {
-      return renderMarkdown(m.text);
-    }
-    return m.text;
-  }
+  let { messages = [] }: Props = $props();
 </script>
 
 <div
@@ -39,7 +33,7 @@
       <div class="flex-1" class:text-red-400={m.error}>
         {#if m.markdown}
           <div class="markdown-content">
-            {@html renderText(m)}
+            {@html renderMarkdown(m.text)}
           </div>
         {:else}
           {m.text}
