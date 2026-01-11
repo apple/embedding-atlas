@@ -1,34 +1,15 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
-<script lang="ts" module>
-  export interface Message {
-    text: string;
-    progress?: number;
-    progressText?: string;
-    error?: boolean;
-    markdown?: boolean;
-  }
-
-  export function appendedMessages(target: Message[], message: Message): Message[] {
-    if (target.length > 0 && target[target.length - 1].text == message.text) {
-      let r = target.slice();
-      r[r.length - 1] = message;
-      return r;
-    } else {
-      return [...target, message];
-    }
-  }
-</script>
-
 <script lang="ts">
   import { IconError, IconSpinner } from "../../assets/icons.js";
   import { renderMarkdown } from "../../renderers/markdown.js";
+  import type { LogMessage } from "../logging.js";
 
   interface Props {
-    messages?: Message[];
+    messages?: LogMessage[];
   }
   let { messages = [] }: Props = $props();
 
-  function renderText(m: Message): string {
+  function renderText(m: LogMessage): string {
     if (m.markdown) {
       return renderMarkdown(m.text);
     }
@@ -43,8 +24,8 @@
     {@const isLast = i == messages.length - 1}
     <div
       class="flex items-start leading-5 {isLast
-        ? 'text-slate-700 dark:text-slate-300'
-        : 'text-slate-500 dark:text-slate-400'}"
+        ? 'text-slate-500 dark:text-slate-400'
+        : 'text-slate-300 dark:text-slate-600'}"
     >
       <div class="w-7 flex-none">
         {#if isLast || m.error}
