@@ -15,6 +15,7 @@ export class URLRenderer {
       a.innerText = props.value;
       a.className = "underline";
       a.target = "_blank";
+      a.rel = "noopener noreferrer";
       this.element.replaceChildren(a);
     } else {
       this.element.innerText = `(null)`;

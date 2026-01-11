@@ -32,7 +32,7 @@
       </div>
       <div class="flex-1" class:text-red-400={m.error}>
         {#if m.markdown}
-          <div class="markdown-content-inline">
+          <div class="content-markdown">
             {@html renderMarkdown(m.text)}
           </div>
         {:else}
@@ -54,11 +54,11 @@
 </div>
 
 <style>
-  :global(.markdown-content-inline p) {
+  .content-markdown :global(p) {
     display: inline;
   }
 
-  :global(.markdown-content-inline a) {
+  .content-markdown :global(a) {
     text-decoration: underline;
   }
 </style>
