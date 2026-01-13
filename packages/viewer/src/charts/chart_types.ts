@@ -4,7 +4,6 @@ import type { Component } from "svelte";
 
 import ContentViewer from "./basic/ContentViewer.svelte";
 import CountPlot from "./basic/CountPlot.svelte";
-import CountPlotList from "./basic/CountPlotList.svelte";
 import Markdown from "./basic/Markdown.svelte";
 import Placeholder from "./basic/Placeholder.svelte";
 import Predicates from "./basic/Predicates.svelte";
@@ -82,7 +81,6 @@ registerChartType("builder", Builder);
 
 // Builtin chart types
 registerChartType("count-plot", CountPlot);
-registerChartType("count-plot-list", CountPlotList);
 registerChartType("embedding", Embedding);
 registerChartType("predicates", Predicates);
 registerChartType("table", Table);
@@ -111,8 +109,8 @@ registerChartBuilder({
     if (x.type == "discrete[]") {
       return {
         title: x.name,
-        type: "count-plot-list",
-        data: { field: x.name },
+        type: "count-plot",
+        data: { field: x.name, isList: true },
       };
     } else {
       return {

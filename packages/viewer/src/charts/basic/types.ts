@@ -1,13 +1,33 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import type { SQLField } from "../spec/spec.js";
+
 export interface CountPlotSpec {
-  type: "count-plot" | "count-plot-list";
+  type: "count-plot";
   title?: string;
+
   data: {
-    field: string;
+    /** The data field */
+    field: SQLField;
+
+    /** Indicate if the field contains list[str] data, default false */
+    isList?: boolean;
   };
-  expanded?: boolean;
-  percentage?: boolean;
+
+  /** The max number of categories to show, default 10 */
+  limit?: number;
+
+  /** Labeling method, '%': percentage, '#': count, '#/#': selected count over total count */
+  labels?: "%" | "#" | "#/#";
+
+  /** Order the categories by total count, selected count, alphabetical, or custom order, default 'total-descending' */
+  order?:
+    | "total-descending"
+    | "total-ascending"
+    | "selected-descending"
+    | "selected-ascending"
+    | "alphabetical"
+    | string[];
 }
 
 export interface PredicatesSpec {
