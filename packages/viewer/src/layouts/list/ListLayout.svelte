@@ -67,6 +67,7 @@
 
   let tableHeight = $state(300);
   let panelWidth = $state(400);
+  let panelContainerWidth = $state(400);
 
   let sections = $derived.by(deepMemo(() => getSections(charts)));
 
@@ -168,13 +169,12 @@
     {/if}
     <!-- Right side: charts -->
     {#if hasChart}
-      {@const chartsWidth = hasEmbedding || hasTable ? panelWidth : containerWidth}
       <div
         class="h-full overflow-x-hidden overflow-y-scroll"
-        style:width="{chartsWidth}px"
+        style:width="{hasEmbedding || hasTable ? panelWidth : containerWidth}px"
         transition:slide={{ axis: "x" }}
       >
-        <div class="flex flex-row flex-wrap gap-2" style:width="{chartsWidth}px">
+        <div class="flex flex-row flex-wrap gap-2" bind:clientWidth={panelContainerWidth}>
           <button
             class="bg-white dark:bg-black rounded-md flex flex-col justify-center items-center gap-2 p-2 w-full text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 select-none"
             onclick={() => {
@@ -190,7 +190,7 @@
             {@const isVisible = layoutState.chartVisibility?.[id] ?? true}
             <div
               class="bg-white dark:bg-black rounded-md flex flex-col group"
-              style:width="{chartWidth(chartsWidth, 500)}px"
+              style:width="{chartWidth(panelContainerWidth, 500)}px"
               animate:flip={{ duration: 300 }}
               out:slide
             >
