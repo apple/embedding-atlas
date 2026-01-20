@@ -2,6 +2,7 @@
 
 """Command line interface."""
 
+import importlib
 import logging
 import pathlib
 import socket
@@ -49,8 +50,18 @@ def determine_and_load_data(filename: str, splits: list[str] | None = None):
     return df
 
 
+def query_dataframe(query: str, data: pd.DataFrame) -> pd.DataFrame:
+    import duckdb
+
+    _ = data  # used in query
+    return duckdb.sql(query).df()
+
+
 def load_datasets(
-    inputs: list[str], splits: list[str] | None = None, sample: int | None = None
+    inputs: list[str],
+    splits: list[str] | None = None,
+    query: str | None = None,
+    sample: int | None = None,
 ) -> pd.DataFrame:
     existing_column_names = set()
     dataframes = []
@@ -66,6 +77,9 @@ def load_datasets(
         df[file_name_column] = fn
 
     df = pd.concat(dataframes)
+
+    if query is not None:
+        df = query_dataframe(query, df)
 
     if sample:
         df = df.sample(n=sample, axis=0, random_state=np.random.RandomState(42))
@@ -97,6 +111,12 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
             if s.connect_ex((host, port)) != 0:
                 return port
     raise RuntimeError("No available ports found in the given range")
+
+
+def import_modules(names: list[str]):
+    """Import the given list of modules."""
+    for name in names:
+        importlib.import_module(name)
 
 
 @click.command()
@@ -181,10 +201,16 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
     help='Column containing pre-computed nearest neighbors in format: {"ids": [n1, n2, ...], "distances": [d1, d2, ...]}. IDs should be zero-based row indices.',
 )
 @click.option(
+    "--query",
+    default=None,
+    type=str,
+    help="Use the result of the given SQL query as input data. In the query, you may refer to the original data as 'data'.",
+)
+@click.option(
     "--sample",
     default=None,
     type=int,
-    help="Number of random samples to draw from the dataset. Useful for large datasets.",
+    help="Number of random samples to draw from the dataset. Useful for large datasets. If query is specified, sampling applies after the query.",
 )
 @click.option(
     "--umap-n-neighbors",
@@ -233,6 +259,13 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
     help="Export the visualization as a standalone web application to the specified ZIP file and exit.",
 )
 @click.option(
+    "--with",
+    "with_modules",
+    default=[],
+    multiple=True,
+    help="Import the given Python module before loading data. For example, you can use this to import fsspec filesystems. Can be specified multiple times to import multiple modules.",
+)
+@click.option(
     "--point-size",
     type=float,
     default=None,
@@ -242,13 +275,13 @@ def find_available_port(start_port: int, max_attempts: int = 10, host="localhost
     "--stop-words",
     type=str,
     default=None,
-    help="Path to a file containing stop words to exclude from the text embedding. The file should be a data frame with column 'word'",
+    help="Path to a file containing stop words to exclude from the text embedding. The file should be a table with column 'word'",
 )
 @click.option(
     "--labels",
     type=str,
     default=None,
-    help="Path to a file containing labels for the embedding view. The file should be a data frame with columns 'x', 'y', 'text', and optionally 'level' and 'priority'",
+    help="Path to a file containing labels for the embedding view. The file should be a table with columns 'x', 'y', 'text', and optionally 'level' and 'priority'",
 )
 @click.version_option(version=__version__, package_name="embedding_atlas")
 def main(
@@ -269,6 +302,7 @@ def main(
     x_column: str | None,
     y_column: str | None,
     neighbors_column: str | None,
+    query: str | None,
     sample: int | None,
     umap_n_neighbors: int | None,
     umap_min_dist: int | None,
@@ -280,6 +314,7 @@ def main(
     port: int,
     enable_auto_port: bool,
     export_application: str | None,
+    with_modules: list[str] | None,
     point_size: float | None,
     stop_words: str | None,
     labels: str | None,
@@ -289,7 +324,10 @@ def main(
         format="%(levelname)s: (%(name)s) %(message)s",
     )
 
-    df = load_datasets(inputs, splits=split, sample=sample)
+    if with_modules is not None:
+        import_modules(with_modules)
+
+    df = load_datasets(inputs, splits=split, query=query, sample=sample)
 
     print(df)
 
@@ -352,7 +390,7 @@ def main(
                     y=y_column,
                     neighbors=new_neighbors_column,
                     model=model,
-                    text_projector=text_projector,
+                    text_projector=text_projector,  # type: ignore
                     trust_remote_code=trust_remote_code,
                     batch_size=batch_size,
                     umap_args=umap_args,
