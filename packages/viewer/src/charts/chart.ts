@@ -89,6 +89,9 @@ export interface ChartContext {
   /** The current highlight point. When this changes, supported views will highlight the given point. */
   highlight: Writable<RowID | null>;
 
+  /** Multiple highlight points. When set, supported views will show overlay circles at these points. */
+  highlightIds?: Readable<RowID[] | null>;
+
   /** Configuration for the embedding view. See docs for the EmbeddingView. */
   embeddingViewConfig?: EmbeddingViewConfig | null;
 
