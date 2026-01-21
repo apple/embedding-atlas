@@ -183,6 +183,12 @@
           return;
         }
         let { total, totalSelected } = rows[0];
+        if (total == null) {
+          total = 0;
+        }
+        if (totalSelected == null) {
+          totalSelected = 0;
+        }
         let data: ChartData = {
           items: [],
           sumSelected: totalSelected,
@@ -192,8 +198,8 @@
           if (row.value != null && data.items.length < limit) {
             data.items.push({
               value: row.value,
-              count: row.count,
-              countSelected: row.countSelected,
+              count: row.count ?? 0,
+              countSelected: row.countSelected ?? 0,
             });
           }
         }
@@ -208,8 +214,8 @@
           if (row.value == null) {
             data.items.push({
               value: NULL_VALUE,
-              count: row.count,
-              countSelected: row.countSelected,
+              count: row.count ?? 0,
+              countSelected: row.countSelected ?? 0,
               special: "null",
             });
           }
@@ -458,6 +464,7 @@
                 { value: "selected-descending", label: "↓ Selected" },
                 { value: "total-ascending", label: "↑ Total" },
                 { value: "selected-ascending", label: "↑ Selected" },
+                { value: "alphabetical", label: "↓ A-Z" },
               ]}
               value={order ?? "total-descending"}
               onChange={(v) => onSpecChange({ order: v })}
