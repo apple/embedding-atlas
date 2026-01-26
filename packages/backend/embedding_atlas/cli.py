@@ -3,7 +3,6 @@
 """Command line interface."""
 
 import importlib
-import logging
 import pathlib
 import socket
 from pathlib import Path
