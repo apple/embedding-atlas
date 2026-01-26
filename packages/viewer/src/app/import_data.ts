@@ -1,67 +1,106 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import type { AsyncDuckDB } from "@duckdb/duckdb-wasm";
-import type { Coordinator } from "@uwdata/mosaic-core";
+import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import { literal } from "@uwdata/mosaic-sql";
 
+import { resolveAppConfig } from "./app_config.js";
 import { LoggableError, type Logger } from "./logging.js";
-
-function fetchableUrl(url: string) {
-  return url;
-}
 
 export async function importDataTable(
   inputs: (File | { url: string })[],
   db: AsyncDuckDB,
-  coordinator: Coordinator,
+  connection: AsyncDuckDBConnection,
   table: string,
   logger?: Logger,
 ) {
-  let index = 0;
-  for (let input of inputs) {
-    let data: ArrayBuffer;
-    let filename: string;
+  let config = resolveAppConfig();
+  for (let [index, input] of inputs.entries()) {
     if (input instanceof File) {
+      // File
       logger?.info("Loading data from file...");
-      filename = input.name;
-      data = await input.arrayBuffer();
+      let filename = input.name;
+      let data = new Uint8Array(await input.arrayBuffer());
+      await importFileIntoTable(index, inputs.length, data, filename, table, db, connection);
     } else if ("url" in input) {
-      logger?.info("Loading data from URL...");
-      filename = input.url;
-      let fileContents = await fetchWithProgress(fetchableUrl(input.url), { referrerPolicy: "no-referrer" }, logger);
-      data = await fileContents.arrayBuffer();
+      // Try invoke the function from the config.
+      let result = await config.loadDataFromUrl?.(input.url, {
+        db: db,
+        connection: connection,
+        table: table,
+        fetch: async (url) => {
+          let contents = await fetchWithProgress(url, { referrerPolicy: "no-referrer" }, logger);
+          return new Uint8Array(await contents.arrayBuffer());
+        },
+        logger: logger,
+      });
+
+      if (result === true) {
+        // Data already imported into table.
+        continue;
+      }
+
+      let data: Uint8Array<ArrayBuffer>;
+      let filename: string;
+
+      if (result != undefined) {
+        if ("data" in result) {
+          data = result.data;
+          filename = result.filename ?? input.url;
+        } else if ("url" in result) {
+          let fileContents = await fetchWithProgress(result.url, { referrerPolicy: "no-referrer" }, logger);
+          data = new Uint8Array(await fileContents.arrayBuffer());
+          filename = result.filename ?? input.url;
+        } else {
+          throw new Error("invalid result from loadDataFromUrl");
+        }
+      } else {
+        let fileContents = await fetchWithProgress(input.url, { referrerPolicy: "no-referrer" }, logger);
+        data = new Uint8Array(await fileContents.arrayBuffer());
+        filename = input.url;
+      }
+      await importFileIntoTable(index, inputs.length, data, filename, table, db, connection);
     } else {
       throw new Error("invalid input type");
     }
-
-    // Register the data as a temporary file
-    let tempFile = `data-${index}` + extensionFromURL(filename);
-    await db.registerFileBuffer(tempFile, new Uint8Array(data));
-
-    // Load data into the table, if multiple inputs are used, add a filename column for the input name.
-    if (inputs.length == 1) {
-      await coordinator.query(`CREATE TABLE ${table} AS SELECT * FROM ${literal(tempFile)}`);
-    } else {
-      if (index == 0) {
-        await coordinator.query(
-          `CREATE TABLE ${table} AS SELECT *, ${literal(filename)} AS filename FROM ${literal(tempFile)}`,
-        );
-      } else {
-        await coordinator.query(
-          `INSERT INTO ${table} SELECT *, ${literal(filename)} AS filename FROM ${literal(tempFile)}`,
-        );
-      }
-    }
-
-    // Delete the temporary file
-    await db.dropFile(tempFile);
-
-    index += 1;
   }
+}
+
+async function importFileIntoTable(
+  index: number,
+  count: number,
+  data: Uint8Array<ArrayBuffer>,
+  filename: string,
+  table: string,
+  db: AsyncDuckDB,
+  connection: AsyncDuckDBConnection,
+) {
+  // Register the data as a temporary file
+  let tempFile = `data-${index}` + extensionFromURL(filename);
+  await db.registerFileBuffer(tempFile, data);
+
+  // Load data into the table, if multiple inputs are used, add a filename column for the input name.
+  if (count == 1) {
+    await connection.query(`CREATE TABLE ${table} AS SELECT * FROM ${literal(tempFile)}`);
+  } else {
+    if (index == 0) {
+      await connection.query(
+        `CREATE TABLE ${table} AS SELECT *, ${literal(filename)} AS filename FROM ${literal(tempFile)}`,
+      );
+    } else {
+      await connection.query(
+        `INSERT INTO ${table} SELECT *, ${literal(filename)} AS filename FROM ${literal(tempFile)}`,
+      );
+    }
+  }
+
+  // Delete the temporary file
+  await db.dropFile(tempFile);
 }
 
 async function fetchWithProgress(url: string, init?: RequestInit, logger?: Logger): Promise<Blob> {
   let res: Response;
+
+  let msg = logger?.info("Loading data from URL...");
 
   try {
     res = await fetch(url, init);
@@ -84,11 +123,14 @@ async function fetchWithProgress(url: string, init?: RequestInit, logger?: Logge
     );
   }
 
+  const UPDATE_INTERVAL_MS = 200;
+
   try {
     let reader = res.body.getReader();
 
     let chunks: Uint8Array<ArrayBuffer>[] = [];
     let bytesLoaded = 0;
+    let lastUpdateTime = 0;
 
     while (true) {
       let { done, value } = await reader.read();
@@ -99,8 +141,14 @@ async function fetchWithProgress(url: string, init?: RequestInit, logger?: Logge
         bytesLoaded += value.length;
       }
 
-      logger?.info("Loading data from URL...", { progressText: formatFileSize(bytesLoaded) });
+      let now = new Date().getTime();
+      if (now - lastUpdateTime >= UPDATE_INTERVAL_MS) {
+        msg?.update({ progressText: formatFileSize(bytesLoaded) });
+        lastUpdateTime = now;
+      }
     }
+
+    msg?.update({ progressText: formatFileSize(bytesLoaded) });
 
     return new Blob(chunks);
   } catch (_) {
@@ -158,8 +206,14 @@ function extensionFromURL(url: string) {
   return dot > 0 ? filename.slice(dot) : null;
 }
 
-function formatFileSize(bytes: number, decimals = 2): string {
-  let units = ["B", "KB", "MB", "GB"];
+function formatFileSize(bytes: number, decimals = 1): string {
+  let units: [string, number][] = [
+    ["B", 0],
+    ["KB", 0],
+    ["MB", 1],
+    ["GB", 2],
+  ];
+
   let base = 1000;
 
   let value = bytes;
@@ -170,9 +224,7 @@ function formatFileSize(bytes: number, decimals = 2): string {
     unitIndex++;
   }
 
-  let formatted = unitIndex === 0 ? value.toString() : value.toFixed(decimals);
-
-  return `${formatted} ${units[unitIndex]}`;
+  return `${value.toFixed(units[unitIndex][1])} ${units[unitIndex][0]}`;
 }
 
 function httpErrorStatusText(code: number): string {

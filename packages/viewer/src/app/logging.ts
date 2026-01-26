@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import { writable, type Writable } from "svelte/store";
 
 /** A log message for the data importing UI */
@@ -9,38 +10,52 @@ export interface LogMessage {
   error?: boolean;
 }
 
+export interface MessageHandle {
+  update: (value: Partial<LogMessage>) => void;
+}
+
 export class Logger {
-  messages: Writable<LogMessage[]>;
+  messages: Writable<(LogMessage & { _id: string })[]>;
 
   constructor() {
     this.messages = writable([]);
   }
 
-  private append(message: LogMessage) {
-    this.messages.update((target) => {
-      if (target.length > 0 && target[target.length - 1].text == message.text) {
-        return [...target.slice(0, target.length - 1), message];
-      } else {
-        return [...target, message];
-      }
-    });
+  private append(message: LogMessage): MessageHandle {
+    let id = nanoid();
+
+    this.messages.update((target) => [...target, { ...message, _id: id }]);
+
+    return {
+      update: (value) => {
+        this.messages.update((target) => {
+          return target.map((msg) => {
+            if (msg._id == id) {
+              return { ...msg, ...value };
+            } else {
+              return msg;
+            }
+          });
+        });
+      },
+    };
   }
 
-  info(text: string, options: Omit<LogMessage, "text"> = {}) {
-    this.append({ text: text, ...options });
+  info(text: string, options: Omit<LogMessage, "text"> = {}): MessageHandle {
+    return this.append({ text: text, ...options });
   }
 
-  error(text: string, options: Omit<LogMessage, "text"> = {}) {
-    this.append({ text: text, ...options, error: true });
+  error(text: string, options: Omit<LogMessage, "text"> = {}): MessageHandle {
+    return this.append({ text: text, ...options, error: true });
   }
 
-  exception(exception: unknown) {
+  exception(exception: unknown): MessageHandle {
     if (exception instanceof LoggableError) {
-      this.append({ text: exception.message, ...exception.loggerOptions, error: true });
+      return this.append({ text: exception.message, ...exception.loggerOptions, error: true });
     } else if (exception instanceof Error) {
-      this.append({ text: exception.message, error: true });
+      return this.append({ text: exception.message, error: true });
     } else {
-      this.append({ text: String(exception), error: true });
+      return this.append({ text: String(exception), error: true });
     }
   }
 }

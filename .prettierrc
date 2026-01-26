@@ -8,6 +8,12 @@
         "parser": "svelte",
         "svelteAllowShorthand": false
       }
+    },
+    {
+      "files": "examples.data.ts",
+      "options": {
+        "printWidth": 1000000
+      }
     }
   ]
 }

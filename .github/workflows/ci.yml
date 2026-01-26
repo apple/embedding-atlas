@@ -54,17 +54,15 @@ jobs:
         run: |
           npm ci
           cd packages/backend && uv sync --frozen
-          df -lh
 
       - uses: actions/cache@v5
-        id: cache-demo-data
+        id: cache-files
         with:
-          path: packages/docs/demo-data
-          key: ${{ runner.os }}-${{ hashFiles('packages/docs/generate_demo_data.py') }}
+          path: ~/.cache/embedding_atlas
+          key: ${{ runner.os }}
 
-      - name: Generate demo data
-        if: steps.cache-demo-data.outputs.cache-hit != 'true'
-        run: cd packages/docs && uv run --project ../backend python generate_demo_data.py
+      - name: Generate cached demo data
+        run: cd packages/docs && npm run generate_cache
 
       - name: Build WASM modules
         run: ./scripts/build_wasm.sh

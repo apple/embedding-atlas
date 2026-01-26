@@ -120,14 +120,14 @@ def _project_text_with_litellm(
     model: str,
     args: dict | None = None,
 ) -> np.ndarray:
-    from litellm import EmbeddingResponse, aembedding, embedding
+    from litellm import aembedding, embedding
 
     default_args = {
         "sync": False,
     }
     merged_args = {**default_args, **(args or {})}
 
-    def run_sync() -> list[EmbeddingResponse]:
+    def run_sync() -> list:
         # Process batches synchronously
         return [
             embedding(
@@ -138,10 +138,10 @@ def _project_text_with_litellm(
             for i in range(0, len(texts), batch_size)
         ]
 
-    def run_async() -> list[EmbeddingResponse]:
+    def run_async() -> list:
         import asyncio
 
-        async def run_async_coro() -> list[EmbeddingResponse]:
+        async def run_async_coro() -> list:
             # Create coroutines for each batch for asynchronous processing
             response_coroutines = [
                 aembedding(
@@ -330,6 +330,7 @@ def _find_text_projector_callback(name: str) -> TextProjectorCallback:
 
 def compute_text_projection(
     data_frame: pd.DataFrame,
+    *,
     text: str,
     x: str = "projection_x",
     y: str = "projection_y",
@@ -417,6 +418,7 @@ def compute_text_projection(
 
 def compute_vector_projection(
     data_frame: pd.DataFrame,
+    *,
     vector: str,
     x: str = "projection_x",
     y: str = "projection_y",
@@ -475,6 +477,7 @@ def compute_vector_projection(
 
 def compute_image_projection(
     data_frame: pd.DataFrame,
+    *,
     image: str,
     x: str = "projection_x",
     y: str = "projection_y",

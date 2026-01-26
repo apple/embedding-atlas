@@ -3,4 +3,11 @@
 import DefaultTheme from "vitepress/theme";
 import "./custom.css";
 
-export default DefaultTheme;
+import ExampleItem from "./ExampleItem.vue";
+
+export default {
+  extends: DefaultTheme,
+  enhanceApp(ctx) {
+    ctx.app.component("ExampleItem", ExampleItem);
+  },
+};
