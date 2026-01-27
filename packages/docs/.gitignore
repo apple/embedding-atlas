@@ -2,4 +2,6 @@
 .vitepress/dist
 public/app
 public/demo
-demo-data
+public/examples/app
+public/examples/cache
+.cache

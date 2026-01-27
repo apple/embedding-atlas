@@ -2,8 +2,8 @@
 
 The Python package contains a command-line utility for you to quickly explore large text datasets with metadata.
 
-<img style="border-radius: 4px" class="light-only" src="./assets/embedding-atlas-light.png">
-<img style="border-radius: 4px" class="dark-only" src="./assets/embedding-atlas-dark.png">
+<img style="border-radius: 4px" class="light-only" src="./public/assets/embedding-atlas-light.png">
+<img style="border-radius: 4px" class="dark-only" src="./public/assets/embedding-atlas-dark.png">
 
 ## Installation
 

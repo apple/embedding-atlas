@@ -3,7 +3,6 @@
 """Command line interface."""
 
 import importlib
-import logging
 import pathlib
 import socket
 from pathlib import Path
@@ -17,7 +16,13 @@ import uvicorn
 from .data_source import DataSource
 from .options import make_embedding_atlas_props
 from .server import make_server
-from .utils import Hasher, load_huggingface_data, load_pandas_data
+from .utils import (
+    Hasher,
+    apply_logging_config,
+    load_huggingface_data,
+    load_pandas_data,
+    logger,
+)
 from .version import __version__
 
 
@@ -319,10 +324,7 @@ def main(
     stop_words: str | None,
     labels: str | None,
 ):
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s: (%(name)s) %(message)s",
-    )
+    apply_logging_config()
 
     if with_modules is not None:
         import_modules(with_modules)
@@ -365,7 +367,7 @@ def main(
             if vector is not None:
                 compute_vector_projection(
                     df,
-                    vector,
+                    vector=vector,
                     x=x_column,
                     y=y_column,
                     neighbors=new_neighbors_column,
@@ -385,7 +387,7 @@ def main(
 
                 compute_text_projection(
                     df,
-                    text,
+                    text=text,
                     x=x_column,
                     y=y_column,
                     neighbors=new_neighbors_column,
@@ -399,7 +401,7 @@ def main(
             elif image is not None:
                 compute_image_projection(
                     df,
-                    image,
+                    image=image,
                     x=x_column,
                     y=y_column,
                     neighbors=new_neighbors_column,
@@ -460,7 +462,7 @@ def main(
     if enable_auto_port:
         new_port = find_available_port(port, max_attempts=10, host=host)
         if new_port != port:
-            logging.info(f"Port {port} is not available, using {new_port}")
+            logger.info(f"Port {port} is not available, using {new_port}")
     else:
         new_port = port
     uvicorn.run(app, port=new_port, host=host, access_log=False)

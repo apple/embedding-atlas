@@ -5,15 +5,16 @@ layout: home
 hero:
   name: Embedding Atlas
   text: Scalable, Interactive Visualization
-  tagline: Compute & interactively visualize large embeddings.
+  tagline: Visualize, cross-filter, and search embeddings and metadata.
+
   image:
-    light: ./assets/embedding-light.png
-    dark: ./assets/embedding-dark.png
+    light: ./assets/embedding-atlas-light.png
+    dark: ./assets/embedding-atlas-dark.png
     alt: a screenshot of embedding atlas
   actions:
     - theme: brand
-      text: Demo
-      link: /demo/
+      text: Examples
+      link: /examples/
       target: _self
     - theme: brand
       text: Load Data

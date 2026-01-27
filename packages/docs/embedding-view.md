@@ -4,8 +4,8 @@ The `embedding-atlas` package contains a component for displaying up to a few mi
 
 We also provide React and Svelte wrappers of the component to easily include it in your own application.
 
-<p class="light-only"><img style="margin: 0 auto;" src="./assets/component-light.png" /></p>
-<p class="dark-only"><img style="margin: 0 auto;" src="./assets/component-dark.png" /></p>
+<p class="light-only"><img style="margin: 0 auto;" src="./public/assets/component-light.png" /></p>
+<p class="dark-only"><img style="margin: 0 auto;" src="./public/assets/component-dark.png" /></p>
 
 ```bash
 npm install embedding-atlas

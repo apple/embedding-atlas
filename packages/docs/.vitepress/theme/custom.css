@@ -1,3 +1,7 @@
+:root {
+  --vp-nav-logo-height: 36px;
+}
+
 html.dark .light-only {
   display: none !important;
 }
@@ -8,6 +12,59 @@ html:not(.dark) .dark-only {
 
 html.dark .VPHero .image {
   mix-blend-mode: screen;
+}
+
+.VPHero .image .VPImage {
+  max-width: none;
+  max-height: none;
+  width: 100%;
+}
+
+.VPHero .heading .text {
+  font-size: 20px;
+}
+
+@media (min-width: 640px) {
+  .VPHero .heading .text {
+    font-size: 32px;
+  }
+}
+
+@media (min-width: 960px) {
+  .VPHero .image .image-container {
+    justify-content: right;
+    transform: none;
+    position: relative;
+  }
+
+  .VPHero .image .image-bg {
+    display: none;
+  }
+
+  .VPHero .image .VPImage {
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    transform: none;
+    top: auto;
+    left: auto;
+    bottom: auto;
+    right: auto;
+
+    height: 100%;
+    position: absolute;
+    right: 0;
+  }
+
+  .VPHero .main {
+    background: linear-gradient(90deg, var(--vp-c-bg) 0%, var(--vp-c-bg) 85%, rgba(0, 0, 0, 0) 100%);
+    z-index: 1;
+  }
+
+  .VPHero .heading .text {
+    font-size: 36px;
+  }
 }
 
 h3.doc-property {

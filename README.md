@@ -31,8 +31,8 @@ Embedding Atlas is a tool that provides interactive visualizations for large emb
 Please visit <https://apple.github.io/embedding-atlas> for a demo and documentation.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./packages/docs/assets/embedding-atlas-dark.png">
-  <img alt="screenshot of Embedding Atlas" src="./packages/docs/assets/embedding-atlas-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="./packages/docs/public/assets/embedding-atlas-dark.png">
+  <img alt="screenshot of Embedding Atlas" src="./packages/docs/public/assets/embedding-atlas-light.png">
 </picture>
 
 ## Get started

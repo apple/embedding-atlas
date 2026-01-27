@@ -76,4 +76,4 @@ Check the individual package READMEs for specific instructions.
 The packages and website for the project are deployed with [GitHub Actions](https://github.com/apple/embedding-atlas/blob/main/.github/workflows/ci.yml).
 Deployment triggers when a released is published with a tag `vX.Y.Z`.
 
-The documentation website can be deployed by manually running the workflow with "Publish Documentation Website" enabled. The data for the online demo is created automatically in [packages/docs/generate_demo_data.py](https://github.com/apple/embedding-atlas/blob/main/packages/docs/generate_demo_data.py), and cached in the GitHub action.
+The documentation website can be deployed by manually running the workflow with "Publish Documentation Website" enabled.

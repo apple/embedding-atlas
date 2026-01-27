@@ -13,7 +13,7 @@ import pandas as pd
 import pyarrow as pa
 from platformdirs import user_cache_path
 
-logger = logging.getLogger()
+logger = logging.getLogger("embedding-atlas")
 
 
 def load_pandas_data(url: str) -> pd.DataFrame:
@@ -104,6 +104,13 @@ def cache_path(*subfolders: str, mkdir=True) -> Path:
     if mkdir:
         p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def apply_logging_config():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s: (%(name)s) %(message)s",
+    )
 
 
 class Hasher:

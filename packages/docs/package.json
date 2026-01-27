@@ -5,7 +5,8 @@
     "build": "npm run generate_assets && vitepress build",
     "preview": "npm run generate_assets && vitepress preview",
     "extract-api": "api-extractor run -c scripts/api-extractor.json",
-    "generate_assets": "./generate_assets.sh"
+    "generate_assets": "uv run --project ../backend python generate_assets.py",
+    "generate_cache": "uv run --project ../backend python generate_cache.py"
   },
   "devDependencies": {
     "vitepress": "^1.6.3"
