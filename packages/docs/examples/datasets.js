@@ -203,11 +203,11 @@ register(
   "62c90a28e3fb1bc0ad7bbcab1ac62b483ae6758291a655944d8f494bf6445745",
 );
 
-async function fetchData(url, sha1sum, context) {
+async function fetchData(url, sha256sum, context) {
   let data = await context.fetch(url);
   let digest = await window.crypto.subtle.digest("SHA-256", data);
   let digestStr = toHex(new Uint8Array(digest));
-  if (digestStr != sha1sum) {
+  if (digestStr != sha256sum) {
     throw new Error(`Error: data integrity check failed, maybe the data has been modified (sha256: ${digestStr})`);
   }
   return { data: data, filename: url };

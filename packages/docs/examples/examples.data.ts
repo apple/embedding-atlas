@@ -11,6 +11,7 @@ interface Example {
   state?: Omit<EmbeddingAtlasState, "timestamp" | "charts"> & { charts: Record<string, BuiltinChartSpec> };
 }
 
+// prettier-ignore
 const examples: Record<string, Example[]> = {
   embedding: [
     {
@@ -192,7 +193,7 @@ const examples: Record<string, Example[]> = {
     },
     {
       title: "SuperGPQA",
-      details: "Data from Hugging Face: openlifescienceai/medmcqa",
+      details: "Data from Hugging Face: m-a-p/SuperGPQA",
       image: "/assets/examples/supergpqa.jpg",
       data: "example://SuperGPQA",
       settings: {
@@ -610,7 +611,8 @@ const datasets = [
   {
     key: "example://ScienceQA",
     title: "Learn to Explain: Multimodal Reasoning via Thought Chains for Science Question Answering",
-    authors: "Pan Lu, Swaroop Mishra, Tony Xia, Liang Qiu, Kai-Wei Chang, Song-Chun Zhu, Oyvind Tafjord, Peter Clark, Ashwin Kalyan, 2022",
+    authors:
+      "Pan Lu, Swaroop Mishra, Tony Xia, Liang Qiu, Kai-Wei Chang, Song-Chun Zhu, Oyvind Tafjord, Peter Clark, Ashwin Kalyan, 2022",
     link: {
       title: "derek-thomas/ScienceQA",
       url: "https://huggingface.co/datasets/derek-thomas/ScienceQA",
@@ -633,8 +635,18 @@ async function process(example: Example) {
     details: example.details,
     image: example.image,
     data: example.data,
-    settings: example.settings == null ? undefined : typeof example.settings == "string" ? example.settings : await encode(example.settings),
-    state: example.state == null ? undefined : typeof example.state == "string" ? example.state : await encode(example.state),
+    settings:
+      example.settings == null
+        ? undefined
+        : typeof example.settings == "string"
+          ? example.settings
+          : await encode(example.settings),
+    state:
+      example.state == null
+        ? undefined
+        : typeof example.state == "string"
+          ? example.state
+          : await encode(example.state),
   };
 }
 
