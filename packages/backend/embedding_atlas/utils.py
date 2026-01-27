@@ -112,6 +112,8 @@ def apply_logging_config():
         format="%(levelname)s: (%(name)s) %(message)s",
     )
 
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
 
 class Hasher:
     def __init__(self):
