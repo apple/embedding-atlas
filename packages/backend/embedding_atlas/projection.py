@@ -80,10 +80,11 @@ def _run_umap(
         metric=metric,
         metric_kwds=None,
         angular=False,
-        random_state=None,
+        random_state=umap_args.get("random_state"),
     )
 
-    proj = umap.UMAP(**umap_args, precomputed_knn=knn)
+    kwargs = {k: v for k, v in umap_args.items() if k != "metric"}
+    proj = umap.UMAP(**kwargs, precomputed_knn=knn, metric=metric)
     result: np.ndarray = proj.fit_transform(hidden_vectors)  # type: ignore
 
     return Projection(projection=result, knn_indices=knn[0], knn_distances=knn[1])

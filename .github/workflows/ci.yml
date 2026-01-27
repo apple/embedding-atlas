@@ -59,7 +59,7 @@ jobs:
         id: cache-files
         with:
           path: ~/.cache/embedding_atlas
-          key: ${{ runner.os }}
+          key: ${{ runner.os }}-embedding-atlas
 
       - name: Generate cached demo data
         run: cd packages/docs && npm run generate_cache
