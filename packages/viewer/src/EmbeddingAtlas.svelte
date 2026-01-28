@@ -58,6 +58,7 @@
     onExportSelection,
     onStateChange,
     cache,
+    highlight: highlightProp = null,
   }: EmbeddingAtlasProps = $props();
 
   const { colorScheme, userColorScheme } = makeColorSchemeStore();
@@ -285,6 +286,23 @@
     chartThemeStore.set(chartTheme ?? undefined);
   });
 
+  // Highlight store for single point (animation + tooltip)
+  let highlightStore = writable<RowID | null>(null);
+
+  // Highlight IDs store for multiple points (overlay circles)
+  let highlightIdsStore = writable<RowID[] | null>(null);
+
+  // Sync external highlight prop to internal stores
+  $effect.pre(() => {
+    if (highlightProp != null && highlightProp.length > 0) {
+      highlightStore.set(highlightProp[0]);
+      highlightIdsStore.set(highlightProp);
+    } else {
+      highlightStore.set(null);
+      highlightIdsStore.set(null);
+    }
+  });
+
   let chartContext: ChartContext = {
     coordinator: coordinator,
     filter: crossFilter,
@@ -299,7 +317,8 @@
     searchModes: searchModes,
     search: doSearch,
     searchResult: searchResultStore,
-    highlight: writable(null),
+    highlight: highlightStore,
+    highlightIds: highlightIdsStore,
     embeddingViewConfig: embeddingViewConfig,
     embeddingViewLabels: embeddingViewLabels,
     tableCellRenderers: tableCellRenderers,
