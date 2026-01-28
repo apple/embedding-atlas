@@ -179,8 +179,6 @@ jobs:
           path: package/
 
       - run: cd package && npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-pages:
     runs-on: ubuntu-latest
