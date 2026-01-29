@@ -2,4 +2,4 @@
 
 // Compile-time constants.
 
-export const EMBEDDING_ATLAS_VERSION = "0.16.0";
+export const EMBEDDING_ATLAS_VERSION = "0.16.1";
