@@ -1,6 +1,6 @@
 {
   "name": "embedding-atlas",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "type": "module",
   "license": "MIT",
   "description": "Components for interactive embedding visualization",
