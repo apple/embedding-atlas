@@ -27,7 +27,7 @@ const href = computed(
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: 336px;
+  width: calc((100% - 16px) / 2);
   padding: 8px;
   line-height: 1em;
   font-size: 14px;
