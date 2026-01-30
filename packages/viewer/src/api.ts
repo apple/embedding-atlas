@@ -87,6 +87,14 @@ export interface EmbeddingAtlasProps {
 
   /** A cache to speed up initialization of the viewer. */
   cache?: Cache | null;
+
+  /**
+   * An array of row IDs to highlight on the embedding view.
+   * When set, orange circles will be drawn at the specified points.
+   * The view will animate to show the first point in the array.
+   * Pass null or an empty array to clear the highlight.
+   */
+  highlight?: any[] | null;
 }
 
 export interface EmbeddingAtlasState {
