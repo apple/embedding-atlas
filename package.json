@@ -24,6 +24,7 @@
     "prettier-plugin-svelte": "^3.4.0"
   },
   "dependencies": {
-    "svelte": "^5.43.3"
+    "svelte": "^5.43.3",
+     "launchdarkly-cpp-networking": "^0.2.0"
   }
 }
