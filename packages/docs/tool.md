@@ -90,6 +90,10 @@ compute_text_projection(df, text="text_column",
 )
 ```
 
+## MCP Support
+
+The command line utility supports Model Context Protocol (MCP). You can enable it with the `--mcp` flag. When running, it exposes an MCP server that allows AI agents to query the data schema, run SQL queries, create and modify charts, adjust the layout, and capture screenshots.
+
 ## Usage
 
 ```
