@@ -10,7 +10,7 @@ from functools import lru_cache
 from typing import Callable
 
 import duckdb
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -21,19 +21,33 @@ from .utils import arrow_to_bytes, to_parquet_bytes
 
 def make_server(
     data_source: DataSource,
+    *,
     static_path: str,
+    mcp: bool = False,
+    cors: bool | list[str] = False,
     duckdb_uri: str | None = None,
 ):
     """Creates a server for hosting Embedding Atlas"""
 
     app = FastAPI()
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=["*"],
-    )
+
+    if cors is not None:
+        if isinstance(cors, bool) and cors:
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=["*"],
+                allow_methods=["*"],
+                allow_headers=["*"],
+                expose_headers=["*"],
+            )
+        elif isinstance(cors, list):
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=cors,
+                allow_methods=["*"],
+                allow_headers=["*"],
+                expose_headers=["*"],
+            )
 
     mount_bytes(
         app,
@@ -44,24 +58,34 @@ def make_server(
 
     @app.get("/data/metadata.json")
     async def get_metadata():
+        meta = {}
+        # Database
         if duckdb_uri is None or duckdb_uri == "wasm":
-            db_meta = {"database": {"type": "wasm", "load": True}}
+            meta["database"] = {"type": "wasm", "load": True}
         elif duckdb_uri == "server":
             # Point to the server itself.
-            db_meta = {"database": {"type": "rest"}}
+            meta["database"] = {"type": "rest"}
         else:
             # Point to the given uri.
             if duckdb_uri.startswith("http"):
-                db_meta = {
-                    "database": {"type": "rest", "uri": duckdb_uri, "load": True}
+                meta["database"] = {
+                    "type": "rest",
+                    "uri": duckdb_uri,
+                    "load": True,
                 }
             elif duckdb_uri.startswith("ws"):
-                db_meta = {
-                    "database": {"type": "socket", "uri": duckdb_uri, "load": True}
+                meta["database"] = {
+                    "type": "socket",
+                    "uri": duckdb_uri,
+                    "load": True,
                 }
             else:
                 raise ValueError("invalid DuckDB uri")
-        return data_source.metadata | db_meta
+        # MCP
+        if mcp:
+            meta["mcp"] = {"type": "websocket"}
+
+        return data_source.metadata | meta
 
     @app.post("/data/cache/{name}")
     async def post_cache(request: Request, name: str):
@@ -163,16 +187,124 @@ def make_server(
             executor, lambda: handle_selection(data)
         )
 
+    if mcp:
+        make_mcp_proxy(app)
+
     # Static files for the frontend
     app.mount("/", StaticFiles(directory=static_path, html=True))
 
     return app
 
 
+class WebSocketHandler:
+    def __init__(self, websocket: WebSocket):
+        self.websocket = websocket
+        self.pending_requests: dict[str, asyncio.Future] = {}
+        self.is_connected = True
+
+    async def handle_connection(self):
+        try:
+            while self.is_connected:
+                data = await self.websocket.receive_text()
+                await self._handle_message(data)
+        except Exception as _:
+            pass
+        finally:
+            await self._cleanup()
+
+    async def _handle_message(self, data: str):
+        try:
+            response = json.loads(data)
+            request_id = response.get("id")
+            if request_id and request_id in self.pending_requests:
+                future = self.pending_requests.pop(request_id)
+                if not future.done():
+                    future.set_result(response.get("response"))
+        except json.JSONDecodeError:
+            pass
+        except Exception as e:
+            print(f"Error processing WebSocket message: {e}")
+
+    async def _cleanup(self):
+        self.is_connected = False
+        for future in self.pending_requests.values():
+            if not future.done():
+                future.cancel()
+        self.pending_requests.clear()
+
+    async def send_request(self, request: dict) -> dict:
+        """Send a request to the WebSocket and wait for response"""
+        if not self.is_connected:
+            raise HTTPException(status_code=503, detail="WebSocket disconnected")
+
+        request_id = str(uuid.uuid4())
+        payload = {"id": request_id, "request": request}
+
+        future = asyncio.Future()
+        self.pending_requests[request_id] = future
+
+        try:
+            await self.websocket.send_text(json.dumps(payload))
+            response = await asyncio.wait_for(future, timeout=30.0)
+            return response
+
+        except asyncio.TimeoutError:
+            self.pending_requests.pop(request_id, None)
+            raise HTTPException(status_code=408, detail="Request timeout")
+        except Exception as e:
+            self.pending_requests.pop(request_id, None)
+            if not self.is_connected:
+                raise HTTPException(status_code=503, detail="WebSocket disconnected")
+            else:
+                raise HTTPException(
+                    status_code=500, detail=f"Internal server error: {str(e)}"
+                )
+
+    async def send_close(self):
+        try:
+            await self.websocket.send_text(json.dumps({"control": "close"}))
+        except Exception:
+            pass
+
+
+def make_mcp_proxy(app: FastAPI):
+    # Registry to track the last connected WebSocket handler
+    last_handler: dict[str, WebSocketHandler | None] = {"handler": None}
+
+    @app.websocket("/data/mcp_websocket")
+    async def websocket_mcp_ws(websocket: WebSocket):
+        await websocket.accept()
+
+        # Create a new handler for this WebSocket connection
+        handler = WebSocketHandler(websocket)
+        if last_handler["handler"] is not None:
+            # Tell the existing client to close.
+            await last_handler["handler"].send_close()
+        last_handler["handler"] = handler
+
+        # Handle the connection (this will block until disconnection)
+        await handler.handle_connection()
+
+        # Clear the handler if it was the last one
+        if last_handler["handler"] == handler:
+            last_handler["handler"] = None
+
+    @app.post("/mcp")
+    async def post_mcp(request: Request):
+        # Check if we have a connected WebSocket handler
+        handler = last_handler["handler"]
+        if handler is None or not handler.is_connected:
+            raise HTTPException(status_code=503, detail="No MCP WebSocket connected")
+
+        return await handler.send_request(await request.json())
+
+
 def make_duckdb_connection(df):
     con = duckdb.connect(":memory:")
     _ = df  # used in the query
     con.sql("CREATE TABLE dataset AS (SELECT * FROM df)")
+    con.sql("SET enable_external_access = false")
+    con.sql("SET lock_configuration = true")
     return con
 
 

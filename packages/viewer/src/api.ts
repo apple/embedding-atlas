@@ -9,6 +9,7 @@ import { createClassComponent } from "svelte/legacy";
 
 import Component from "./EmbeddingAtlas.svelte";
 
+import type { ModelContextAPI } from "./app/mcp_server.js";
 import type { ChartThemeConfig } from "./charts/common/theme.js";
 import type { DefaultChartsConfig } from "./charts/default_charts.js";
 
@@ -84,6 +85,9 @@ export interface EmbeddingAtlasProps {
 
   /** A callback when the state of the viewer changes. You may serialize the state to JSON and load it back. */
   onStateChange?: ((state: EmbeddingAtlasState) => void) | null;
+
+  /** Model context API where the compoennt will register its tools to. */
+  modelContext?: ModelContextAPI | null;
 
   /** A cache to speed up initialization of the viewer. */
   cache?: Cache | null;

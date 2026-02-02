@@ -1,13 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import { OccupancyMap } from "./occupancy_map.js";
-
-export interface Placement {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+import type { Placement } from "./types.js";
 
 export class Grid {
   readonly containerWidth: number;

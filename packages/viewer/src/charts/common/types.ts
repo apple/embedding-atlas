@@ -115,6 +115,8 @@ export interface ConcretePositionScale extends ConcreteScale<number> {
   invert(position: number, type?: "string" | "number"): any;
 }
 
+export type XYSelectionValue = string | [number, number];
+
 export interface PlotLayout {
   width?: number;
   height?: number;

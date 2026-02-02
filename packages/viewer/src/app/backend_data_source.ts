@@ -8,6 +8,7 @@ import { initializeDatabase } from "../utils/database.js";
 import { downloadBuffer } from "../utils/download.js";
 import { exportMosaicSelection, filenameForSelection, type ExportFormat } from "../utils/mosaic_exporter.js";
 import type { DataSource } from "./data_source.js";
+import { MCPWebSocketServer } from "./mcp_server.js";
 
 function joinUrl(a: string, b: string) {
   if (b.startsWith(".")) {
@@ -30,6 +31,10 @@ interface Metadata {
     type: "wasm" | "socket" | "rest";
     uri?: string;
     load?: boolean;
+  };
+
+  mcp?: {
+    type: "websocket";
   };
 }
 
@@ -90,6 +95,10 @@ export class BackendDataSource implements DataSource {
         let data = await resp.arrayBuffer();
         downloadBuffer(data, name);
       };
+    }
+
+    if (metadata.mcp && metadata.mcp.type == "websocket") {
+      metadata.props.modelContext = new MCPWebSocketServer(joinUrl(this.serverUrl, "mcp_websocket"));
     }
 
     return metadata.props;

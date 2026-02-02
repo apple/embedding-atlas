@@ -4,6 +4,7 @@
 /// <reference types="vite/client" />
 
 declare module "*&json-schema" {
-  const schema: any;
+  import type { JSONSchema7 } from "json-schema";
+  const schema: JSONSchema7;
   export default schema;
 }

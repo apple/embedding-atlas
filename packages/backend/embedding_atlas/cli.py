@@ -3,9 +3,11 @@
 """Command line interface."""
 
 import importlib
+import logging
 import pathlib
 import socket
 from pathlib import Path
+from typing import Literal
 
 import click
 import inquirer
@@ -256,6 +258,13 @@ def import_modules(names: list[str]):
     help="Automatically find an available port if the specified port is in use.",
 )
 @click.option(
+    "--cors",
+    default=None,
+    is_flag=False,
+    flag_value="",
+    help="Allow cross-origin requests. Use --cors to allow all origins, or --cors http://example.com for a specific domain (or a comma-separated list of domains).",
+)
+@click.option(
     "--static", type=str, help="Custom path to frontend static files directory."
 )
 @click.option(
@@ -288,6 +297,12 @@ def import_modules(names: list[str]):
     default=None,
     help="Path to a file containing labels for the embedding view. The file should be a table with columns 'x', 'y', 'text', and optionally 'level' and 'priority'",
 )
+@click.option(
+    "--mcp/--no-mcp",
+    "enable_mcp",
+    default=False,
+    help="Enable MCP (Model Context Protocol) server endpoints for external tool integration.",
+)
 @click.version_option(version=__version__, package_name="embedding_atlas")
 def main(
     inputs,
@@ -299,7 +314,7 @@ def main(
     model: str | None,
     trust_remote_code: bool,
     batch_size: int | None,
-    text_projector: str,
+    text_projector: Literal["sentence_transformers", "litellm"],
     api_key: str | None,
     api_base: str | None,
     dimensions: int | None,
@@ -318,11 +333,13 @@ def main(
     host: str,
     port: int,
     enable_auto_port: bool,
+    cors: str | None,
     export_application: str | None,
     with_modules: list[str] | None,
     point_size: float | None,
     stop_words: str | None,
     labels: str | None,
+    enable_mcp: bool,
 ):
     apply_logging_config()
 
@@ -392,7 +409,7 @@ def main(
                     y=y_column,
                     neighbors=new_neighbors_column,
                     model=model,
-                    text_projector=text_projector,  # type: ignore
+                    text_projector=text_projector,
                     trust_remote_code=trust_remote_code,
                     batch_size=batch_size,
                     umap_args=umap_args,
@@ -457,7 +474,21 @@ def main(
             f.write(dataset.make_archive(static))
         exit(0)
 
-    app = make_server(dataset, static_path=static, duckdb_uri=duckdb)
+    # Parse CORS configuration
+    cors_config = False
+    if cors is not None:
+        if cors == "":
+            # --cors flag without value means allow all origins
+            cors_config = True
+        else:
+            # --cors=domain1.com,domain2.com means specific domains
+            cors_config = [
+                domain.strip() for domain in cors.split(",") if domain.strip()
+            ]
+
+    app = make_server(
+        dataset, static_path=static, duckdb_uri=duckdb, mcp=enable_mcp, cors=cors_config
+    )
 
     if enable_auto_port:
         new_port = find_available_port(port, max_attempts=10, host=host)
@@ -465,7 +496,34 @@ def main(
             logger.info(f"Port {port} is not available, using {new_port}")
     else:
         new_port = port
-    uvicorn.run(app, port=new_port, host=host, access_log=False)
+
+    print()
+    print(click.style("-" * 79, dim=True))
+    print()
+    print(
+        f"  {click.style('🚀 Embedding Atlas', fg='green', bold=True)}  {click.style('v' + __version__, fg='green')}"
+    )
+    print()
+    print(f"  ➜ URL: {click.style(f'http://{host}:{new_port}', fg='cyan', bold=True)}")
+    print(
+        click.style(
+            "  ➜ Network: use --host to expose, use --cors to enable cross-origin requests",
+            dim=True,
+        )
+    )
+    if enable_mcp:
+        print(
+            f"  ➜ MCP server: {click.style(f'http://{host}:{new_port}/mcp', fg='blue')}"
+        )
+    else:
+        print(click.style("  ➜ MCP server: use --mcp to enable", dim=True))
+    print(click.style("  ➜ Press CTRL+C to quit", dim=True))
+    print()
+    print(click.style("-" * 79, dim=True))
+
+    uvicorn.run(
+        app, port=new_port, host=host, access_log=False, log_level=logging.ERROR
+    )
 
 
 if __name__ == "__main__":

@@ -30,10 +30,20 @@ export interface CountPlotSpec {
     | string[];
 }
 
+export interface CountPlotState {
+  /** List of selected categories */
+  selection?: string[];
+}
+
 export interface PredicatesSpec {
   type: "predicates";
   title?: string;
   items?: { name: string; predicate: string }[];
+}
+
+export interface PredicatesState {
+  /** List of selected predicates. Values in this list should be the exact predicates. */
+  selection?: string[];
 }
 
 export interface MarkdownSpec {

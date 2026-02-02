@@ -12,12 +12,19 @@ import Embedding from "./embedding/Embedding.svelte";
 import Chart from "./spec/Chart.svelte";
 import Table from "./table/Table.svelte";
 
-import type { ContentViewerSpec, CountPlotSpec, MarkdownSpec, PredicatesSpec } from "./basic/types.js";
+import type {
+  ContentViewerSpec,
+  CountPlotSpec,
+  CountPlotState,
+  MarkdownSpec,
+  PredicatesSpec,
+  PredicatesState,
+} from "./basic/types.js";
 import type { UIElement } from "./builder/builder_description.js";
 import type { ChartBuilderDescription, ChartViewProps } from "./chart.js";
 import { histogramSpec } from "./default_charts.js";
-import type { EmbeddingSpec } from "./embedding/types.js";
-import type { ChartSpec } from "./spec/spec.js";
+import type { EmbeddingSpec, EmbeddingState } from "./embedding/types.js";
+import type { ChartSpec, ChartState } from "./spec/spec.js";
 import type { TableSpec } from "./table/types.js";
 
 export type ChartComponent = Component<ChartViewProps<any, any>, {}, "">;
@@ -96,6 +103,9 @@ export type BuiltinChartSpec =
   | MarkdownSpec
   | PredicatesSpec
   | TableSpec;
+
+// State type for all builtin chart types
+export type BuiltinChartState = ChartState | EmbeddingState | CountPlotState | PredicatesState;
 
 // Chart builders
 
