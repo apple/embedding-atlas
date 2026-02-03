@@ -230,7 +230,7 @@ export function provideModelContext(api: ModelContextAPI, delegate: ModelContext
     },
     {
       name: "set_layout_type",
-      description: "Set the type of the current layout  ('list' or 'dashboard')",
+      description: "Set the type of the current layout ('list' or 'dashboard')",
       inputSchema: {
         type: "object",
         properties: {

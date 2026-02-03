@@ -86,7 +86,7 @@ export interface EmbeddingAtlasProps {
   /** A callback when the state of the viewer changes. You may serialize the state to JSON and load it back. */
   onStateChange?: ((state: EmbeddingAtlasState) => void) | null;
 
-  /** Model context API where the compoennt will register its tools to. */
+  /** Model context API where the component will register its tools to. */
   modelContext?: ModelContextAPI | null;
 
   /** A cache to speed up initialization of the viewer. */
