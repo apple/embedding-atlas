@@ -12,8 +12,8 @@
   import { reorder } from "../../utils/sort.js";
   import type { LayoutProps } from "../layout.js";
   import { OccupancyMap } from "./occupancy_map.js";
-  import { Grid, computePlacements, type Placement } from "./placement.js";
-  import type { DashboardLayoutState } from "./types.js";
+  import { Grid, computePlacements } from "./placement.js";
+  import type { DashboardLayoutState, Placement } from "./types.js";
 
   let {
     context,

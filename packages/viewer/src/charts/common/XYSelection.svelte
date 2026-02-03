@@ -3,13 +3,13 @@
   import { interactionHandler, type CursorValue } from "@embedding-atlas/utils";
 
   import { type ChartTheme } from "./theme.js";
-  import type { ConcretePositionScale, XYFrameProxy } from "./types.js";
+  import type { ConcretePositionScale, XYFrameProxy, XYSelectionValue } from "./types.js";
 
   const borderWidth = 8;
 
   interface Value {
-    x?: [number, number] | string | null;
-    y?: [number, number] | string | null;
+    x?: XYSelectionValue | null;
+    y?: XYSelectionValue | null;
   }
 
   interface Props {

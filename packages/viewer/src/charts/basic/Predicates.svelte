@@ -14,11 +14,7 @@
 
   import { predicateToString } from "../../utils/database.js";
   import type { ChartViewProps } from "../chart.js";
-  import type { PredicatesSpec } from "./types.js";
-
-  interface State {
-    selection?: string[];
-  }
+  import type { PredicatesSpec, PredicatesState } from "./types.js";
 
   interface Item {
     name: string;
@@ -33,7 +29,7 @@
     state: chartState,
     onSpecChange,
     onStateChange,
-  }: ChartViewProps<PredicatesSpec, State> = $props();
+  }: ChartViewProps<PredicatesSpec, PredicatesState> = $props();
 
   let { colorScheme } = context;
 

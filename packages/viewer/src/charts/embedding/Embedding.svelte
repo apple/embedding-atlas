@@ -1,12 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script module lang="ts">
-  import {
-    maxDensityModeCategories,
-    type DataPoint,
-    type Point,
-    type Rectangle,
-    type ViewportState,
-  } from "@embedding-atlas/component";
+  import { maxDensityModeCategories, type DataPoint, type ViewportState } from "@embedding-atlas/component";
   import { type Coordinator } from "@uwdata/mosaic-core";
   import * as SQL from "@uwdata/mosaic-sql";
 
@@ -15,14 +9,6 @@
 
   import { type EmbeddingLegend } from "../../utils/database.js";
   import { createCustomComponentClass } from "./custom_components.js";
-
-  export interface State {
-    viewport?: ViewportState;
-    legend?: {
-      selection?: string[];
-    };
-    brush?: Rectangle | Point[] | null;
-  }
 
   async function defaultViewportScale(coordinator: Coordinator, table: string, x: string, y: string): Promise<number> {
     let { stdX, stdY } = (
@@ -56,7 +42,7 @@
   import type { ChartViewProps, RowID } from "../chart.js";
   import { resolveChartTheme } from "../common/theme.js";
   import { makeCategoryColumn } from "./category_column.js";
-  import type { EmbeddingSpec } from "./types.js";
+  import type { EmbeddingSpec, EmbeddingState } from "./types.js";
   import { interpolateViewport } from "./viewport_animation.js";
 
   const maxCategories = Math.min(20, maxDensityModeCategories());
@@ -72,7 +58,7 @@
     state: chartState,
     onStateChange,
     onSpecChange,
-  }: ChartViewProps<EmbeddingSpec, State> = $props();
+  }: ChartViewProps<EmbeddingSpec, EmbeddingState> = $props();
 
   let { colorScheme, columnStyles, searchResult, theme: themeConfig } = context;
   let theme = $derived(resolveChartTheme($colorScheme, $themeConfig));
@@ -243,7 +229,7 @@
     viewportState={animatingViewport ?? chartState.viewport}
     onViewportState={(v) => onStateChange({ viewport: v })}
     rangeSelectionValue={chartState.brush}
-    onRangeSelection={(v) => onStateChange({ brush: v })}
+    onRangeSelection={(v) => onStateChange({ brush: v ?? undefined })}
     tooltip={tooltip}
     onTooltip={(v) => {
       tooltip = v;

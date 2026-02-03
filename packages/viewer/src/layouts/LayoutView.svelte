@@ -4,7 +4,7 @@
 
   import ChartView from "../charts/ChartView.svelte";
 
-  import type { ChartContext } from "../charts/chart.js";
+  import type { ChartContext, ChartDelegate } from "../charts/chart.js";
   import { findLayoutComponent } from "./layout_types.js";
 
   interface Props {
@@ -16,6 +16,7 @@
     onChartsChange?: (charts: Record<string, any>) => void;
     onChartStatesChange?: (states: Record<string, any>) => void;
     onLayoutStatesChange?: (states: Record<string, any>) => void;
+    registerChartDelegate?: (id: string, delegate: ChartDelegate) => () => void;
   }
 
   let {
@@ -27,6 +28,7 @@
     onChartsChange,
     onChartStatesChange,
     onLayoutStatesChange,
+    registerChartDelegate,
   }: Props = $props();
 
   let LayoutClass = $derived(findLayoutComponent(layout));
@@ -71,6 +73,7 @@
       mode={mode ?? "view"}
       onSpecChange={updateChart.bind(null, id)}
       onStateChange={updateChartState.bind(null, id)}
+      registerDelegate={registerChartDelegate ? (delegate) => registerChartDelegate?.(id, delegate) : undefined}
     />
   {/snippet}
 </LayoutClass>

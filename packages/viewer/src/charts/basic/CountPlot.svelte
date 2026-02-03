@@ -10,12 +10,7 @@
   import type { ChartViewProps } from "../chart.js";
   import { resolveChartTheme } from "../common/theme.js";
   import type { SQLField } from "../spec/spec.js";
-  import type { CountPlotSpec } from "./types.js";
-
-  interface State {
-    /** List of selected categories */
-    selection?: string[];
-  }
+  import type { CountPlotSpec, CountPlotState } from "./types.js";
 
   const OTHER_VALUE = "(other)";
   const NULL_VALUE = "(null)";
@@ -28,7 +23,7 @@
     state: chartState,
     onStateChange,
     onSpecChange,
-  }: ChartViewProps<CountPlotSpec, State> = $props();
+  }: ChartViewProps<CountPlotSpec, CountPlotState> = $props();
 
   let { coordinator, colorScheme, theme: themeConfig } = context;
   let theme = $derived(resolveChartTheme($colorScheme, $themeConfig));

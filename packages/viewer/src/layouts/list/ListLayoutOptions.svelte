@@ -1,11 +1,12 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
   import ToggleButton from "../../widgets/ToggleButton.svelte";
-  import { getSections, type ListLayoutState } from "./ListLayout.svelte";
+  import { getSections } from "./ListLayout.svelte";
 
   import { IconEmbeddingView, IconMenu, IconTable } from "../../assets/icons.js";
 
   import type { LayoutOptionsProps } from "../layout.js";
+  import type { ListLayoutState } from "./types.js";
 
   let { charts, state, onStateChange }: LayoutOptionsProps<ListLayoutState> = $props();
 

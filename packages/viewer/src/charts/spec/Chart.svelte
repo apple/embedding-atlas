@@ -8,6 +8,7 @@
   import XYSelection from "../common/XYSelection.svelte";
   import ColorLegend from "./ColorLegend.svelte";
   import Layer from "./Layer.svelte";
+  import LayerCanvas from "./LayerCanvas.svelte";
   import Widgets from "./Widgets.svelte";
 
   import type { ChartViewProps } from "../chart.js";
@@ -29,6 +30,8 @@
     onStateChange,
     onSpecChange,
   }: ChartViewProps<ChartSpec, ChartState> = $props();
+
+  const svgLimit = 2000;
 
   let { colorScheme, theme: themeConfig } = context;
 
@@ -88,12 +91,20 @@
           >
             {#snippet childrenBelow(proxy)}
               {#each zOrderedLayers.filter((x) => x.zIndex < 0) as layer (layer.key)}
-                <Layer proxy={proxy} theme={theme} layer={layer} />
+                {#if layer.data.length <= svgLimit}
+                  <Layer proxy={proxy} theme={theme} layer={layer} />
+                {:else}
+                  <LayerCanvas proxy={proxy} theme={theme} layer={layer} />
+                {/if}
               {/each}
             {/snippet}
             {#snippet children(proxy)}
               {#each zOrderedLayers.filter((x) => !(x.zIndex < 0)) as layer (layer.key)}
-                <Layer proxy={proxy} theme={theme} layer={layer} />
+                {#if layer.data.length <= svgLimit}
+                  <Layer proxy={proxy} theme={theme} layer={layer} />
+                {:else}
+                  <LayerCanvas proxy={proxy} theme={theme} layer={layer} />
+                {/if}
               {/each}
 
               {#each $selections ?? [] as selection}

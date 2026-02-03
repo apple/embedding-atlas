@@ -5,7 +5,7 @@
   import CodeEditor from "../../widgets/CodeEditor.svelte";
   import type { ChartSpec } from "../spec/spec.js";
 
-  import jsonSchema from "../chart_types.ts?type=BuiltinChartSpec&json-schema";
+  import { schemaBuiltinChartSpec } from "../../schemas.js";
 
   interface Props {
     class?: string;
@@ -32,7 +32,7 @@
   class={className}
   colorScheme={colorScheme}
   language="json5"
-  json={{ schema: jsonSchema }}
+  json={{ schema: schemaBuiltinChartSpec }}
   value={value}
   onChange={(newValue) => {
     let spec = parse(newValue);

@@ -1,5 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import type { XYSelectionValue } from "../common/types.js";
+
 /** Mark type */
 export type MarkType = "bar" | "rect" | "line" | "area" | "point" | "rule";
 
@@ -9,7 +11,7 @@ export type SQLField = string | { sql: string };
 /** Table name or SQL expression that produces a table */
 export type SQLTable = string | { sql: string };
 
-/** Data value */
+/** Data value (a value in the data domain, which can be mapped to the visual domain through a scale) */
 export type DataValue = string | number | [number, number];
 
 /** Encoding channel */
@@ -51,7 +53,7 @@ export type Interpolate =
 /** Encoding */
 export type Encoding =
   | {
-      /** The data field */
+      /** The data field to encode */
       field: SQLField;
 
       bin?: {
@@ -73,6 +75,7 @@ export type Encoding =
       normalize?: "x" | "y";
     }
   | {
+      /** The data value to encode */
       value: DataValue;
     };
 
@@ -95,10 +98,10 @@ export interface MarkStyle {
   /** Stroke cap */
   strokeCap?: "butt" | "round" | "square";
   /** Stroke join */
-  strokeJoin?: "round" | "miter-clip" | "miter" | "bevel";
+  strokeJoin?: "round" | "miter" | "bevel";
 
-  /** Paint order */
-  paintOrder?: string;
+  /** Paint order, default is `fill stroke`, fill first, then stroke. */
+  paintOrder?: "fill stroke" | "stroke fill";
 
   /** Opacity */
   opacity?: number;
@@ -108,7 +111,7 @@ export interface Layer {
   /** Data source, default to the main data table */
   from?: SQLTable;
 
-  /** Filter the data. Use $filter to refer to the shared filter */
+  /** Filter the data. Use $filter to refer to the shared filter (a cross-filter) */
   filter?: "$filter";
 
   /** Mark type */
@@ -134,6 +137,9 @@ export interface Layer {
 
   /** Height of bar / rect marks */
   height?: Dimension;
+
+  /** Size (area) of point marks, default 100. */
+  size?: number;
 
   /** Encoding */
   encoding?: Partial<Record<Attribute, Encoding>>;
@@ -240,4 +246,14 @@ export interface ChartSpec {
 
   /** Widgets */
   widgets?: Widget[];
+}
+
+/** Chart state. A dictionary mapping selection keys to selection states. */
+export interface ChartState {
+  [key: string]: {
+    /** The x value for the selection. */
+    x?: XYSelectionValue;
+    /** The y value for the selection. */
+    y?: XYSelectionValue;
+  };
 }

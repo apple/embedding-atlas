@@ -134,7 +134,7 @@ export interface AggregateInfo {
   select: SQL.ExprNode;
   scale: ScaleConfig;
   field: (v: any) => any;
-  predicate: (v: AggregateValue | AggregateValue[]) => SQL.ExprNode | undefined;
+  predicate: (v: AggregateValue | AggregateValue[]) => SQL.ExprNode;
   order: (a: AggregateValue, b: AggregateValue) => number;
 }
 
@@ -282,8 +282,8 @@ export function inferAggregate({
       predicate: (v) => {
         if (v instanceof Array) {
           return SQL.or(...v.map((d) => predicate(d as string)));
-        } else if (typeof v == "string") {
-          return predicate(v);
+        } else {
+          return predicate(v.toString());
         }
       },
       order: (a, b) => {

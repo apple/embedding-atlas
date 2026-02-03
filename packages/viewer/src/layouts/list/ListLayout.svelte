@@ -1,14 +1,5 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script module lang="ts">
-  export interface ListLayoutState {
-    showTable?: boolean;
-    showEmbedding?: boolean;
-    showCharts?: boolean;
-
-    chartsOrder?: string[];
-    chartVisibility?: Record<string, boolean>;
-  }
-
   export type Section = "embedding" | "table" | "chart";
 
   export function findSection(spec: any): Section | undefined {
@@ -49,6 +40,7 @@
   import { findUnusedId } from "../../utils/identifier.js";
   import { reorder } from "../../utils/sort.js";
   import type { LayoutProps } from "../layout.js";
+  import type { ListLayoutState } from "./types.js";
 
   let {
     context,

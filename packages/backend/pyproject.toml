@@ -29,6 +29,7 @@ dependencies = [
   "accelerate >= 1.5.0",
   "tqdm >= 4.60.0",
   "litellm >= 1.70.0",
+  "websockets >= 15.0.1",
 ]
 
 [project.scripts]

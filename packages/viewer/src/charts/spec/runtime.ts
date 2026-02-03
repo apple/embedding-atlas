@@ -8,8 +8,8 @@ import { derived, writable, type Writable } from "svelte/store";
 
 import { predicateToString } from "../../utils/database.js";
 import type { ChartContext } from "../chart.js";
-import { computeFieldStats, inferAggregate, type FieldStats } from "../common/aggregate.js";
-import type { AxisConfig, ScaleConfig } from "../common/types.js";
+import { computeFieldStats, inferAggregate, type AggregateValue, type FieldStats } from "../common/aggregate.js";
+import type { AxisConfig, ScaleConfig, XYSelectionValue } from "../common/types.js";
 import type {
   AggregateFn,
   Channel,
@@ -38,6 +38,7 @@ export interface LayerOutputs {
 
   xDimension?: Dimension;
   yDimension?: Dimension;
+  pointSize?: number;
 }
 
 export interface SelectionOutputs {
@@ -45,7 +46,10 @@ export interface SelectionOutputs {
   key: string;
   type: "x" | "y" | "xy";
 
-  clause: (value: any) => Omit<SelectionClause, "source" | "clients"> | undefined;
+  clause: (value: {
+    x?: XYSelectionValue | null;
+    y?: XYSelectionValue | null;
+  }) => Omit<SelectionClause, "source" | "clients"> | undefined;
 }
 
 export type AxisOutputs = AxisConfig & {
@@ -72,7 +76,7 @@ interface ScaleHints {
 
   title?: string;
 
-  predicate?: (v: DataValue) => SQL.ExprNode | undefined;
+  predicate?: (v: XYSelectionValue) => SQL.ExprNode | undefined;
 }
 
 export class ChartRuntime {
@@ -397,6 +401,20 @@ const numericalAggregates: Partial<
   quantile: (e, { quantile }) => SQL.quantile(e, quantile ?? 0.5),
 };
 
+function fieldPredicate(inputExpr: SQL.ExprNode, v: AggregateValue | AggregateValue[]): SQL.ExprNode {
+  if (typeof v == "string") {
+    return SQL.isNotDistinct(inputExpr, SQL.literal(v));
+  } else if (v instanceof Array) {
+    if (v.length == 2 && typeof v[0] == "number" && typeof v[1] == "number") {
+      let [v1, v2] = v;
+      return SQL.isBetween(inputExpr, [Math.min(v1, v2), Math.max(v1, v2)]);
+    } else {
+      return SQL.or(...(v as AggregateValue[]).map((v) => fieldPredicate(inputExpr, v)));
+    }
+  }
+  return SQL.literal(false);
+}
+
 function buildEncoding(
   ctx: BuildContext,
   from: SQL.FromExpr,
@@ -506,7 +524,7 @@ function buildEncoding(
           ? {
               ...aggregate.scale,
               kind: aggregate.scale.type == "band" ? "nominal" : "quantitative",
-              predicate: aggregate.predicate as any,
+              predicate: aggregate.predicate,
               title: fieldTitle(encoding.field),
             }
           : undefined,
@@ -520,6 +538,8 @@ function buildEncoding(
         grouping: fieldsInGroupBy ? [select] : [],
         scale: {
           kind: stats.quantitative ? "quantitative" : "nominal",
+          title: fieldTitle(encoding.field),
+          predicate: (v) => fieldPredicate(select, v),
         },
       };
     }
@@ -813,6 +833,7 @@ function layerOutputs(
     case "point":
       return {
         ...common,
+        pointSize: layer.size,
         primitive: layer.mark,
         style: { fillColor: "$encoding", ...layer.style },
       };
@@ -920,8 +941,8 @@ function selectionOutputs(spec: ChartSpec, scaleHints: Record<string, ScaleHints
   // Selections
   Object.entries(spec.selection ?? {}).forEach(([key, selection]) => {
     if ("encoding" in selection) {
-      let xPredicate: ((v: DataValue) => SQL.ExprNode | undefined) | undefined = undefined;
-      let yPredicate: ((v: DataValue) => SQL.ExprNode | undefined) | undefined = undefined;
+      let xPredicate: ((v: XYSelectionValue) => SQL.ExprNode | undefined) | undefined = undefined;
+      let yPredicate: ((v: XYSelectionValue) => SQL.ExprNode | undefined) | undefined = undefined;
       // Find the predicate functions from scale hints.
       if (selection.encoding == "x" || selection.encoding == "xy") {
         if (scaleHints.x?.predicate != undefined) {
@@ -940,7 +961,12 @@ function selectionOutputs(spec: ChartSpec, scaleHints: Record<string, ScaleHints
           if (value == undefined) {
             return;
           }
-          let predicate = SQL.and(...[xPredicate?.(value?.x), yPredicate?.(value?.y)].filter((x) => x != undefined));
+          let predicate = SQL.and(
+            ...[
+              value?.x != null && xPredicate != null ? xPredicate(value.x) : undefined,
+              value?.y != null && yPredicate != null ? yPredicate(value.y) : undefined,
+            ].filter((x) => x != undefined),
+          );
           return {
             value: value,
             predicate: predicate,

@@ -18,7 +18,7 @@ export function latestAsync<Args extends any[], R>(
         }
       })
       .catch((error) => {
-        console.log(error);
+        console.error(error);
       });
   };
 }

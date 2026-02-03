@@ -74,6 +74,7 @@
       chartTheme={config.chartTheme}
       stylesheet={config.stylesheet}
       initialState={initialState ?? config.initialState}
+      modelContext={config.modelContext}
       onExportApplication={dataSource.downloadArchive ? onDownloadArchive : null}
       onExportSelection={dataSource.downloadSelection ? onExportSelection : null}
       onStateChange={debounce(onStateChange, 200)}

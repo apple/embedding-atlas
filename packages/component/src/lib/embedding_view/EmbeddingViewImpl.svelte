@@ -390,6 +390,14 @@
       setupWebGLRenderer(canvas);
       webGPUPrompt = "WebGPU is unavailable. Falling back to WebGL.";
     }
+
+    // Override toDataURL. This is because we must submit the render commands before
+    // calling toDataURL, to ensure the current image is populated with contents.
+    let _toDataURL = canvas.toDataURL;
+    canvas.toDataURL = (...args) => {
+      render();
+      return _toDataURL.apply(canvas, args);
+    };
   });
 
   onDestroy(() => {
