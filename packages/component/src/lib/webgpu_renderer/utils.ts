@@ -14,6 +14,49 @@ export function isWebGPUAvailable(): boolean {
   return true;
 }
 
+export async function requestWebGPUDevice(): Promise<GPUDevice | null> {
+  if (!isWebGPUAvailable()) {
+    return null;
+  }
+
+  let adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) {
+    console.error("Could not request WebGPU adapter");
+    return null;
+  }
+
+  let descriptors: GPUDeviceDescriptor[] = [
+    // First attempt to request the maximum limit
+    {
+      requiredLimits: {
+        maxBufferSize: adapter.limits.maxBufferSize,
+        maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+      },
+      requiredFeatures: ["shader-f16"],
+    },
+    // If we cannot get the maximum limit, try lower limits
+    ...[512, 256, 128, 64, 32].map(
+      (sz): GPUDeviceDescriptor => ({
+        requiredLimits: {
+          maxBufferSize: Math.min(sz * 1048576, adapter.limits.maxBufferSize),
+          maxStorageBufferBindingSize: Math.min(sz * 1048576, adapter.limits.maxStorageBufferBindingSize),
+        },
+        requiredFeatures: ["shader-f16"],
+      }),
+    ),
+  ];
+
+  for (let descriptor of descriptors) {
+    try {
+      return await adapter.requestDevice(descriptor);
+    } catch (error) {
+      console.error(error);
+      continue;
+    }
+  }
+  return null;
+}
+
 function correctedBufferSize(size: number): number {
   if (size == 0) {
     size = 4;

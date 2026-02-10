@@ -112,7 +112,7 @@
   import { Viewport } from "../viewport_utils.js";
   import { EmbeddingRendererWebGL2 } from "../webgl2_renderer/renderer.js";
   import { EmbeddingRendererWebGPU } from "../webgpu_renderer/renderer.js";
-  import { isWebGPUAvailable } from "../webgpu_renderer/utils.js";
+  import { requestWebGPUDevice } from "../webgpu_renderer/utils.js";
   import { customComponentAction, customComponentProps } from "./custom_component_helper.js";
   import type { EmbeddingViewConfig } from "./embedding_view_config.js";
   import { layoutLabels, type LabelWithPlacement } from "./labels.js";
@@ -299,10 +299,16 @@
   }
 
   function setupWebGLRenderer(canvas: HTMLCanvasElement) {
+    webGPUPrompt = "WebGPU is unavailable. Falling back to WebGL.";
+
     let context: WebGL2RenderingContext | null;
 
     function createRenderer() {
-      context = canvas.getContext("webgl2", { antialias: false })!;
+      context = canvas.getContext("webgl2", { antialias: false });
+      if (context == null) {
+        console.error("Could not get WebGL 2 context");
+        return;
+      }
       context.getExtension("EXT_color_buffer_float");
       context.getExtension("EXT_float_blend");
       context.getExtension("OES_texture_float_linear");
@@ -323,38 +329,37 @@
   }
 
   function setupWebGPURenderer(canvas: HTMLCanvasElement) {
+    let canFallbackToWebGL = true;
+
     async function createRenderer() {
+      let device = await requestWebGPUDevice();
+      if (device == null) {
+        console.error("Could not get WebGPU device");
+        if (canFallbackToWebGL) {
+          setupWebGLRenderer(canvas);
+        }
+        return;
+      }
+
       let context = canvas.getContext("webgpu");
       if (context == null) {
         console.error("Could not get WebGPU canvas context");
+        if (canFallbackToWebGL) {
+          setupWebGLRenderer(canvas);
+        }
         return;
       }
 
-      let adapter = await navigator.gpu.requestAdapter();
-      if (!adapter) {
-        console.error("Could not request WebGPU adapter");
-        return;
-      }
+      // Once we get the context, we can't fallback to setupWebGLRenderer.
+      canFallbackToWebGL = false;
 
-      let maxBufferSize = 512 * 1048576;
-      let maxStorageBufferBindingSize = 512 * 1048576;
-      maxBufferSize = Math.min(maxBufferSize, adapter.limits.maxBufferSize);
-      maxStorageBufferBindingSize = Math.min(maxStorageBufferBindingSize, adapter.limits.maxStorageBufferBindingSize);
-      let descriptor: GPUDeviceDescriptor = {
-        requiredLimits: {
-          maxBufferSize: maxBufferSize,
-          maxStorageBufferBindingSize: maxStorageBufferBindingSize,
-        },
-        requiredFeatures: ["shader-f16"],
-      };
-      let device = await adapter.requestDevice(descriptor);
-
-      device.lost.then((info) => {
+      device.lost.then(async (info) => {
         console.info(`WebGPU device was lost: ${info.message}`);
         if (info.reason != "destroyed") {
           renderer?.destroy();
           renderer = null;
-          createRenderer();
+          context.unconfigure();
+          await createRenderer();
         }
       });
 
@@ -384,12 +389,8 @@
     if (canvas == null) {
       return;
     }
-    if (isWebGPUAvailable()) {
-      setupWebGPURenderer(canvas);
-    } else {
-      setupWebGLRenderer(canvas);
-      webGPUPrompt = "WebGPU is unavailable. Falling back to WebGL.";
-    }
+    // Setup WebGPU renderer (with fallback to WebGL)
+    setupWebGPURenderer(canvas);
 
     // Override toDataURL. This is because we must submit the render commands before
     // calling toDataURL, to ensure the current image is populated with contents.
