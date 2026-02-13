@@ -31,6 +31,7 @@ interface Metadata {
     type: "wasm" | "socket" | "rest";
     uri?: string;
     load?: boolean;
+    datasetUrl?: string;
   };
 
   mcp?: {
@@ -66,7 +67,7 @@ export class BackendDataSource implements DataSource {
 
     if (metadata.database?.load) {
       onStatus("Loading data...");
-      let datasetUrl = joinUrl(this.serverUrl, "dataset.parquet");
+      let datasetUrl = metadata.database?.datasetUrl ?? joinUrl(this.serverUrl, "dataset.parquet");
       await coordinator.exec(`
         CREATE OR REPLACE TABLE ${table} AS (SELECT * FROM read_parquet(${SQL.literal(datasetUrl)}));
       `);
