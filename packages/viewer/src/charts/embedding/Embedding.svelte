@@ -136,6 +136,33 @@
     }),
   );
 
+  // Subscribe to highlightIds for programmatic multi-point highlighting
+  $effect.pre(() => {
+    if (context.highlightIds == null) return;
+    return context.highlightIds.subscribe(async (ids) => {
+      if (ids == null || ids.length == 0) {
+        overlayProps = null;
+        return;
+      }
+      let r = Array.from(
+        await context.coordinator.query(
+          SQL.Query.from(context.table)
+            .select({ identifier: SQL.column(context.id), x: SQL.column(spec.data.x), y: SQL.column(spec.data.y) })
+            .where(
+              SQL.isIn(
+                context.id,
+                ids.map((x) => SQL.literal(x)),
+              ),
+            ),
+        ),
+      ) as DataPoint[];
+      overlayProps = {
+        center: null,
+        points: r,
+      };
+    });
+  });
+
   async function animateToPoint(identifier: RowID): Promise<void> {
     let defaultScale = await context.cache.value(`embedding/default-viewport-scale/${spec.data.x},${spec.data.y}`, () =>
       defaultViewportScale(context.coordinator, context.table, spec.data.x, spec.data.y),
