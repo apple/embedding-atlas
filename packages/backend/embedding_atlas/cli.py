@@ -3,6 +3,7 @@
 """Command line interface."""
 
 import importlib
+import json
 import logging
 import pathlib
 import socket
@@ -26,6 +27,25 @@ from .utils import (
     logger,
 )
 from .version import __version__
+
+
+class JSONParamType(click.ParamType):
+    """Accepts a JSON string or a path to a JSON file."""
+
+    name = "JSON"
+
+    def convert(self, value, param, ctx):
+        if value is None:
+            return None
+        try:
+            if value.strip().startswith("{"):
+                return json.loads(value)
+            with open(value) as f:
+                return json.load(f)
+        except json.JSONDecodeError as e:
+            self.fail(f"Invalid JSON: {e}", param, ctx)
+        except (FileNotFoundError, OSError) as e:
+            self.fail(f"Could not read file: {e}", param, ctx)
 
 
 def find_column_name(existing_names, candidate):
@@ -270,7 +290,16 @@ def import_modules(names: list[str]):
 @click.option(
     "--export-application",
     type=str,
-    help="Export the visualization as a standalone web application to the specified ZIP file and exit.",
+    help="Export the visualization as a standalone web application to the specified path. "
+    "Use a .zip extension for a ZIP archive, or any other path to export to a folder.",
+)
+@click.option(
+    "--export-metadata",
+    type=JSONParamType(),
+    default=None,
+    help="Custom metadata to merge into the exported metadata.json. "
+    'Pass a JSON string (e.g., \'{"database": {"datasetUrl": "https://..."}}\') '
+    "or a path to a JSON file.",
 )
 @click.option(
     "--with",
@@ -335,6 +364,7 @@ def main(
     enable_auto_port: bool,
     cors: str | None,
     export_application: str | None,
+    export_metadata: dict | None,
     with_modules: list[str] | None,
     point_size: float | None,
     stop_words: str | None,
@@ -470,8 +500,11 @@ def main(
         static = str((pathlib.Path(__file__).parent / "static").resolve())
 
     if export_application is not None:
-        with open(export_application, "wb") as f:
-            f.write(dataset.make_archive(static))
+        if export_application.endswith(".zip"):
+            with open(export_application, "wb") as f:
+                f.write(dataset.make_archive(static, export_metadata))
+        else:
+            dataset.export_to_folder(static, export_application, export_metadata)
         exit(0)
 
     # Parse CORS configuration
