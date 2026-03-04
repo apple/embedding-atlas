@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import { type JSONSchema7 } from "json-schema";
 import { writable, type Readable, type Writable } from "svelte/store";
 import { ReconnectingWebSocket } from "./reconnecting_websocket.js";

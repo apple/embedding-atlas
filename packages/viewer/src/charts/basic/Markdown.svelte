@@ -4,7 +4,7 @@
   import Input from "../../widgets/Input.svelte";
   import Container from "../common/Container.svelte";
 
-  import { renderMarkdown } from "../../renderers/markdown.js";
+  import { renderMarkdown } from "../../utils/html_template.js";
   import type { ChartViewProps } from "../chart.js";
   import type { MarkdownSpec } from "./types.js";
 

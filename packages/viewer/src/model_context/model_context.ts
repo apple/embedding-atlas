@@ -1,9 +1,14 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import { validate } from "json-schema";
 import type { MCPTool, ModelContextAPI, ToolResponse } from "../app/mcp_server.js";
 import type { ChartContext, ChartDelegate } from "../charts/chart.js";
+import { renderersList } from "../renderers/renderer_types.js";
+import type { ColumnStyle } from "../renderers/types.js";
 import {
   schemaBuiltinChartSpec,
   schemaBuiltinChartState,
+  schemaColumnStyle,
   schemaDashboardLayoutState,
   schemaListLayoutState,
 } from "../schemas.js";
@@ -18,6 +23,7 @@ export interface ModelContextDelegate {
   layoutStates: Record<string, any>;
   chartDelegates: Map<string, Set<ChartDelegate>>;
   container: HTMLDivElement;
+  columnStyles: Record<string, ColumnStyle>;
 }
 
 export function provideModelContext(api: ModelContextAPI, delegate: ModelContextDelegate) {
@@ -51,6 +57,45 @@ export function provideModelContext(api: ModelContextAPI, delegate: ModelContext
       execute: async (params: { query: string }) => {
         let result = await delegate.context.coordinator.query(params.query);
         return jsonResponse(result.toArray());
+      },
+    },
+    {
+      name: "list_renderers",
+      description:
+        "Get a list of value renderers to display values in the table, cards, or tooltip. Renderers can be set in ColumnStyle",
+      inputSchema: { type: "object", additionalProperties: false },
+      execute: async () => {
+        return jsonResponse(renderersList);
+      },
+    },
+    {
+      name: "get_column_styles",
+      description: "Get column styles for all columns.",
+      inputSchema: { type: "object", additionalProperties: false },
+      execute: async () => {
+        return jsonResponse(delegate.columnStyles);
+      },
+    },
+    {
+      name: "set_column_style",
+      description: `Set column style for a given column`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          column: { type: "string" },
+          style: {
+            type: "object",
+            description: `The column style. Schema: ${JSON.stringify(schemaColumnStyle)}. Use the list_renderers tool to get the list of renderers.`,
+          },
+        },
+        additionalProperties: false,
+      },
+      execute: async (params: { column: string; style: any }) => {
+        delegate.columnStyles = {
+          ...delegate.columnStyles,
+          [params.column]: params.style,
+        };
+        return textResponse("success");
       },
     },
     {

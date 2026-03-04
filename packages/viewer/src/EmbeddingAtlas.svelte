@@ -20,6 +20,7 @@
   import Spinner from "./widgets/Spinner.svelte";
 
   import {
+    IconBraces,
     IconClose,
     IconDarkMode,
     IconDashboardLayout,
@@ -36,7 +37,7 @@
   import { defaultCharts } from "./charts/default_charts.js";
   import { EMBEDDING_ATLAS_VERSION } from "./constants.js";
   import { provideModelContext } from "./model_context/model_context.js";
-  import { type ColumnStyle } from "./renderers/index.js";
+  import { type ColumnStyle } from "./renderers/types.js";
   import { performSearch, querySearchResultItems, resolveSearcher, type SearchResultItem } from "./search/search.js";
   import { makeColorSchemeStore } from "./utils/color_scheme.js";
   import { columnDescriptions, predicateToString, type ColumnDesc } from "./utils/database.js";
@@ -54,7 +55,6 @@
     embeddingViewLabels = null,
     chartTheme,
     colorScheme: colorSchemeProp,
-    tableCellRenderers,
     onExportApplication,
     onExportSelection,
     onStateChange,
@@ -96,12 +96,10 @@
   ): Record<string, ColumnStyle> {
     let result: Record<string, ColumnStyle> = {};
     for (let column of columns) {
-      let style = styles[column.name];
-      if (style == null) {
-        // Default display style
-        style = { display: data.text == column.name ? "full" : "badge" };
-      }
-      result[column.name] = style;
+      result[column.name] = {
+        display: data.text == column.name ? "full" : "badge",
+        ...(styles[column.name] ?? {}),
+      };
     }
     return result;
   }
@@ -221,13 +219,24 @@
   }
 
   function loadState(state: EmbeddingAtlasState) {
-    if (typeof state.version != "string") {
-      return;
-    }
     charts = state.charts ?? {};
     chartStates = state.chartStates ?? {};
     layout = state.layout ?? "list";
     layoutStates = state.layoutStates ?? {};
+    columnStyles = state.columnStyles ?? {};
+  }
+
+  function getCurrentState(): EmbeddingAtlasState {
+    return {
+      version: EMBEDDING_ATLAS_VERSION,
+      timestamp: new Date().getTime() / 1000,
+      charts: charts,
+      chartStates: chartStates,
+      layout: layout,
+      layoutStates: layoutStates,
+      columnStyles: columnStyles,
+      predicate: currentPredicate(),
+    };
   }
 
   // Emit onStateChange event.
@@ -235,16 +244,7 @@
     if (!initialized) {
       return;
     }
-    let state: EmbeddingAtlasState = {
-      version: EMBEDDING_ATLAS_VERSION,
-      timestamp: new Date().getTime() / 1000,
-      charts: charts,
-      chartStates: chartStates,
-      layout: layout,
-      layoutStates: layoutStates,
-      predicate: currentPredicate(),
-    };
-    onStateChange?.(state);
+    onStateChange?.(getCurrentState());
   });
 
   onMount(async () => {
@@ -306,7 +306,6 @@
     highlight: writable(null),
     embeddingViewConfig: embeddingViewConfig,
     embeddingViewLabels: embeddingViewLabels,
-    tableCellRenderers: tableCellRenderers,
   };
 
   let charts = $state.raw<Record<string, any>>({});
@@ -362,6 +361,12 @@
         get container() {
           return container;
         },
+        get columnStyles() {
+          return columnStyles;
+        },
+        set columnStyles(x) {
+          columnStyles = x;
+        },
       });
 
       $effect(() => {
@@ -374,6 +379,11 @@
       });
     }
   });
+
+  async function onCopyState() {
+    let text = JSON.stringify(getCurrentState());
+    await navigator.clipboard.writeText(text);
+  }
 </script>
 
 <div class="embedding-atlas-root" style:width="100%" style:height="100%" bind:this={container}>
@@ -530,9 +540,18 @@
                   }}
                 />
               {/if}
-              <!-- Export Application -->
+              <!-- Export -->
+              <h4 class="text-slate-500 dark:text-slate-400 select-none">Export</h4>
+              <div class="flex flex-col gap-2">
+                <ActionButton
+                  icon={IconBraces}
+                  label="Copy State"
+                  title="Copy the current Embedding Atlas state as JSON to clipboard."
+                  class="w-48"
+                  onClick={onCopyState}
+                />
+              </div>
               {#if onExportApplication}
-                <h4 class="text-slate-500 dark:text-slate-400 select-none">Export</h4>
                 <div class="flex flex-col gap-2">
                   <ActionButton
                     icon={IconDownload}

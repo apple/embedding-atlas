@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 export interface ReconnectingWebSocketOptions {
   maxReconnectAttempts?: number;
   initialReconnectDelay?: number;

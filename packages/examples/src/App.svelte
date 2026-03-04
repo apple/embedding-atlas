@@ -10,7 +10,6 @@
   import EmbeddingViewExample from "./svelte/EmbeddingViewExample.svelte";
   import EmbeddingViewMosaicExample from "./svelte/EmbeddingViewMosaicExample.svelte";
   import FindClustersExample from "./svelte/FindClustersExample.svelte";
-  import TableExample from "./svelte/TableExample.svelte";
 
   import ReactEmbeddingAtlasExample from "./react/EmbeddingAtlas.js";
   import ReactEmbeddingViewExample from "./react/EmbeddingView.js";
@@ -24,7 +23,6 @@
     "/svelte/embedding-atlas": EmbeddingAtlasExample,
     "/svelte/embedding-view": EmbeddingViewExample,
     "/svelte/embedding-view-mosaic": EmbeddingViewMosaicExample,
-    "/svelte/table": TableExample,
     "/svelte/find-clusters": FindClustersExample,
     "/react/embedding-view": reactWrap(ReactEmbeddingViewExample),
     "/react/embedding-atlas": reactWrap(ReactEmbeddingAtlasExample),
@@ -37,7 +35,6 @@
         { title: "EmbeddingView", href: "/svelte/embedding-view" },
         { title: "EmbeddingViewMosaic", href: "/svelte/embedding-view-mosaic" },
         { title: "EmbeddingAtlas", href: "/svelte/embedding-atlas" },
-        { title: "Table", href: "/svelte/table" },
         { title: "findClusters", href: "/svelte/find-clusters" },
       ],
     },

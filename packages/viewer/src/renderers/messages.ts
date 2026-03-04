@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import { safeJSONStringify } from "./json.js";
-import { renderMarkdown } from "./markdown.js";
+import { renderMarkdown } from "../utils/html_template.js";
+import { safeJSONStringify } from "./renderer_utils.js";
 
 type ResolvedContent = { type: "text"; text: string } | { type: "image"; imageUrl: string };
 
@@ -62,69 +62,59 @@ function resolveMessage(item: any): ResolvedMessage | undefined {
   return { role, content, remaining };
 }
 
-export class MessagesRenderer {
-  element: HTMLDivElement;
-
-  constructor(element: HTMLDivElement, props: { value: any }) {
-    this.element = element;
-    this.update(props);
-  }
-
-  update(props: { value: any }) {
-    let div = document.createElement("div");
-    if (props.value == null) {
-      div.innerText = "(null)";
-    } else if (typeof props.value == "string") {
-      div.innerText = props.value;
-    } else if (props.value instanceof Array) {
-      for (let item of props.value) {
-        let resolved = resolveMessage(item);
-        if (resolved == undefined) {
-          continue;
-        }
-        div.appendChild(
-          E("div", {
-            class: "mb-1 flex flex-col gap-1",
-            children: [
-              // Role
-              E("div", {
-                class:
-                  "text-xs font-bold border-b text-gray-400 dark:text-gray-500 border-gray-400 dark:border-gray-500",
-                innerText: resolved.role,
-              }),
-              // Content
-              ...resolved.content.map((c) => {
-                if (c.type == "text") {
-                  return E("div", {
-                    class: "prose dark:prose-invert max-w-none",
-                    innerHTML: renderMarkdown(c.text),
-                  });
-                } else if (c.type == "image") {
-                  return E("img", {
-                    class: "max-w-120 max-h-120 object-contain",
-                    attrs: {
-                      referrerpolicy: "no-referrer",
-                      src: c.imageUrl,
-                    },
-                  });
-                }
-              }),
-
-              // Remaining Properties
-              Object.keys(resolved.remaining).length > 0
-                ? E("pre", {
-                    class:
-                      "border rounded-md p-1 bg-gray-100 border-gray-200 dark:bg-gray-800 dark:border-gray-700 text-xs",
-                    innerText: safeJSONStringify(resolved.remaining, 2),
-                  })
-                : null,
-            ],
-          }),
-        );
+export function renderMessages(node: HTMLElement, props: { value: any }) {
+  let div = document.createElement("div");
+  if (props.value == null) {
+    div.innerText = "(null)";
+  } else if (typeof props.value == "string") {
+    div.innerText = props.value;
+  } else if (props.value instanceof Array) {
+    for (let item of props.value) {
+      let resolved = resolveMessage(item);
+      if (resolved == undefined) {
+        continue;
       }
+      div.appendChild(
+        E("div", {
+          class: "mb-1 flex flex-col gap-1",
+          children: [
+            // Role
+            E("div", {
+              class: "text-xs font-bold border-b text-gray-400 dark:text-gray-500 border-gray-400 dark:border-gray-500",
+              innerText: resolved.role,
+            }),
+            // Content
+            ...resolved.content.map((c) => {
+              if (c.type == "text") {
+                return E("div", {
+                  class: "prose dark:prose-invert max-w-none",
+                  innerHTML: renderMarkdown(c.text),
+                });
+              } else if (c.type == "image") {
+                return E("img", {
+                  class: "max-w-120 max-h-120 object-contain",
+                  attrs: {
+                    referrerpolicy: "no-referrer",
+                    src: c.imageUrl,
+                  },
+                });
+              }
+            }),
+
+            // Remaining Properties
+            Object.keys(resolved.remaining).length > 0
+              ? E("pre", {
+                  class:
+                    "border rounded-md p-1 bg-gray-100 border-gray-200 dark:bg-gray-800 dark:border-gray-700 text-xs",
+                  innerText: safeJSONStringify(resolved.remaining, 2),
+                })
+              : null,
+          ],
+        }),
+      );
     }
-    this.element.replaceChildren(div);
   }
+  node.replaceChildren(div);
 }
 
 function E(

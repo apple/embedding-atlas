@@ -3,7 +3,6 @@
 // The component API for embedding viewer.
 
 import type { EmbeddingViewConfig, Label } from "@embedding-atlas/component";
-import type { CustomCell } from "@embedding-atlas/table";
 import type { Coordinator } from "@uwdata/mosaic-core";
 import { createClassComponent } from "svelte/legacy";
 
@@ -12,6 +11,7 @@ import Component from "./EmbeddingAtlas.svelte";
 import type { ModelContextAPI } from "./app/mcp_server.js";
 import type { ChartThemeConfig } from "./charts/common/theme.js";
 import type { DefaultChartsConfig } from "./charts/default_charts.js";
+import type { ColumnStyle } from "./renderers/types.js";
 
 import cssCode from "./app.css?inline";
 
@@ -72,9 +72,6 @@ export interface EmbeddingAtlasProps {
    *  If set to null, search will be disabled. */
   searcher?: Searcher | null;
 
-  /** Custom cell renderers for the table view. */
-  tableCellRenderers?: Record<string, CustomCell | "markdown">;
-
   /** A callback to export the currently selected points. */
   onExportSelection?:
     | ((predicate: string | null, format: "json" | "jsonl" | "csv" | "parquet") => Promise<void>)
@@ -94,11 +91,11 @@ export interface EmbeddingAtlasProps {
 }
 
 export interface EmbeddingAtlasState {
-  /** The version of Embedding Atlas that created this state. */
-  version: string;
+  /** The version of Embedding Atlas that created this state. If omitted, assume the current version. */
+  version?: string;
 
   /** UNIX timestamp when this was created. */
-  timestamp: number;
+  timestamp?: number;
 
   /** The list of charts. */
   charts?: Record<string, any>;
@@ -111,6 +108,9 @@ export interface EmbeddingAtlasState {
 
   /** The state of all layouts. */
   layoutStates?: Record<string, any>;
+
+  /** Column display and rendering styles. */
+  columnStyles?: Record<string, ColumnStyle>;
 
   /** The selection predicate (SQL expression).
    *  This property is derived from chart states, changing this directly has no effect. */

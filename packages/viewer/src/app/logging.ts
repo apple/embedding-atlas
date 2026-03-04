@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import { nanoid } from "nanoid";
 import { writable, type Writable } from "svelte/store";
 

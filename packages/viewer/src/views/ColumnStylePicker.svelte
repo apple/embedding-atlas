@@ -2,7 +2,7 @@
 <script lang="ts">
   import ColumnStylePickerRow from "./ColumnStylePickerRow.svelte";
 
-  import { type ColumnStyle } from "../renderers/index.js";
+  import { type ColumnStyle } from "../renderers/types.js";
   import type { ColumnDesc } from "../utils/database.js";
 
   interface Props {

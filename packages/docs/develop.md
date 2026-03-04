@@ -8,8 +8,6 @@ Frontend:
 
 - `packages/component`: The `EmbeddingView` and `EmbeddingViewMosaic` components.
 
-- `packages/table`: The `Table` component.
-
 - `packages/viewer`: The frontend application for visualizing embedding and other columns. It also provides the `EmbeddingAtlas` component that can be embedded in other applications.
 
 - `packages/density-clustering`: The density clustering algorithm, written in Rust.

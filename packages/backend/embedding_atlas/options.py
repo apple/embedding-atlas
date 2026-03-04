@@ -50,6 +50,9 @@ class EmbeddingAtlasOptions(TypedDict, total=False):
 
     show_embedding:
         Whether to display the embedding view when the widget opens.
+
+    initial_state:
+        The initial Embedding Atlas state.
     """
 
     table: str | None
@@ -67,6 +70,8 @@ class EmbeddingAtlasOptions(TypedDict, total=False):
     show_table: bool | None
     show_charts: bool | None
     show_embedding: bool | None
+
+    initial_state: dict | None
 
 
 def make_embedding_atlas_props(**options: Unpack[EmbeddingAtlasOptions]) -> dict:
@@ -111,13 +116,14 @@ def make_embedding_atlas_props(**options: Unpack[EmbeddingAtlasOptions]) -> dict
     set_prop("embeddingViewLabels", options.get("labels"))
     set_prop("embeddingViewConfig.autoLabelStopWords", options.get("stop_words"))
 
+    # Initial state
+    set_prop("initialState", options.get("initial_state"))
+
     # Layout
     set_prop("initialState.layoutStates.list.showTable", options.get("show_table"))
     set_prop("initialState.layoutStates.list.showCharts", options.get("show_charts"))
     set_prop(
         "initialState.layoutStates.list.showEmbedding", options.get("show_embedding")
     )
-
-    set_prop("initialState.version", "0.0.0")
 
     return props

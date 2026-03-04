@@ -54,7 +54,7 @@ const examples: Record<string, Example[]> = {
               { type: "encoding.normalize", attribute: "y", layer: [0, 1], options: ["x"] },
             ],
           },
-          5: { type: "table", title: "Table", columns: ["title", "country", "province", "description", "points", "price", "variety", "designation", "projection_x", "projection_y", "neighbors"] },
+          5: { type: "instances", title: "Table" },
           6: { type: "count-plot", title: "country", data: { field: "country" } },
           7: { type: "count-plot", title: "province", data: { field: "province" } },
           8: {
@@ -99,7 +99,7 @@ const examples: Record<string, Example[]> = {
         charts: {
           1: { type: "embedding", title: "Embedding", data: { x: "projection_x", y: "projection_y", text: "Abstract", category: "Conference" } },
           2: { type: "predicates", title: "SQL Predicates" },
-          3: { type: "table", title: "Table", columns: ["Year", "Conference", "Title", "Abstract", "Link", "PaperType", "Award", "AuthorNames_Deduped", "AuthorAffiliation", "AuthorKeywords", "AminerCitationCount", "CitationCount_CrossRef", "PubsCited_CrossRef", "projection_x", "projection_y", "neighbors"] },
+          3: { type: "instances", title: "Table" },
           4: {
             title: "Year",
             layers: [
@@ -171,7 +171,7 @@ const examples: Record<string, Example[]> = {
         charts: {
           1: { type: "embedding", title: "Embedding", data: { x: "projection_x", y: "projection_y", text: "question", category: "subject_name" } },
           2: { title: "topic_name", type: "count-plot", data: { field: "topic_name" } },
-          3: { type: "table", title: "Table", columns: ["id", "question", "opa", "opb", "opc", "opd", "cop", "choice_type", "exp", "subject_name", "topic_name", "projection_x", "projection_y", "neighbors"] },
+          3: { type: "instances", title: "Table" },
           4: { type: "count-plot", title: "subject_name", data: { field: "subject_name" } },
         },
         layout: "dashboard",
@@ -204,7 +204,7 @@ const examples: Record<string, Example[]> = {
         version: "0.15.0",
         charts: {
           1: { type: "embedding", title: "Embedding", data: { x: "projection_x", y: "projection_y", text: "question", category: "discipline" } },
-          2: { type: "table", title: "Table", columns: ["uuid", "question", "options", "answer", "answer_letter", "discipline", "field", "subfield", "difficulty", "is_calculation", "projection_x", "projection_y", "neighbors"] },
+          2: { type: "instances", title: "Table" },
           3: { type: "count-plot", title: "discipline", data: { field: "discipline" } },
           4: { type: "count-plot", title: "field", data: { field: "field" } },
           5: { type: "count-plot", title: "subfield", data: { field: "subfield" } },
@@ -256,7 +256,7 @@ const examples: Record<string, Example[]> = {
               { type: "scale.type", channel: "y" },
             ],
           },
-          2: { type: "table", title: "Table", columns: ["Title", "US Gross", "Worldwide Gross", "US DVD Sales", "Production Budget", "Release Date", "MPAA Rating", "Running Time min", "Distributor", "Source", "Major Genre", "Creative Type", "Director", "Rotten Tomatoes Rating", "IMDB Rating", "IMDB Votes"] },
+          2: { type: "instances", title: "Table" },
           3: {
             title: "US Gross",
             layers: [
@@ -368,7 +368,7 @@ const examples: Record<string, Example[]> = {
         version: "0.15.0",
         charts: {
           1: { type: "predicates", title: "SQL Predicates" },
-          2: { type: "table", title: "Table", columns: ["image", "question", "choices", "answer", "hint", "task", "grade", "subject", "topic", "category", "skill", "lecture", "solution"] },
+          2: { type: "instances", title: "Table" },
           3: {
             title: "grade, topic",
             plotSize: { height: 350 },
@@ -415,7 +415,7 @@ const examples: Record<string, Example[]> = {
               { type: "encoding.normalize", attribute: "y", layer: [0, 1], options: ["x"] },
             ],
           },
-          2: { type: "table", title: "Table", columns: ["age", "workclass", "fnlwgt", "education", "education.num", "marital.status", "occupation", "relationship", "race", "sex", "capital.gain", "capital.loss", "hours.per.week", "native.country", "income"] },
+          2: { type: "instances", title: "Table" },
           3: { title: "Sex", type: "count-plot", data: { field: "sex" } },
           4: { type: "count-plot", title: "Workclass", data: { field: "workclass" } },
           5: { title: "Age (CDF) by Income", layers: [{ mark: "line", filter: "$filter", encoding: { x: { aggregate: "ecdf-value", field: "age" }, y: { aggregate: "ecdf-rank" }, color: { field: "education" } } }], selection: { brush: { encoding: "x" } }, widgets: [{ type: "scale.type", channel: "x" }] },
@@ -479,7 +479,7 @@ const examples: Record<string, Example[]> = {
               { type: "encoding.normalize", attribute: "y", layer: [0, 1], options: ["x"] },
             ],
           },
-          2: { type: "table", title: "Table", columns: ["MedInc", "HouseAge", "AveRooms", "AveBedrms", "Population", "AveOccup", "Latitude", "Longitude", "MedHouseVal"] },
+          2: { type: "instances", title: "Table" },
           3: {
             title: "MedInc",
             layers: [

@@ -4,5 +4,12 @@ import schemaBuiltinChartSpec from "./charts/chart_types.ts?type=BuiltinChartSpe
 import schemaBuiltinChartState from "./charts/chart_types.ts?type=BuiltinChartState&json-schema";
 import schemaDashboardLayoutState from "./layouts/dashboard/types.js?type=DashboardLayoutState&json-schema";
 import schemaListLayoutState from "./layouts/list/types.js?type=ListLayoutState&json-schema";
+import schemaColumnStyle from "./renderers/types.js?type=ColumnStyle&json-schema";
 
-export { schemaBuiltinChartSpec, schemaBuiltinChartState, schemaDashboardLayoutState, schemaListLayoutState };
+export {
+  schemaBuiltinChartSpec,
+  schemaBuiltinChartState,
+  schemaColumnStyle,
+  schemaDashboardLayoutState,
+  schemaListLayoutState,
+};

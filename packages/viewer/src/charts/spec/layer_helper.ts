@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import * as d3 from "d3";
 import type { SVGAttributes } from "svelte/elements";
 

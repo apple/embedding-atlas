@@ -1,0 +1,15 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect x="22" y="16" width="16" height="6" rx="2" fill="black" fill-opacity="0.5"/>
+<rect x="8" y="16" width="9" height="6" rx="2" fill="black" fill-opacity="0.5"/>
+<rect x="43" y="16" width="13" height="6" rx="2" fill="black" fill-opacity="0.5"/>
+<rect x="22" y="27" width="16" height="6" rx="2" fill="#007AFF"/>
+<rect x="8" y="27" width="9" height="6" rx="2" fill="#007AFF"/>
+<rect x="43" y="27" width="13" height="6" rx="2" fill="#007AFF"/>
+<rect opacity="0.75" x="22" y="35" width="16" height="6" rx="2" fill="#007AFF"/>
+<rect opacity="0.75" x="8" y="35" width="9" height="6" rx="2" fill="#007AFF"/>
+<rect opacity="0.75" x="43" y="35" width="13" height="6" rx="2" fill="#007AFF"/>
+<rect x="22" y="43" width="16" height="6" rx="2" fill="#007AFF"/>
+<rect x="8" y="43" width="9" height="6" rx="2" fill="#007AFF"/>
+<rect x="43" y="43" width="13" height="6" rx="2" fill="#007AFF"/>
+<path d="M40.5 16C40.7761 16 41 16.2239 41 16.5V24H55.5C55.7761 24 56 24.2239 56 24.5C56 24.7761 55.7761 25 55.5 25H41V48.5C41 48.7761 40.7761 49 40.5 49C40.2239 49 40 48.7761 40 48.5V25H20V48.5C20 48.7761 19.7761 49 19.5 49C19.2239 49 19 48.7761 19 48.5V25H8.5C8.22386 25 8 24.7761 8 24.5C8 24.2239 8.22386 24 8.5 24H19V16.5C19 16.2239 19.2239 16 19.5 16C19.7761 16 20 16.2239 20 16.5V24H40V16.5C40 16.2239 40.2239 16 40.5 16Z" fill="black" fill-opacity="0.5"/>
+</svg>

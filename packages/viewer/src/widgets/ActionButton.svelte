@@ -4,7 +4,7 @@
 
   import Button from "./Button.svelte";
 
-  import { IconError } from "../assets/icons.js";
+  import { IconCheck, IconError } from "../assets/icons.js";
 
   interface Props {
     label?: string | null;
@@ -17,7 +17,9 @@
 
   let { label = null, icon = null, title = "", order = null, onClick, class: additionalClasses }: Props = $props();
 
-  let state: "ready" | "running" | "error" = $state("ready");
+  let state: "ready" | "success" | "running" | "error" = $state("ready");
+
+  let timerClearSuccess: any | null = null;
 
   async function onClickButton() {
     if (!onClick) {
@@ -29,7 +31,15 @@
     state = "running";
     try {
       await onClick();
-      state = "ready";
+      state = "success";
+      if (timerClearSuccess != null) {
+        clearTimeout(timerClearSuccess);
+      }
+      timerClearSuccess = setTimeout(() => {
+        if (state == "success") {
+          state = "ready";
+        }
+      }, 2000);
     } catch (e) {
       state = "error";
       console.error(e);
@@ -39,7 +49,7 @@
 
 <Button
   label={label}
-  icon={state == "ready" ? icon : state == "running" ? SvgSpinner : IconError}
+  icon={state == "ready" ? icon : state == "running" ? SvgSpinner : state == "success" ? IconCheck : IconError}
   title={title}
   order={order}
   class={additionalClasses}

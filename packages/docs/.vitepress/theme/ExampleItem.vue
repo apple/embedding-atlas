@@ -42,7 +42,6 @@ const href = computed(
 
 .example-item:hover {
   color: var(--vp-c-indigo-1);
-  transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   border-color: var(--vp-c-brand-1);
 }
