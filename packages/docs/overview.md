@@ -15,7 +15,6 @@ Embedding Atlas is released as two packages:
   - All of these approaches allow you to compute embeddings (with custom models) and projections.
 
 - An npm package `embedding-atlas` that exposes the user interface components as API so you can use them in your own applications. Below are the exposed components:
-  - [Table](./table.md)
   - [EmbeddingView](./embedding-view.md)
   - [EmbeddingViewMosaic](./embedding-view-mosaic.md)
   - [EmbeddingAtlas](./embedding-atlas.md)

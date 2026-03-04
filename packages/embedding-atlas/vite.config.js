@@ -21,7 +21,6 @@ export default defineConfig({
       rollupTypes: true,
       bundledPackages: [
         "@embedding-atlas/component",
-        "@embedding-atlas/table",
         "@embedding-atlas/viewer",
         "@embedding-atlas/umap-wasm",
         "@embedding-atlas/density-clustering",

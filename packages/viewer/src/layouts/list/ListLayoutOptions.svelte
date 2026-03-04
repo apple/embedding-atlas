@@ -10,7 +10,7 @@
 
   let { charts, state, onStateChange }: LayoutOptionsProps<ListLayoutState> = $props();
 
-  let sections = $derived(getSections(charts));
+  let sections = $derived(getSections(charts, state));
 </script>
 
 <div class="flex gap-0.5 items-center">
@@ -26,16 +26,18 @@
       }
     />
   {/if}
-  <ToggleButton
-    icon={IconTable}
-    title="Show / hide table"
-    bind:checked={
-      () => state.showTable ?? true,
-      (v) => {
-        onStateChange({ showTable: v });
+  {#if sections.table.length > 0}
+    <ToggleButton
+      icon={IconTable}
+      title="Show / hide table"
+      bind:checked={
+        () => state.showTable ?? true,
+        (v) => {
+          onStateChange({ showTable: v });
+        }
       }
-    }
-  />
+    />
+  {/if}
   <ToggleButton
     icon={IconMenu}
     title="Show / hide charts"

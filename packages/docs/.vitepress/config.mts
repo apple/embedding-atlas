@@ -44,7 +44,6 @@ export default defineConfig({
       {
         text: "Component Library",
         items: [
-          { text: "Table", link: "/table" },
           { text: "EmbeddingView", link: "/embedding-view" },
           { text: "EmbeddingViewMosaic", link: "/embedding-view-mosaic" },
           { text: "EmbeddingAtlas", link: "/embedding-atlas" },

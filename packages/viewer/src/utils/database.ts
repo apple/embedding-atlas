@@ -44,6 +44,16 @@ export function predicateToString(predicate: ReturnType<Selection["predicate"]>)
   return predicate.toString().trim();
 }
 
+export function resolveSQLTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\$([a-zA-Z][a-zA-Z0-9\_]+)/g, (original, name) => {
+    if (vars[name] != undefined) {
+      return vars[name];
+    } else {
+      return original;
+    }
+  });
+}
+
 /** Column description */
 export interface ColumnDesc {
   name: string;

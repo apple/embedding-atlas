@@ -8,7 +8,6 @@ import {
   type EmbeddingViewMosaicProps,
   type EmbeddingViewProps,
 } from "./component.js";
-import { Table as TableComponent, type TableProps } from "./table.js";
 import { EmbeddingAtlas as EmbeddingAtlasComponent, type EmbeddingAtlasProps } from "./viewer.js";
 
 function makeReactWrapper<Props>(
@@ -42,7 +41,6 @@ const EmbeddingAtlas = makeReactWrapper<EmbeddingAtlasProps>(EmbeddingAtlasCompo
 
 const EmbeddingView = makeReactWrapper<EmbeddingViewProps>(EmbeddingViewComponent);
 const EmbeddingViewMosaic = makeReactWrapper<EmbeddingViewMosaicProps>(EmbeddingViewMosaicComponent);
-const Table = makeReactWrapper<TableProps>(TableComponent);
 
 export * from "./index.js";
-export { EmbeddingAtlas, EmbeddingView, EmbeddingViewMosaic, Table };
+export { EmbeddingAtlas, EmbeddingView, EmbeddingViewMosaic };

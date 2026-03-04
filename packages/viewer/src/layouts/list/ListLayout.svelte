@@ -2,25 +2,29 @@
 <script module lang="ts">
   export type Section = "embedding" | "table" | "chart";
 
-  export function findSection(spec: any): Section | undefined {
+  export function findSection(spec: any, id: string, placements?: Record<string, Section>): Section | undefined {
+    if (placements?.[id] != undefined) {
+      return placements[id];
+    }
+
     switch (spec.type) {
       case "embedding":
         return "embedding";
-      case "table":
+      case "instances":
         return "table";
       default:
         return "chart";
     }
   }
 
-  export function getSections(charts: Record<string, any>): Record<Section, string[]> {
+  export function getSections(charts: Record<string, any>, layoutState: ListLayoutState): Record<Section, string[]> {
     let r: Record<Section, string[]> = {
       embedding: [],
       table: [],
       chart: [],
     };
     for (let id in charts) {
-      let section = findSection(charts[id]);
+      let section = findSection(charts[id], id, layoutState.placements);
       if (section != undefined) {
         r[section].push(id);
       }
@@ -61,7 +65,7 @@
   let panelWidth = $state(400);
   let panelContainerWidth = $state(400);
 
-  let sections = $derived.by(deepMemo(() => getSections(charts)));
+  let sections = $derived.by(deepMemo(() => getSections(charts, layoutState)));
 
   let isMobileLayout = $derived(containerWidth < 500);
 
@@ -135,12 +139,12 @@
         {/if}
         {#if hasTable}
           <div
-            class={hasEmbedding ? "flex-none" : "flex-1"}
+            class="flex flex-row gap-2 overflow-hidden {hasEmbedding ? 'flex-none' : 'flex-1'}"
             style:height={hasEmbedding ? `${tableHeight}px` : null}
             transition:slide
           >
             {#each sections.table as id (id)}
-              <div class="flex-1 h-full overflow-hidden rounded-md">
+              <div class="flex-1 overflow-hidden rounded-md">
                 {@render chartView({ id: id, width: "container", height: "container" })}
               </div>
             {/each}

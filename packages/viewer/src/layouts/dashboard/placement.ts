@@ -62,7 +62,7 @@ export function computePlacements(
       w = 16;
       h = 12;
     }
-    if (charts[id].type == "table") {
+    if (charts[id].type == "table" || charts[id].type == "instances") {
       w = numColumns;
       h = 6;
     }

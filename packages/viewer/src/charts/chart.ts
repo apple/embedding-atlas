@@ -1,7 +1,6 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import type { EmbeddingViewConfig, Label } from "@embedding-atlas/component";
-import type { CustomCell } from "@embedding-atlas/table";
 import type { Coordinator, Selection } from "@uwdata/mosaic-core";
 import type { Readable, Writable } from "svelte/store";
 
@@ -87,17 +86,17 @@ export interface ChartContext {
   /** Current search result */
   searchResult: Readable<{ query: any; mode: string; ids: RowID[] } | null>;
 
-  /** The current highlight point. When this changes, supported views will highlight the given point. */
-  highlight: Writable<RowID | null>;
+  /**
+   * The current highlight point(s). When this changes, supported views will highlight the given point(s).
+   * When a new point is added to this list, views will animate to reveal the new point.
+   */
+  highlight: Writable<RowID[] | null>;
 
   /** Configuration for the embedding view. See docs for the EmbeddingView. */
   embeddingViewConfig?: EmbeddingViewConfig | null;
 
   /** Labels for the embedding view. */
   embeddingViewLabels?: Label[] | null;
-
-  /** Custom cell renderers for the table view. */
-  tableCellRenderers?: Record<string, CustomCell | "markdown">;
 }
 
 /** Props passed into a chart view. */

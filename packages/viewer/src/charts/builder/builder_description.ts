@@ -12,10 +12,11 @@ export type UIElement =
   | {
       field: {
         key: string;
-        label: string;
         required?: boolean;
         types?: JSType[] | null;
       };
+      label?: string;
+      details?: string;
     }
   | {
       code: {
@@ -23,9 +24,15 @@ export type UIElement =
         language?: string;
         jsonSchema?: any;
       };
+      label?: string;
+      details?: string;
     }
   | {
-      spec: { key: string };
+      spec: {
+        key: string;
+      };
+      label?: string;
+      details?: string;
     };
 
 // Helpers to infer the type of values from the UI description.

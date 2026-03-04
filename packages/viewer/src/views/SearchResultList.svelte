@@ -6,7 +6,7 @@
   import TooltipContent from "./TooltipContent.svelte";
 
   import { IconClose } from "../assets/icons.js";
-  import type { ColumnStyle } from "../renderers/index.js";
+  import type { ColumnStyle } from "../renderers/types.js";
   import type { SearchResultItem } from "../search/search.js";
 
   interface Props {

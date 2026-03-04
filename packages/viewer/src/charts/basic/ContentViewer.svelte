@@ -27,13 +27,11 @@
       value = r.get(0)?.value ?? undefined;
     }),
   );
-
-  let renderer = $derived($columnStyles[spec.field]?.renderer);
 </script>
 
 <Container width={width} height={height} scrollY={true}>
   {#if value != null}
-    <ContentRenderer value={value} renderer={renderer} />
+    <ContentRenderer value={value} style={$columnStyles[spec.field]} />
   {:else}
     (null)
   {/if}

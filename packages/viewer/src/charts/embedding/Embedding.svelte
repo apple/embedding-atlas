@@ -98,12 +98,27 @@
 
   $effect.pre(() => {
     let isOnMount = true;
+    let previousValue: RowID[] | null = null;
     return highlightStore.subscribe((v) => {
-      // Note: don't animate immediately on mount.
-      if (v !== null && !isOnMount) {
-        animateToPoint(v);
+      selection = v;
+
+      // Don't animate immediately on mount.
+      if (isOnMount) {
+        isOnMount = false;
+        previousValue = v;
+        return;
       }
-      isOnMount = false;
+      // Animate when a single new point is added.
+      let newIDs = v ?? [];
+      let oldIDs = previousValue ?? [];
+      let enteringIDs = newIDs.filter((x) => oldIDs.indexOf(x) < 0);
+      if (enteringIDs.length == 1) {
+        animateToPoint(enteringIDs[0]);
+      }
+      if (tooltip != null && newIDs.indexOf(tooltip) < 0) {
+        tooltip = null;
+      }
+      previousValue = v;
     });
   });
 
@@ -153,7 +168,6 @@
     let { x, y } = result.get(0) as { x: number; y: number };
     // Start animation and show tooltip.
     startViewportAnimation({ x: x, y: y, scale: scale });
-    selection = [identifier];
     tooltip = identifier;
   }
 
@@ -237,9 +251,7 @@
     selection={selection}
     onSelection={(points) => {
       selection = points;
-      if (points != null && points.length == 1) {
-        highlightStore.set(points[0].identifier);
-      }
+      highlightStore.set(points?.map((p) => p.identifier) ?? null);
     }}
   />
   <div class="absolute top-0 left-0 right-0 flex flex-wrap justify-between items-start pointer-events-none">

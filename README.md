@@ -61,13 +61,13 @@ npm install embedding-atlas
 ```
 
 ```js
-import { EmbeddingAtlas, EmbeddingView, Table } from "embedding-atlas";
+import { EmbeddingAtlas, EmbeddingView } from "embedding-atlas";
 
 // or with React:
-import { EmbeddingAtlas, EmbeddingView, Table } from "embedding-atlas/react";
+import { EmbeddingAtlas, EmbeddingView } from "embedding-atlas/react";
 
 // or Svelte:
-import { EmbeddingAtlas, EmbeddingView, Table } from "embedding-atlas/svelte";
+import { EmbeddingAtlas, EmbeddingView } from "embedding-atlas/svelte";
 ```
 
 For more information, please visit <https://apple.github.io/embedding-atlas/overview.html>.
@@ -109,8 +109,6 @@ This repo contains multiple sub-packages:
 Frontend:
 
 - `packages/component`: The `EmbeddingView` and `EmbeddingViewMosaic` components.
-
-- `packages/table`: The `Table` component.
 
 - `packages/viewer`: The frontend application for visualizing embedding and other columns. It also provides the `EmbeddingAtlas` component that can be embedded in other applications.
 

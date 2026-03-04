@@ -5,7 +5,7 @@
   import TooltipContent from "../../views/TooltipContent.svelte";
 
   import { IconSearch } from "../../assets/icons.js";
-  import type { ColumnStyle } from "../../renderers/index.js";
+  import type { ColumnStyle } from "../../renderers/types.js";
 
   interface Props {
     tooltip: DataPoint;

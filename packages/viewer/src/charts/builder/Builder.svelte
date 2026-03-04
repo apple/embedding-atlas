@@ -147,6 +147,12 @@
   <div class="select-none">{builder.description}</div>
 
   {#each builder.ui as elem}
+    {#if "label" in elem}
+      <div class="text-slate-500 dark:text-slate-400 select-none">{elem.label}</div>
+    {/if}
+    {#if "details" in elem}
+      <div class="text-slate-500 dark:text-slate-400 select-none text-sm">{elem.details}</div>
+    {/if}
     {#if "field" in elem}
       {@const key = elem.field.key}
       {@const options = (elem.field.required ? [] : [{ value: undefined as any, label: "--" }]).concat(
@@ -155,7 +161,6 @@
           label: `${c.name} (${c.type})`,
         })),
       )}
-      <span class="text-slate-500 dark:text-slate-400 select-none">{elem.field.label}</span>
       <Select
         value={values[key]}
         onChange={(v) => (values[key] = v)}

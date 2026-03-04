@@ -1,7 +1,7 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
   import { IconError, IconSpinner } from "../../assets/icons.js";
-  import { renderMarkdown } from "../../renderers/markdown.js";
+  import { renderMarkdown } from "../../utils/html_template.js";
   import type { LogMessage } from "../logging.js";
 
   interface Props {

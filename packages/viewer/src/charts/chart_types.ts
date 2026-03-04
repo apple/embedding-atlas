@@ -9,8 +9,8 @@ import Placeholder from "./basic/Placeholder.svelte";
 import Predicates from "./basic/Predicates.svelte";
 import Builder from "./builder/Builder.svelte";
 import Embedding from "./embedding/Embedding.svelte";
+import Instances from "./instances/Instances.svelte";
 import Chart from "./spec/Chart.svelte";
-import Table from "./table/Table.svelte";
 
 import type {
   ContentViewerSpec,
@@ -24,8 +24,8 @@ import type { UIElement } from "./builder/builder_description.js";
 import type { ChartBuilderDescription, ChartViewProps } from "./chart.js";
 import { histogramSpec } from "./default_charts.js";
 import type { EmbeddingSpec, EmbeddingState } from "./embedding/types.js";
+import type { InstancesSpec } from "./instances/types.js";
 import type { ChartSpec, ChartState } from "./spec/spec.js";
-import type { TableSpec } from "./table/types.js";
 
 export type ChartComponent = Component<ChartViewProps<any, any>, {}, "">;
 
@@ -89,8 +89,8 @@ registerChartType("builder", Builder);
 // Builtin chart types
 registerChartType("count-plot", CountPlot);
 registerChartType("embedding", Embedding);
+registerChartType("instances", Instances);
 registerChartType("predicates", Predicates);
-registerChartType("table", Table);
 registerChartType("markdown", Markdown, { supportsEditMode: true });
 registerChartType("content-viewer", ContentViewer);
 
@@ -100,9 +100,9 @@ export type BuiltinChartSpec =
   | ContentViewerSpec
   | CountPlotSpec
   | EmbeddingSpec
+  | InstancesSpec
   | MarkdownSpec
-  | PredicatesSpec
-  | TableSpec;
+  | PredicatesSpec;
 
 // State type for all builtin chart types
 export type BuiltinChartState = ChartState | EmbeddingState | CountPlotState | PredicatesState;
@@ -113,7 +113,7 @@ registerChartBuilder({
   icon: "chart-h-bar",
   description: "Create a count plot of a field",
   ui: [
-    { field: { key: "x", label: "Field", types: ["number", "string", "string[]"], required: true } }, //
+    { label: "Field", field: { key: "x", types: ["number", "string", "string[]"], required: true } }, //
   ] as const,
   create: ({ x }): CountPlotSpec | undefined => {
     if (x.type == "discrete[]") {
@@ -136,8 +136,8 @@ registerChartBuilder({
   icon: "chart-stacked",
   description: "Create a histogram of a field",
   ui: [
-    { field: { key: "x", label: "Field", types: ["number", "string"], required: true } }, //
-    { field: { key: "color", label: "Group Field", types: ["number", "string"] } },
+    { label: "Field", field: { key: "x", types: ["number", "string"], required: true } }, //
+    { label: "Group Field", field: { key: "color", types: ["number", "string"] } },
   ] as const,
   create: ({ x, color }): ChartSpec | undefined => histogramSpec(x.name, color?.name),
 });
@@ -146,9 +146,9 @@ registerChartBuilder({
   icon: "chart-line",
   description: "Create a line chart of two fields",
   ui: [
-    { field: { key: "x", label: "X Field", types: ["number", "string"], required: true } }, //
-    { field: { key: "y", label: "Y Field", types: ["number"], required: true } }, //
-    { field: { key: "color", label: "Group Field", types: ["number", "string"] } },
+    { label: "X Field", field: { key: "x", types: ["number", "string"], required: true } }, //
+    { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
+    { label: "Group Field", field: { key: "color", types: ["number", "string"] } },
   ] as const,
   create: ({ x, y, color }): ChartSpec | undefined => ({
     title: y.name,
@@ -175,8 +175,8 @@ registerChartBuilder({
   icon: "chart-ecdf",
   description: "Create a chart showing the empirical cumulative distribution (eCDF) of a field",
   ui: [
-    { field: { key: "x", label: "Field", types: ["number"], required: true } }, //
-    { field: { key: "color", label: "Group Field", types: ["number", "string"] } },
+    { label: "Field", field: { key: "x", types: ["number"], required: true } }, //
+    { label: "Group Field", field: { key: "color", types: ["number", "string"] } },
   ] as const,
   create: ({ x, color }): ChartSpec | undefined => ({
     title: x.name,
@@ -200,8 +200,8 @@ registerChartBuilder({
   icon: "chart-heatmap",
   description: "Create a 2D heatmap of two fields",
   ui: [
-    { field: { key: "x", label: "X Field", types: ["number", "string"], required: true } }, //
-    { field: { key: "y", label: "Y Field", types: ["number", "string"], required: true } }, //
+    { label: "X Field", field: { key: "x", types: ["number", "string"], required: true } }, //
+    { label: "Y Field", field: { key: "y", types: ["number", "string"], required: true } }, //
   ] as const,
   create: ({ x, y }): ChartSpec | undefined => ({
     title: `${x.name}, ${y.name}`,
@@ -239,8 +239,8 @@ registerChartBuilder({
   icon: "chart-boxplot",
   description: "Create a box plot",
   ui: [
-    { field: { key: "x", label: "X Field", required: true } }, //
-    { field: { key: "y", label: "Y Field", types: ["number"], required: true } }, //
+    { label: "X Field", field: { key: "x", required: true } }, //
+    { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
   ] as const,
   create: ({ x, y }): ChartSpec | undefined => ({
     title: x.name,
@@ -293,10 +293,10 @@ registerChartBuilder({
   icon: "chart-bubble",
   description: "Create a bubble chart",
   ui: [
-    { field: { key: "x", label: "X Field", types: ["number"], required: true } }, //
-    { field: { key: "y", label: "Y Field", types: ["number"], required: true } }, //
-    { field: { key: "color", label: "Color Field", types: ["number", "string"] } }, //
-    { field: { key: "group", label: "Group Field", types: ["number", "string"] } }, //
+    { label: "X Field", field: { key: "x", types: ["number"], required: true } }, //
+    { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
+    { label: "Color Field", field: { key: "color", types: ["number", "string"] } }, //
+    { label: "Group Field", field: { key: "group", types: ["number", "string"] } }, //
   ] as const,
   create: ({ x, y, color, group }): ChartSpec | undefined => ({
     title: x.name,
@@ -330,10 +330,10 @@ registerChartBuilder({
   icon: "chart-embedding",
   description: "Create an embedding view",
   ui: [
-    { field: { key: "x", label: "X Field", types: ["number"], required: true } }, //
-    { field: { key: "y", label: "Y Field", types: ["number"], required: true } }, //
-    { field: { key: "text", label: "Text Field", types: ["string"] } }, //
-    { field: { key: "category", label: "Category Field", types: ["string", "number"] } }, //
+    { label: "X Field", field: { key: "x", types: ["number"], required: true } }, //
+    { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
+    { label: "Text Field", field: { key: "text", types: ["string"] } }, //
+    { label: "Category Field", field: { key: "category", types: ["string", "number"] } }, //
   ] as const,
   preview: false,
   create: ({ x, y, text, category }, context): EmbeddingSpec | undefined => ({
@@ -374,7 +374,7 @@ registerChartBuilder({
   icon: "chart-content-viewer",
   description: "Create a view that displays a given field's content for the last selected point",
   preview: false,
-  ui: [{ field: { key: "field", label: "Field", required: true } }] as const,
+  ui: [{ label: "Field", field: { key: "field", required: true } }] as const,
   create: ({ field }): ContentViewerSpec | undefined => ({
     type: "content-viewer",
     title: field.name,
@@ -388,4 +388,53 @@ registerChartBuilder({
   preview: false,
   ui: [{ spec: { key: "spec" } }] as const,
   create: ({ spec }): ChartSpec | undefined => spec,
+});
+
+registerChartBuilder({
+  icon: "chart-table",
+  description: "Create a table view with pagination",
+  preview: false,
+  ui: [
+    {
+      label: "SQL query for the table (optional)",
+      details:
+        "Leave empty to show the (filtered) dataset, use $table and $filter to refer to the data table and filter predicate respectively.",
+      code: { key: "query", language: "sql" },
+    },
+  ] as const,
+  create: ({ query }): InstancesSpec | undefined => {
+    return {
+      type: "instances",
+      title: "Table",
+      viewMode: "table",
+      query: query != null && query.trim() != "" ? query : undefined,
+    };
+  },
+});
+
+registerChartBuilder({
+  icon: "chart-cards",
+  description: "Create a card view with pagination",
+  preview: false,
+  ui: [
+    {
+      label: "SQL query for the card view (optional)",
+      details:
+        "Leave empty to show the (filtered) dataset, use $table and $filter to refer to the data table and filter predicate respectively.",
+      code: { key: "query", language: "sql" },
+    },
+    {
+      label: "HTML template for the cards (optional)",
+      code: { key: "template", language: "" },
+    },
+  ] as const,
+  create: ({ query, template }): InstancesSpec | undefined => {
+    return {
+      type: "instances",
+      title: "Cards",
+      viewMode: "cards",
+      query: query != null && query.trim() != "" ? query : undefined,
+      cardTemplate: template != null && template.trim() != "" ? template : undefined,
+    };
+  },
 });

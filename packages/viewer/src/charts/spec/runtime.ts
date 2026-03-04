@@ -6,7 +6,7 @@ import * as SQL from "@uwdata/mosaic-sql";
 import * as d3 from "d3";
 import { derived, writable, type Writable } from "svelte/store";
 
-import { predicateToString } from "../../utils/database.js";
+import { predicateToString, resolveSQLTemplate } from "../../utils/database.js";
 import type { ChartContext } from "../chart.js";
 import { computeFieldStats, inferAggregate, type AggregateValue, type FieldStats } from "../common/aggregate.js";
 import type { AxisConfig, ScaleConfig, XYSelectionValue } from "../common/types.js";
@@ -196,7 +196,7 @@ class BuildContext {
     if (typeof field == "string") {
       return SQL.column(field);
     } else {
-      return SQL.sql`${replaceVars(field.sql, vars)}`;
+      return SQL.sql`${resolveSQLTemplate(field.sql, vars)}`;
     }
   }
 
@@ -205,7 +205,7 @@ class BuildContext {
     if (typeof table == "string") {
       return new SQL.TableRefNode(table);
     } else {
-      return SQL.sql`(${replaceVars(table.sql, vars)})`;
+      return SQL.sql`(${resolveSQLTemplate(table.sql, vars)})`;
     }
   }
 }
@@ -555,16 +555,6 @@ function buildEncoding(
             : undefined,
     };
   }
-}
-
-function replaceVars(text: string, vars: Record<string, string>): string {
-  return text.replace(/\$([a-zA-Z][a-zA-Z0-9\_]*)/g, (original, name) => {
-    if (vars[name] != undefined) {
-      return vars[name];
-    } else {
-      return original;
-    }
-  });
 }
 
 function fieldTitle(field: SQLField): string {

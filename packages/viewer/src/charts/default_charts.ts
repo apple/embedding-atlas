@@ -5,8 +5,8 @@ import type { Coordinator } from "@uwdata/mosaic-core";
 import { columnDescriptions, distinctCount } from "../utils/database.js";
 import type { BuiltinChartSpec } from "./chart_types.js";
 import type { EmbeddingSpec } from "./embedding/types.js";
+import type { InstancesSpec } from "./instances/types.js";
 import type { ChartSpec } from "./spec/spec.js";
-import type { TableSpec } from "./table/types.js";
 
 export interface DefaultChartsConfig {
   /** If specified, only include the given columns */
@@ -18,8 +18,8 @@ export interface DefaultChartsConfig {
   /** Override the chart spec for certain columns. If the override is set to `null` the column will be skipped */
   override?: Record<string, BuiltinChartSpec | null>;
 
-  /** Set to false to disable the table, or an object to override spec properties */
-  table?: boolean | Partial<TableSpec>;
+  /** Set to false to disable the instances table, or an object to override spec properties */
+  table?: boolean | Partial<InstancesSpec>;
 
   /** Set to false to disable the embedding view, or an object to override spec properties */
   embedding?: boolean | Partial<EmbeddingSpec>;
@@ -65,7 +65,10 @@ export async function defaultCharts(options: {
   charts.push({ type: "predicates", title: "SQL Predicates" });
 
   if (config.table !== false) {
-    let spec: TableSpec = { type: "table", title: "Table", columns: columns.map((x) => x.name) };
+    let spec: InstancesSpec = {
+      type: "instances",
+      title: "Instances",
+    };
     if (typeof config.table == "object") {
       spec = { ...spec, ...config.table };
     }

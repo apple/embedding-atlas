@@ -4,3 +4,4 @@ export { EmbeddingAtlas } from "./api.js";
 export type { Cache, EmbeddingAtlasProps, EmbeddingAtlasState, Searcher } from "./api.js";
 export type { BuiltinChartSpec } from "./charts/chart_types.js";
 export { defaultCharts } from "./charts/default_charts.js";
+export { registerRenderer } from "./renderers/renderer_types.js";
