@@ -31,7 +31,7 @@ export interface ScaleConfig {
    * are remapped to start at a slightly elevated position so the smallest count is clearly
    * distinguishable from the empty-cell background. Used for count-based color encodings.
    */
-  discontinuityAt0?: boolean;
+  discontinuityAtZero?: boolean;
 }
 
 export interface AxisConfig {

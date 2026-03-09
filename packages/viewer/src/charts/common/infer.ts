@@ -500,7 +500,7 @@ export function inferColorScale(spec: ScaleConfig, theme: ChartTheme): ConcreteS
       // When set, introduces a discontinuity: value 0 maps to the natural bottom of the
       // scale (near-white for pubugn, near-black for inferno) while positive values are
       // remapped to [0.05, 1.0] so even the smallest count is clearly distinguishable.
-      let zeroColor = spec.discontinuityAt0 ? interp(0) : undefined;
+      let zeroColor = spec.discontinuityAtZero ? interp(0) : undefined;
       let specialValuesSet = new Set(spec.specialValues ?? []);
       return {
         type: spec.type,
