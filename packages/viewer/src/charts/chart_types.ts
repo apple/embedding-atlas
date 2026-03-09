@@ -216,15 +216,6 @@ registerChartBuilder({
           color: { aggregate: "count" },
         },
       },
-      {
-        mark: "rect",
-        zIndex: -2,
-        encoding: {
-          color: {
-            value: 0,
-          },
-        },
-      },
     ],
     selection: { brush: { encoding: "xy" } },
     widgets: [

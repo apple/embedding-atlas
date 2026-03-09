@@ -24,6 +24,12 @@ export interface ScaleConfig {
    * For quantitative color scales, this should be a predefined interpolate scheme, or a list of colors to interpolate.
    */
   range?: (string | number)[] | string;
+
+  /**
+   * If true, the value 0 maps to fully transparent (opacity 0) while values above 0
+   * use the normal color scale. Used for count-based color encodings where 0 means "no data".
+   */
+  transparent0?: boolean;
 }
 
 export interface AxisConfig {

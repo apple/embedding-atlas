@@ -502,6 +502,9 @@ export function inferColorScale(spec: ScaleConfig, theme: ChartTheme): ConcreteS
         domain: spec.domain,
         specialValues: spec.specialValues ?? [],
         apply: (value: any) => {
+          if (spec.transparent0 && value === 0) {
+            return "transparent";
+          }
           if (specialValuesSet.has(value)) {
             return theme.markColorGray;
           }
