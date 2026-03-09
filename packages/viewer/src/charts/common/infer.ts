@@ -502,11 +502,18 @@ export function inferColorScale(spec: ScaleConfig, theme: ChartTheme): ConcreteS
         domain: spec.domain,
         specialValues: spec.specialValues ?? [],
         apply: (value: any) => {
-          if (spec.transparent0 && value === 0) {
-            return "transparent";
-          }
           if (specialValuesSet.has(value)) {
             return theme.markColorGray;
+          }
+          if (spec.discontinuityAt0) {
+            if (value === 0) {
+              // At exactly 0, use the natural bottom of the scale (near-white for light
+              // schemes like pubugn, near-black for dark schemes like inferno).
+              return interp(0);
+            }
+            // Remap positive values to [0.15, 1.0] so the smallest count is clearly
+            // distinguishable from the 0 background color.
+            return interp(0.05 + concrete.apply(value) * 0.95);
           }
           return interp(concrete.apply(value));
         },

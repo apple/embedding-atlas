@@ -26,10 +26,12 @@ export interface ScaleConfig {
   range?: (string | number)[] | string;
 
   /**
-   * If true, the value 0 maps to fully transparent (opacity 0) while values above 0
-   * use the normal color scale. Used for count-based color encodings where 0 means "no data".
+   * If true, introduces a discontinuity at 0: value 0 maps to the natural bottom of the
+   * color ramp (near-white or near-black depending on the scheme), while positive values
+   * are remapped to start at a slightly elevated position so the smallest count is clearly
+   * distinguishable from the empty-cell background. Used for count-based color encodings.
    */
-  transparent0?: boolean;
+  discontinuityAt0?: boolean;
 }
 
 export interface AxisConfig {
