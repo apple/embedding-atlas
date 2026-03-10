@@ -104,7 +104,7 @@
 </script>
 
 <table class="border-separate border-spacing-0 table-fixed w-full">
-  <thead class="sticky top-0 z-10 bg-white/60 dark:bg-black/60 backdrop-blur-sm">
+  <thead class="sticky top-0 z-10 bg-white dark:bg-black">
     <tr>
       {#each columns as column}
         {@const sortOrder = columnSortOrder(column, sort)}
