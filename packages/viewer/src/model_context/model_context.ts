@@ -184,8 +184,8 @@ export function provideModelContext(api: ModelContextAPI, delegate: ModelContext
         },
         additionalProperties: false,
       },
-      execute: async (params: { id: string; spec: any }) => {
-        return jsonResponse(delegate.chartStates[params.id]);
+      execute: async (params: { id: string }) => {
+        return jsonResponse(delegate.chartStates[params.id] ?? {});
       },
     },
     {
@@ -340,7 +340,7 @@ export function provideModelContext(api: ModelContextAPI, delegate: ModelContext
 }
 
 function textResponse(text: string): ToolResponse {
-  return { content: [{ type: "text", text: text }] };
+  return { content: [{ type: "text", text: text.toString() }] };
 }
 
 function jsonResponse(content: any): ToolResponse {

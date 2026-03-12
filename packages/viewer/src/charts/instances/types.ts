@@ -33,7 +33,11 @@ export interface InstancesSpec {
   /** Column styles specific to this instance view. These will override global column styles. */
   columnStyles?: Record<string, ColumnStyle>;
 
-  /** Liquid template for the cards (rendered with liquidjs). If not specified, use the tooltip view as card */
+  /**
+   * Liquid template for the cards (rendered with liquidjs).
+   * Use a Liquid template instead of column styles for custom cards.
+   * If not specified, use the tooltip view as card.
+   */
   cardTemplate?: string;
 }
 
