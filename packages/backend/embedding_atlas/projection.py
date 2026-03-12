@@ -184,6 +184,13 @@ def _projection_for_texts(
     if text_projector is None:
         text_projector = _project_text_with_sentence_transformers
 
+    if text_projector.__name__ == "<lambda>":
+        logger.warning(
+            "You passed an anonymous lambda function as the text projector."
+            "This may lead to cache collisions and incorrect results if you change the lambda function's implementation but not its arguments."
+            "Consider defining a named function instead for reliable caching behavior."
+        )
+
     # Some arguments may contain sensitive info (e.g., API keys) or do not invalidate the cache, so we exclude them
     excluded_text_projector_args = {"api_key", "api_base", "sync"}
     hashed_text_projector_args = {
@@ -191,6 +198,7 @@ def _projection_for_texts(
         for k, v in (text_projector_args or {}).items()
         if k not in excluded_text_projector_args
     }
+
     hasher = Hasher()
     hasher.update(
         {
@@ -338,10 +346,8 @@ def compute_text_projection(
     neighbors: str | None = "neighbors",
     model: str | None = None,
     batch_size: int | None = None,
-    text_projector: Literal[
-        "sentence_transformers",
-        "litellm",
-    ] = "sentence_transformers",
+    text_projector: TextProjectorCallback
+    | Literal["sentence_transformers", "litellm"] = "sentence_transformers",
     umap_args: dict = {},
     **kwargs,
 ):
@@ -363,11 +369,15 @@ def compute_text_projection(
               See https://www.sbert.net/docs/sentence_transformer/pretrained_models.html
             - For 'litellm': A LiteLLM-supported model identifier.
               See https://docs.litellm.ai/docs/embedding/supported_embedding
+            - For a custom TextProjectorCallback: An implementation-defined identifier.
+              This can be ignored if the callback uses precomputed embeddings or its own
+              configuration source.
         batch_size: int, batch size for processing embeddings. Larger values use more
             memory but may be faster. Default is 32. When using 'litellm', note that
             different providers have different limits on input tokens per request, so
             batch size should be set accordingly to avoid exceeding API limits.
-        text_projector: str, the embedding provider to use. Options are:
+        text_projector: TextProjectorCallback | str, the embedding implementation to
+            use. Options are:
             - 'sentence_transformers' (default): Computes embeddings locally using the
               SentenceTransformers library. Requires the sentence-transformers package.
               This approach runs the model on your local machine and is suitable for
@@ -378,6 +388,11 @@ def compute_text_projection(
               This approach supports a wide range of cloud-based embedding APIs
               (OpenAI, Cohere, Azure, etc.) and is useful when you want to leverage
               remote models without local computational overhead.
+            - TextProjectorCallback: A custom callable with signature
+              `(texts, batch_size, model, args) -> np.ndarray`. Use this to plug in
+              your own embedding pipeline or to return precomputed embeddings for the
+              provided texts. The callback should return one embedding vector per input
+              text.
         umap_args: dict, additional keyword arguments to pass to the UMAP algorithm
             (e.g., n_neighbors, min_dist, metric).
         **kwargs: Additional configuration options for the embedding provider:
@@ -393,12 +408,19 @@ def compute_text_projection(
               etc., where the embedding happens on a remote instance and the task is IO-bound.
               However, when performing embeddings through a locally-running server (e.g., Ollama),
               setting sync=True can help avoid memory issues by processing batches sequentially.
+            - For a custom TextProjectorCallback: Passed through as the `args`
+              dictionary argument so callbacks can receive implementation-specific
+              settings, or ignore them if not needed.
 
     Returns:
         The input DataFrame with added columns for X, Y coordinates and nearest neighbors.
     """
     text_series = data_frame[text].astype(str).fillna("")
-    text_projector_callback = _find_text_projector_callback(text_projector)
+    text_projector_callback = (
+        _find_text_projector_callback(text_projector)
+        if isinstance(text_projector, str)
+        else text_projector
+    )
 
     proj = _projection_for_texts(
         list(text_series),
