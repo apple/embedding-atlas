@@ -169,6 +169,14 @@ export interface Scale {
    * For quantitative color scales, this should be a predefined interpolate scheme, or a list of colors to interpolate.
    */
   range?: (string | number)[] | string;
+
+  /**
+   * Use when zero means "no data" and should be visually distinct from small positive values.
+   * When true, zero is rendered separately from the continuous scale so that even the smallest
+   * non-zero values are clearly distinguishable.
+   * Defaults to true for color scales whose domain includes zero.
+   */
+  discontinuityAtZero?: boolean;
 }
 
 export interface Axis {
