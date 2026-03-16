@@ -69,6 +69,24 @@ npm run dev
 
 Check the individual package READMEs for specific instructions.
 
+## Unit Tests
+
+To run unit tests for the JavaScript packages:
+
+```bash
+cd packages/utils
+npm run test
+```
+
+You may also run `npm run test` at the repository root, which runs all package tests.
+
+To run unit tests for the Python package (`packages/backend`):
+
+```bash
+cd packages/backend
+uv run pytest
+```
+
 ## Deployment
 
 The packages and website for the project are deployed with [GitHub Actions](https://github.com/apple/embedding-atlas/blob/main/.github/workflows/ci.yml).

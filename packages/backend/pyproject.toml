@@ -59,4 +59,5 @@ dev = [
   "streamlit >= 1.43.0",
   "anywidget >= 0.9.0",
   "docutils >= 0.22.0",
+  "pytest >= 9.0.2",
 ]

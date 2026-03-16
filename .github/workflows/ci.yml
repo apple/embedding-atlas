@@ -73,8 +73,11 @@ jobs:
       - name: Run type checks
         run: npm run check
 
-      - name: Run tests
+      - name: Run tests (JavaScript)
         run: npm run test
+
+      - name: Run tests (Python)
+        run: cd packages/backend && uv run pytest
 
       - name: Run code format check
         run: npm run check-format

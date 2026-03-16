@@ -2,10 +2,15 @@
 __pycache__/
 node_modules/
 .ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.claude/
+
 build/
 dist/
 distlib/
 target/
+
 *.tsbuildinfo
 .svelte-kit/
 .env
