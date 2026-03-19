@@ -56,5 +56,8 @@
     "vite": "^8.0.0",
     "vite-plugin-dts": "^4.5.4",
     "vite-plugin-wasm": "^3.6.0"
+  },
+  "dependencies": {
+    "vitefu": "^1.1.2"
   }
 }
