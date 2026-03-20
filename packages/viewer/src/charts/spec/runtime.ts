@@ -658,7 +658,8 @@ function inferScale(spec: Scale, hints: ScaleHints, data: DataValue[][], channel
         specialValues: hints.specialValues,
         constant: spec.constant,
         range: spec.range,
-        discontinuityAtZero: spec.discontinuityAtZero ?? (channel === "color" && hints.includeZero === true ? true : undefined),
+        discontinuityAtZero:
+          spec.discontinuityAtZero ?? (channel === "color" && hints.includeZero === true ? true : undefined),
       };
     }
     case "nominal": {
