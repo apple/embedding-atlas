@@ -24,6 +24,14 @@ export interface ScaleConfig {
    * For quantitative color scales, this should be a predefined interpolate scheme, or a list of colors to interpolate.
    */
   range?: (string | number)[] | string;
+
+  /**
+   * If true, introduces a discontinuity at 0: value 0 maps to the natural bottom of the
+   * color ramp (near-white or near-black depending on the scheme), while positive values
+   * are remapped to start at a slightly elevated position so the smallest count is clearly
+   * distinguishable from the empty-cell background. Used for count-based color encodings.
+   */
+  discontinuityAtZero?: boolean;
 }
 
 export interface AxisConfig {
