@@ -496,6 +496,11 @@ export function inferColorScale(spec: ScaleConfig, theme: ChartTheme): ConcreteS
       let intermediate = makeScale({ ...spec, specialValues: [] }, null, "x", theme);
       let concrete = intermediate.concrete([0, 1]);
       let interp = resolveInterpolate((spec.range as any) ?? theme.interpolate);
+      // Precompute the zero color so it isn't recalculated on every apply() call.
+      // When set, introduces a discontinuity: value 0 maps to the natural bottom of the
+      // scale (near-white for pubugn, near-black for inferno) while positive values are
+      // remapped to [0.05, 1.0] so even the smallest count is clearly distinguishable.
+      let zeroColor = spec.discontinuityAtZero ? interp(0) : undefined;
       let specialValuesSet = new Set(spec.specialValues ?? []);
       return {
         type: spec.type,
@@ -504,6 +509,12 @@ export function inferColorScale(spec: ScaleConfig, theme: ChartTheme): ConcreteS
         apply: (value: any) => {
           if (specialValuesSet.has(value)) {
             return theme.markColorGray;
+          }
+          if (zeroColor !== undefined) {
+            if (value === 0) {
+              return zeroColor;
+            }
+            return interp(0.05 + concrete.apply(value) * 0.95);
           }
           return interp(concrete.apply(value));
         },
