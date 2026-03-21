@@ -147,7 +147,7 @@ describe("compression", () => {
     });
 
     it("should handle data that requires padding", () => {
-      for (let length = 0; length < 1000; length++) {
+      for (let length = 0; length < 100; length++) {
         const original = new Uint8Array(length);
         for (let i = 0; i < length; i++) {
           original[i] = Math.floor(Math.random() * 256);

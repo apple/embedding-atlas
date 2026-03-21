@@ -12,7 +12,7 @@ export default defineConfig({
   worker: {
     format: "es",
     plugins: () => [wasm()],
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         inlineDynamicImports: true,
       },

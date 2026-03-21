@@ -30,7 +30,7 @@ export default defineConfig({
   ],
   worker: {
     format: "es",
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         entryFileNames: "[name].js",
       },
@@ -50,7 +50,7 @@ export default defineConfig({
       fileName: (_, entryName) => `${entryName}.js`,
       formats: ["es"],
     },
-    rollupOptions: {
+    rolldownOptions: {
       external: ["react", "@uwdata/mosaic-core", "@uwdata/mosaic-spec", "@uwdata/mosaic-sql", "@uwdata/vgplot"],
       output: {
         chunkFileNames: "chunk-[hash].js",
