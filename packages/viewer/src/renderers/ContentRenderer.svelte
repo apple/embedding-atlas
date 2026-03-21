@@ -1,8 +1,10 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { imageToDataUrl } from "../utils/image.js";
+  import AudioContent from "./AudioContent.svelte";
+
+  import { imageToDataUrl } from "../utils/media.js";
   import { renderers } from "./renderer_types.js";
-  import { isImage, isLink, stringify } from "./renderer_utils.js";
+  import { stringify, valueKind } from "./renderer_utils.js";
   import type { ColumnStyle } from "./types.js";
 
   interface Props {
@@ -14,15 +16,18 @@
 
   let renderer = $derived(style?.renderer);
   let rendererOptions = $derived(style?.options ?? {});
+  let kind = $derived(valueKind(value));
 
   let rendererAction = $derived(renderer != null ? (renderers[renderer] ?? null) : null);
 </script>
 
 {#if rendererAction == null}
-  {#if isLink(value)}
+  {#if kind == "link"}
     <a href={value} class="underline" target="_blank" rel="noopener noreferrer">{value}</a>
-  {:else if isImage(value)}
+  {:else if kind == "image"}
     <img src={imageToDataUrl(value)} alt="" referrerpolicy="no-referrer" class="max-w-24 max-h-24" />
+  {:else if kind == "audio"}
+    <AudioContent value={value} />
   {:else}
     {stringify(value)}
   {/if}

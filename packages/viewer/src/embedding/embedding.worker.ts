@@ -3,7 +3,7 @@
 import { createUMAP } from "@embedding-atlas/umap-wasm";
 import { load_image, pipeline } from "@huggingface/transformers";
 
-import { imageToDataUrl } from "../utils/image.js";
+import { imageToDataUrl } from "../utils/media.js";
 import { WorkerRPC } from "./worker_helper.js";
 
 let { handler, register } = WorkerRPC.runtime();

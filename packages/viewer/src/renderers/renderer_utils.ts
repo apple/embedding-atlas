@@ -1,21 +1,30 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-export function isLink(value: any): boolean {
-  return typeof value == "string" && (value.startsWith("http://") || value.startsWith("https://"));
-}
+const imageExtensions = new Set(["png", "jpg", "jpeg", "tiff", "tif", "gif"]);
+const audioExtensions = new Set(["wav", "wave", "mp3", "aac"]);
 
-export function isImage(value: any): boolean {
-  if (value == null) {
-    return false;
+// Quick heuristic check based on string prefixes and file extensions.
+// May not capture all formats (e.g., raw base64 strings, binary objects without a path).
+export function valueKind(value: any): "link" | "image" | "audio" | undefined {
+  if (typeof value == "string") {
+    if (value.startsWith("http://") || value.startsWith("https://")) {
+      return "link";
+    } else if (value.startsWith("data:image/")) {
+      return "image";
+    } else if (value.startsWith("data:audio/")) {
+      return "audio";
+    }
+  } else if (typeof value == "object" && value.bytes) {
+    if (typeof value.path == "string") {
+      let ext = value.path.split(".").pop()?.toLowerCase();
+      if (imageExtensions.has(ext)) {
+        return "image";
+      } else if (audioExtensions.has(ext)) {
+        return "audio";
+      }
+    }
   }
-  if (typeof value == "string" && value.startsWith("data:image/")) {
-    return true;
-  }
-  if (value.bytes && value.bytes instanceof Uint8Array) {
-    // TODO: check if the bytes are actually an image.
-    return true;
-  }
-  return false;
+  return undefined;
 }
 
 export function safeJSONStringify(value: any, space?: number): string {

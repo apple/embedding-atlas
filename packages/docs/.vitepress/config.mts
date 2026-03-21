@@ -33,6 +33,7 @@ export default defineConfig({
     sidebar: [
       { text: "Overview", link: "/overview" },
       { text: "Examples", link: "/examples" },
+      { text: "Data Formats", link: "/data-formats" },
       {
         text: "Use Embedding Atlas",
         items: [
