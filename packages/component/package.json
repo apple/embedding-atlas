@@ -50,10 +50,10 @@
     "quickselect": "^3.0.0",
     "simplify-js": "^1.2.4",
     "stemmer": "^2.0.1",
-    "svelte": "^5.54.0",
+    "svelte": "^5.54.1",
     "svelte-check": "^4.4.5",
     "typescript": "^5.9.3",
-    "vite": "^8.0.0",
+    "vite": "^8.0.1",
     "vite-plugin-dts": "^4.5.4",
     "vite-plugin-wasm": "^3.6.0"
   },

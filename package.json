@@ -23,6 +23,6 @@
     "prettier-plugin-svelte": "^3.5.1"
   },
   "dependencies": {
-    "svelte": "^5.54.0"
+    "svelte": "^5.54.1"
   }
 }
