@@ -4,11 +4,12 @@ import type { Component } from "svelte";
 import type { Action } from "svelte/action";
 import { createClassComponent } from "svelte/legacy";
 
+import AudioContent from "./AudioContent.svelte";
 import ImageOptions from "./ImageOptions.svelte";
 import LiquidTemplateOptions from "./LiquidTemplateOptions.svelte";
 
 import { compileLiquidTemplate, renderMarkdown } from "../utils/html_template.js";
-import { imageToDataUrl } from "../utils/image.js";
+import { imageToDataUrl } from "../utils/media.js";
 import { renderMessages } from "./messages.js";
 import { safeJSONStringify } from "./renderer_utils.js";
 import type {
@@ -60,6 +61,21 @@ function classToAction<E, T>(Component: CustomComponentClass<E, T>) {
   };
 }
 
+function svelteComponentToAction(Class: any): Action<any, any> {
+  return (node, props) => {
+    let c: any = createClassComponent({ component: Class, target: node, props: props });
+    return {
+      update: (props) => {
+        c?.$set(props);
+      },
+      destroy: () => {
+        c.$destroy();
+        c = null;
+      },
+    };
+  };
+}
+
 function registerSimpleRenderer(options: {
   name: string;
   label?: string;
@@ -81,19 +97,25 @@ function registerSimpleRenderer(options: {
     };
   };
   if (options.options) {
-    let Class = options.options;
-    rendererOptions[options.name] = (node, props) => {
-      let c: any = createClassComponent({ component: Class, target: node, props: props });
-      return {
-        update: (props) => {
-          c?.$set(props);
-        },
-        destroy: () => {
-          c.$destroy();
-          c = null;
-        },
-      };
-    };
+    rendererOptions[options.name] = svelteComponentToAction(options.options);
+  }
+}
+
+function registerSvelteRenderer(options: {
+  name: string;
+  label?: string;
+  description?: string;
+  renderer: Component<RendererProps>;
+  options?: Component<RendererOptionsProps>;
+}) {
+  renderersList.push({
+    renderer: options.name,
+    label: options.label ?? options.name,
+    description: options.description,
+  });
+  renderers[options.name] = svelteComponentToAction(options.renderer);
+  if (options.options) {
+    rendererOptions[options.name] = svelteComponentToAction(options.options);
   }
 }
 
@@ -141,6 +163,13 @@ registerSimpleRenderer({
     }
   },
   options: ImageOptions,
+});
+
+registerSvelteRenderer({
+  name: "audio",
+  label: "Audio",
+  description: "Render the value as an audio player.",
+  renderer: AudioContent,
 });
 
 registerSimpleRenderer({

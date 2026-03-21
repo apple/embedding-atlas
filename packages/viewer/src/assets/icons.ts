@@ -24,6 +24,8 @@ export { default as IconListLayout } from "~icons/fluent/layout-row-four-20-fill
 export { default as IconTableView } from "~icons/fluent/layout-row-three-20-filled";
 export { default as IconTable } from "~icons/fluent/panel-bottom-20-filled";
 export { default as IconMenu } from "~icons/fluent/panel-right-20-filled";
+export { default as IconPause } from "~icons/fluent/pause-20-filled";
+export { default as IconPlay } from "~icons/fluent/play-20-filled";
 export { default as IconSearch } from "~icons/fluent/search-16-filled";
 export { default as IconSettings } from "~icons/fluent/settings-16-filled";
 export { default as IconDarkMode } from "~icons/fluent/weather-moon-16-filled";
