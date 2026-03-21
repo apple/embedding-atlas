@@ -30,10 +30,9 @@ export default defineConfig({
     },
     copyPublicDir: false,
     chunkSizeWarningLimit: 4096,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         inlineDynamicImports: true,
-        interop: "compat",
       },
     },
   },

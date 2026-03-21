@@ -32,7 +32,7 @@ export default defineConfig({
   worker: {
     format: "es",
     plugins: () => [wasm()],
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         entryFileNames: "[name].js",
         inlineDynamicImports: true,
@@ -49,7 +49,7 @@ export default defineConfig({
       fileName: (_, entryName) => `${entryName}.js`,
       formats: ["es"],
     },
-    rollupOptions: {
+    rolldownOptions: {
       external: [
         "@uwdata/mosaic-core",
         "@uwdata/mosaic-spec",

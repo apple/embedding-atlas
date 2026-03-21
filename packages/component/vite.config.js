@@ -22,7 +22,7 @@ export default defineConfig({
   worker: {
     plugins: () => [wasm()],
     format: "es",
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         entryFileNames: "[name].js",
       },
@@ -37,7 +37,7 @@ export default defineConfig({
       fileName: (_, entryName) => `${entryName}.js`,
       formats: ["es"],
     },
-    rollupOptions: {
+    rolldownOptions: {
       external: ["@uwdata/mosaic-core", "@uwdata/mosaic-sql", "@embedding-atlas/utils"],
     },
     copyPublicDir: false,
