@@ -14,15 +14,15 @@ When using the [Python Notebook Widget](./widget.md) or [Streamlit Component](./
 
 Embedding Atlas provides several built-in renderers for displaying column values in the tooltip, instances view, and search results:
 
-| Renderer | Description |
-| --- | --- |
-| `markdown` | Render the value as Markdown. |
+| Renderer          | Description                                                                                                                |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `markdown`        | Render the value as Markdown.                                                                                              |
 | `liquid-template` | Render the value with a [Liquid](https://liquidjs.com/) template. Options: `template` (string), defaults to `{{ value }}`. |
-| `image` | Render the value as an image. Options: `size` (number), the max width/height in pixels. |
-| `audio` | Render the value as an audio player. |
-| `url` | Render the value as a clickable link. |
-| `json` | Render the value as formatted JSON. |
-| `messages` | Render the value as chat messages (OpenAI format). |
+| `image`           | Render the value as an image. Options: `size` (number), the max width/height in pixels.                                    |
+| `audio`           | Render the value as an audio player.                                                                                       |
+| `url`             | Render the value as a clickable link.                                                                                      |
+| `json`            | Render the value as formatted JSON.                                                                                        |
+| `messages`        | Render the value as chat messages (OpenAI format).                                                                         |
 
 ## Image Data
 
