@@ -14,7 +14,7 @@ export function valueKind(value: any): "link" | "image" | "audio" | undefined {
     } else if (value.startsWith("data:audio/")) {
       return "audio";
     }
-  } else if (typeof value == "object" && value.bytes) {
+  } else if (typeof value == "object" && value != null && value.bytes) {
     if (typeof value.path == "string") {
       let ext = value.path.split(".").pop()?.toLowerCase();
       if (imageExtensions.has(ext)) {
