@@ -1,6 +1,6 @@
 [project]
 name = "embedding-atlas"
-version = "0.19.0"
+version = "0.19.1"
 license = "MIT"
 description = "A tool for visualizing embeddings"
 keywords = ["embedding", "visualization"]
@@ -28,7 +28,7 @@ dependencies = [
   "llvmlite >= 0.43.0",
   "accelerate >= 1.5.0",
   "tqdm >= 4.60.0",
-  "litellm >= 1.70.0",
+  "litellm >= 1.70.0, != 1.82.7, != 1.82.8", # Critical supply chain attack: https://futuresearch.ai/blog/litellm-pypi-supply-chain-attack/
   "websockets >= 15.0.1",
 ]
 
