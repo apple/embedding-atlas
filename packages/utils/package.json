@@ -9,10 +9,12 @@
     "test": "vitest run"
   },
   "files": [
-    "dist"
+    "dist",
+    "vite"
   ],
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./vite": "./vite/index.js"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

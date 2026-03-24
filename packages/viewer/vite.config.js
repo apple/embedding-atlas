@@ -14,7 +14,7 @@ export default defineConfig({
     plugins: () => [wasm()],
     rolldownOptions: {
       output: {
-        inlineDynamicImports: true,
+        codeSplitting: false,
       },
     },
   },
