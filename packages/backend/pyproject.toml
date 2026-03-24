@@ -28,7 +28,7 @@ dependencies = [
   "llvmlite >= 0.43.0",
   "accelerate >= 1.5.0",
   "tqdm >= 4.60.0",
-  "litellm >= 1.70.0",
+  "litellm >= 1.70.0, <= 1.82.6",  # Critical supply chain attack: https://futuresearch.ai/blog/litellm-pypi-supply-chain-attack/
   "websockets >= 15.0.1",
 ]
 
