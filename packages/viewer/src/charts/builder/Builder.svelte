@@ -18,6 +18,7 @@
 
   let { context, width, height, onSpecChange, onStateChange }: ChartViewProps<{}, {}> = $props();
 
+  // svelte-ignore state_referenced_locally
   let { columns, colorScheme } = context;
 
   let chartBuilders = chartBuilderDescriptions();

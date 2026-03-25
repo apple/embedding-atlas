@@ -33,10 +33,12 @@
 
   const svgLimit = 2000;
 
+  // svelte-ignore state_referenced_locally
   let { colorScheme, theme: themeConfig } = context;
 
   let theme = $derived(resolveChartTheme($colorScheme, $themeConfig));
 
+  // svelte-ignore state_referenced_locally
   let runtime = new ChartRuntime(context, () => {
     onStateChange({}, "replace");
   });

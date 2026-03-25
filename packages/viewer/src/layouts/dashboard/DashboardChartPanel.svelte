@@ -53,6 +53,7 @@
     chartView,
   }: Props = $props();
 
+  // svelte-ignore state_referenced_locally
   let { colorScheme } = context;
 
   let { x, y, width, height } = $derived(grid.resolvePlacement(placement));

@@ -31,6 +31,7 @@
     onStateChange,
   }: ChartViewProps<PredicatesSpec, PredicatesState> = $props();
 
+  // svelte-ignore state_referenced_locally
   let { colorScheme } = context;
 
   let items = $derived(spec.items ?? []);

@@ -16,6 +16,7 @@
 
   let { class: className, initialValue, colorScheme, onChange }: Props = $props();
 
+  // svelte-ignore state_referenced_locally
   let value = JSON5.stringify(initialValue, { space: 2, quote: '"' });
 
   function parse(textValue: string): ChartSpec | undefined {

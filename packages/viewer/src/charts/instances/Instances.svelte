@@ -27,13 +27,15 @@
     onStateChange,
   }: ChartViewProps<InstancesSpec, InstancesState> = $props();
 
+  // svelte-ignore state_referenced_locally
   let { columnStyles: contextColumnStyles } = context;
 
   // Merge spec columnStyles with global ones (spec takes precedence)
   let columnStyles = $derived({ ...$contextColumnStyles, ...spec.columnStyles });
 
-  let isolatedHighlight = isolatedWritable(context.highlight);
+  // svelte-ignore state_referenced_locally
   let highlight = context.highlight;
+  let isolatedHighlight = isolatedWritable(highlight);
 
   let viewMode = $derived((spec.viewMode ?? "table") as "table" | "cards");
   let offset = $derived(chartState.offset ?? 0);

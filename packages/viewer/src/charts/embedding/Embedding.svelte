@@ -60,9 +60,12 @@
     onSpecChange,
   }: ChartViewProps<EmbeddingSpec, EmbeddingState> = $props();
 
+  // svelte-ignore state_referenced_locally
   let { colorScheme, columnStyles, searchResult, theme: themeConfig } = context;
+
   let theme = $derived(resolveChartTheme($colorScheme, $themeConfig));
 
+  // svelte-ignore state_referenced_locally
   let highlightStore = isolatedWritable(context.highlight);
 
   let categoryColumn = $derived(spec.data.category);

@@ -25,7 +25,9 @@
     onSpecChange,
   }: ChartViewProps<CountPlotSpec, CountPlotState> = $props();
 
+  // svelte-ignore state_referenced_locally
   let { coordinator, colorScheme, theme: themeConfig } = context;
+
   let theme = $derived(resolveChartTheme($colorScheme, $themeConfig));
 
   let { selection } = $derived(chartState);

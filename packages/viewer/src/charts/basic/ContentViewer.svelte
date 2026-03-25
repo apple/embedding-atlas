@@ -10,6 +10,7 @@
 
   let { context, width, height, spec }: ChartViewProps<ContentViewerSpec, {}> = $props();
 
+  // svelte-ignore state_referenced_locally
   let { columnStyles } = context;
 
   let value = $state<any>(undefined);
