@@ -50,6 +50,7 @@ const href = computed(
   border-radius: 2px;
   aspect-ratio: 16 / 9;
   object-fit: cover;
+  margin: 0;
 }
 
 .example-item-title {

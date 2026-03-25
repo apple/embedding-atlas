@@ -56,6 +56,7 @@
     onChartStatesChange,
   }: LayoutProps<ListLayoutState> = $props();
 
+  // svelte-ignore state_referenced_locally
   let { colorScheme } = context;
 
   let containerWidth = $state(100);

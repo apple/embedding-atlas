@@ -9,13 +9,15 @@
     "test": "vitest run"
   },
   "files": [
-    "dist"
+    "dist",
+    "vite"
   ],
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./vite": "./vite/index.js"
   },
   "devDependencies": {
-    "typescript": "^5.9.2",
-    "vitest": "^4.0.9"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
   }
 }

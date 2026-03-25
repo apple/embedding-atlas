@@ -27,13 +27,15 @@
     onStateChange,
   }: ChartViewProps<InstancesSpec, InstancesState> = $props();
 
+  // svelte-ignore state_referenced_locally
   let { columnStyles: contextColumnStyles } = context;
 
   // Merge spec columnStyles with global ones (spec takes precedence)
   let columnStyles = $derived({ ...$contextColumnStyles, ...spec.columnStyles });
 
-  let isolatedHighlight = isolatedWritable(context.highlight);
+  // svelte-ignore state_referenced_locally
   let highlight = context.highlight;
+  let isolatedHighlight = isolatedWritable(highlight);
 
   let viewMode = $derived((spec.viewMode ?? "table") as "table" | "cards");
   let offset = $derived(chartState.offset ?? 0);
@@ -245,6 +247,12 @@
     return Math.min(600, Math.max(80, characterLength * 8 + 40));
   }
 
+  const scrollParameters = {
+    behavior: "smooth",
+    block: "center",
+    container: "nearest",
+  } as const;
+
   // Animate to a point. When the point is in the same page, scroll to the point;
   // otherwise, go to the page with the point, and reveal the element directly.
   async function animateToPoint(id: RowID) {
@@ -259,7 +267,7 @@
     // Check if highlighted item is in current page
     let isInCurrentPage = data.data.some((row) => row.__id__ === id);
     if (isInCurrentPage) {
-      contentView?.getElementForId(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      contentView?.getElementForId(id)?.scrollIntoView(scrollParameters);
     } else {
       let newOffset = await data?.offsetForId?.(id);
       if (newOffset != undefined) {
@@ -283,7 +291,7 @@
     if (currentData?.offset == scrollTo.offset) {
       scrollToOnLoadPage = undefined;
       untrack(() => {
-        contentView?.getElementForId(scrollTo.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        contentView?.getElementForId(scrollTo.id)?.scrollIntoView(scrollParameters);
       });
     }
   });
