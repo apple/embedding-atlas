@@ -28,6 +28,7 @@
         CREATE OR REPLACE MACRO random_normal() AS (sqrt(-2 * LN(random())) * cos(2 * PI() * random()));
         CREATE OR REPLACE MACRO random_choice(list, f) AS list_element(list, 1 + floor(pow(random(), f) * len(list))::INT);
         CREATE OR REPLACE MACRO random_invalid(x) AS CASE WHEN random() < 0.02 THEN random_choice(['NaN','Inf','-Inf', Null], 2)::DOUBLE ELSE x END;
+        CREATE OR REPLACE MACRO random_invalid_time(x) AS CASE WHEN random() < 0.02 THEN NULL ELSE x END;
         CREATE OR REPLACE MACRO random_string(prefix) AS prefix || LPAD(FLOOR(POW(RANDOM(), 1.3) * 1000)::INT::VARCHAR, 3, '0');
         CREATE OR REPLACE MACRO shuffle_hash(x, v) AS x + hash(v) % 5;
 
@@ -44,6 +45,7 @@
             random_invalid(exp(random_normal() + 1)) AS var_log_normal,
             random_invalid(random_normal() + 1000) AS var_normal_biased,
             random_invalid(random_normal() - 1000) AS var_normal_biased_negative,
+            random_invalid_time(TIMESTAMP '2020-01-01 00:00:00' + INTERVAL (random() * 365 * 24) HOUR) AS var_timestamp,
             random_normal() AS x,
             random_normal() AS y
           FROM range(0, ${this.count}) t(id)

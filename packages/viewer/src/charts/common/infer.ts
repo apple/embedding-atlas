@@ -3,6 +3,7 @@
 import * as d3 from "d3";
 
 import { resolveInterpolate, type ChartTheme } from "./theme.js";
+import { continuousTicks } from "./ticks.js";
 import type {
   AxisConfig,
   ConcretePositionScale,
@@ -204,7 +205,8 @@ function makeContinuousScale(
   let scale: d3.ScaleContinuousNumeric<number, number>;
 
   switch (spec.type) {
-    case "linear": {
+    case "linear":
+    case "time": {
       scale = d3.scaleLinear().domain(spec.domain);
       break;
     }
@@ -215,9 +217,6 @@ function makeContinuousScale(
     case "symlog": {
       let constant = spec.constant ?? 1;
       scale = d3.scaleSymlog().constant(constant).domain(spec.domain);
-      scale.nice = () => scale;
-      scale.ticks = (count) => symlogTicks(scale.domain(), constant, count);
-      scale.tickFormat = () => d3.format("~s");
       break;
     }
     default: {
@@ -229,49 +228,26 @@ function makeContinuousScale(
   let gridLines: GridLine[] = [];
 
   if (axis) {
-    let values: number[] = [];
-    if (axis.extendScaleToTicks ?? true) {
-      if (axis.values) {
-        values = axis.values;
-        let all = scale.domain().concat(values);
-        scale = scale.domain([
-          all.reduce((a, b) => Math.min(a, b), all[0]),
-          all.reduce((a, b) => Math.max(a, b), all[0]),
-        ]);
-      } else {
-        let count = axis.desiredTickCount ?? 5;
-        if (scale.nice) {
-          scale = scale.nice(count);
-        }
-        values = scale.ticks(count);
-      }
-    } else {
-      if (axis.values) {
-        values = axis.values;
-      } else {
-        let count = axis.desiredTickCount ?? 5;
-        values = scale.ticks(count);
-      }
-      let [dmin, dmax] = scale.domain();
-      values = values.filter((x) => x >= dmin && x <= dmax);
-    }
+    let { domainMin, domainMax, values, format, level } = continuousTicks({
+      type: spec.type,
+      constant: spec.constant,
+      dataMin: d3.min(spec.domain),
+      dataMax: d3.max(spec.domain),
+      desiredCount: axis.desiredTickCount ?? 5,
+      extendDomainToTicks: axis.extendScaleToTicks ?? true,
+      values: axis.values,
+    });
+    scale.domain([domainMin, domainMax]);
+
     let labelPadding = axis.labelPadding ?? 6;
-    let tickFormat = scale.tickFormat(axis.values ? axis.values.length : (axis.desiredTickCount ?? 5));
-    let valueLevel = (x: number) => {
-      if (spec.type == "log" || spec.type == "symlog") {
-        return Math.round(Math.log10(Math.abs(x))) == Math.log10(Math.abs(x)) ? 0 : 1;
-      } else {
-        return 0;
-      }
-    };
     let opts = textOptions(axis, theme);
     labels = values.map((v) => {
-      let text = tickFormat(v);
+      let text = format(v);
       return {
         text: text,
         value: v,
         padding: labelPadding,
-        level: valueLevel(v),
+        level: level(v),
         orientation: "horizontal",
         ...measureText(text, opts),
       };
@@ -286,7 +262,7 @@ function makeContinuousScale(
         ...measureText(sp, opts),
       });
     }
-    gridLines = values.map((x) => ({ value: x, level: valueLevel(x) }));
+    gridLines = values.map((x) => ({ value: x, level: level(x) }));
   }
 
   if (dimension == "y") {
@@ -438,34 +414,6 @@ export function resolveLabelOverlap<T>(
     placed[spans[i].index] = !hasOverlap;
   }
   return labels.filter((_, i) => placed[i]);
-}
-
-function symlogTicks(domain: number[], constant: number, count?: number | undefined): number[] {
-  count = count ?? 5;
-
-  let min = domain[0];
-  let max = domain[1];
-
-  if ((min > 0 && max > 0 && min / max > 0.5) || (min < 0 && max < 0 && max / min > 0.5)) {
-    return d3.scaleLinear().domain([min, max]).ticks(count);
-  }
-
-  let start = constant * 2;
-  let threshold = constant * 5;
-  if (min < -threshold && max > threshold) {
-    count = Math.ceil(count / 2);
-  }
-  return [
-    ...(min < -threshold
-      ? d3
-          .scaleLog()
-          .domain([start, -min])
-          .ticks(count)
-          .map((x) => -x)
-      : []),
-    0,
-    ...(max > threshold ? d3.scaleLog().domain([start, max]).ticks(count) : []),
-  ].filter((x) => x >= min && x <= max);
 }
 
 export function inferColorScale(spec: ScaleConfig, theme: ChartTheme): ConcreteScale<string> {

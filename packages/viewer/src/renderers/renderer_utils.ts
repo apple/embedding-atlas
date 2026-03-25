@@ -53,6 +53,8 @@ export function stringify(value: any): string {
     return value.toLocaleString();
   } else if (Array.isArray(value)) {
     return "[" + value.map((x) => stringify(x)).join(", ") + "]";
+  } else if (value instanceof Date) {
+    return value.toISOString();
   }
   try {
     return safeJSONStringify(value);

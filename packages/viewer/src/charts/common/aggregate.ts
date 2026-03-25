@@ -3,12 +3,12 @@
 import type { Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 
-import { jsTypeFromDBType } from "../../utils/database.js";
-import { inferBinning } from "./binning.js";
+import { inferBinning, inferTimeBinning, type Binning } from "./binning.js";
 import type { ScaleConfig, ScaleType } from "./types.js";
 
 export interface FieldStats {
   field: SQL.ExprNode;
+  kind: "quantitative" | "temporal" | "nominal";
   /** Available if the data is quantitative */
   quantitative?: {
     /** Number of finite values */
@@ -27,6 +27,26 @@ export interface FieldStats {
     /** Number of non-finite values (inf, nan, null) */
     countNonFinite: number;
   };
+  temporal?: {
+    /** Number of finite values */
+    count: number;
+    /** The minimum finite value in seconds since epoch */
+    min: number;
+    /** The maximum finite value in seconds since epoch */
+    max: number;
+
+    /** Number of non-finite values (inf, nan, null) */
+    countNonFinite: number;
+
+    /**
+     * Whether the data includes timezone information.
+     * The field is always casted to milliseconds since epoch (1970-01-01 00:00:00+00).
+     * If true, the result is a true UTC time. We'll display the timestamp in the current timezone.
+     * If false, the result may or may not be a true UTC time because timezone information is missing.
+     * We will display the timestamp in the UTC timezone, but without any timezone indicator.
+     */
+    hasTimezone: boolean;
+  };
   /** Available if the data is nominal */
   nominal?: {
     // Top k levels
@@ -39,6 +59,45 @@ export interface FieldStats {
     nullCount: number;
   };
 }
+
+const quantitativeTypes = new Set([
+  "REAL",
+  "FLOAT4",
+  "FLOAT8",
+  "FLOAT",
+  "DOUBLE",
+  "INT",
+  "TINYINT",
+  "INT1",
+  "SMALLINT",
+  "INT2",
+  "SHORT",
+  "INTEGER",
+  "INT4",
+  "SIGNED",
+  "INT8",
+  "LONG",
+  "BIGINT",
+  "UTINYINT",
+  "USMALLINT",
+  "UINTEGER",
+  "UBIGINT",
+  "UHUGEINT",
+]);
+
+const temporalTypes = new Set([
+  "DATE",
+  "TIME",
+  "DATETIME",
+  "TIMESTAMP",
+  "TIMESTAMPTZ",
+  "TIMESTAMP WITH TIME ZONE",
+  "TIMESTAMP WITHOUT TIME ZONE",
+]);
+
+const temporalTypesWithTimezone = new Set(["TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"]);
+
+const nominalTypes = new Set(["BOOLEAN", "DATE", "VARCHAR", "CHAR", "BPCHAR", "TEXT", "STRING"]);
 
 /** Collect stats for distribution visualization.
  * For quantitative data, returns min, max, mean, median, and minPositive.
@@ -56,8 +115,9 @@ export async function computeFieldStats(
   if (columnType == undefined) {
     return;
   }
-  let jsColumnType = jsTypeFromDBType(columnType);
-  if (jsColumnType == "number") {
+
+  // Quantitative types
+  if (quantitativeTypes.has(columnType)) {
     let fieldExpr = SQL.cast(field, "DOUBLE");
     let r1 = await query(
       SQL.Query.from(table)
@@ -80,9 +140,44 @@ export async function computeFieldStats(
     );
     return {
       field: field,
+      kind: "quantitative",
       quantitative: { ...r1.get(0), ...r2.get(0) },
     };
-  } else if (jsColumnType == "string") {
+  }
+
+  // Temporal types
+  if (temporalTypes.has(columnType)) {
+    let hasTimezone = temporalTypesWithTimezone.has(columnType);
+    let fieldExpr = SQL.epoch_ms(field);
+    let r1 = await query(
+      SQL.Query.from(table)
+        .select({
+          count: SQL.count(),
+          min: SQL.min(fieldExpr),
+          max: SQL.max(fieldExpr),
+        })
+        .where(SQL.isFinite(fieldExpr)),
+    );
+    let r2 = await query(
+      SQL.Query.from(table)
+        .select({
+          countNonFinite: SQL.count(),
+        })
+        .where(SQL.or(SQL.not(SQL.isFinite(fieldExpr)), SQL.isNull(fieldExpr))),
+    );
+    return {
+      field: field,
+      kind: "temporal",
+      temporal: {
+        ...r1.get(0),
+        ...r2.get(0),
+        hasTimezone: hasTimezone,
+      },
+    };
+  }
+
+  // Nominal types
+  if (nominalTypes.has(columnType)) {
     let fieldExpr = SQL.cast(field, "TEXT");
 
     let levels: any[] = Array.from(
@@ -118,6 +213,7 @@ export async function computeFieldStats(
 
     return {
       field: field,
+      kind: "nominal",
       nominal: {
         levels: levels,
         numOtherLevels: numOtherLevels,
@@ -147,45 +243,41 @@ export function inferAggregate({
   scaleType?: ScaleType;
   binCount?: number;
 }): AggregateInfo | undefined {
-  // Quantitative data, infer binning
-  if (stats.quantitative) {
-    let binning = inferBinning(stats.quantitative!, {
-      scale: scaleType,
-      desiredCount: binCount ?? 20,
-    });
-    let inputExpr: SQL.ExprNode = SQL.cast(stats.field, "DOUBLE");
-    let expr = binning.scale.expr(inputExpr, binning.scale.constant ?? 0);
-    let select =
-      binning.scale.type == "log"
-        ? SQL.cond(
-            SQL.and(SQL.isFinite(inputExpr), SQL.gt(inputExpr, SQL.literal(0))),
-            SQL.floor(SQL.mul(SQL.sub(expr, binning.binStart), 1 / binning.binSize)),
-            SQL.literal(null),
-          )
-        : SQL.cond(
-            SQL.isFinite(inputExpr),
-            SQL.floor(SQL.mul(SQL.sub(expr, binning.binStart), 1 / binning.binSize)),
-            SQL.literal(null),
-          );
-    let valueToBinIndex = (x: number) => {
-      return Math.floor((binning.scale.forward(x, binning.scale.constant ?? 0) - binning.binStart) / binning.binSize);
-    };
-    let binIndexToValue = (idx: number) => {
-      return binning.scale.reverse(idx * binning.binSize + binning.binStart, binning.scale.constant ?? 0);
-    };
-    let bin0 = valueToBinIndex(binning.scale.type == "log" ? stats.quantitative.minPositive : stats.quantitative.min);
-    let bin1 = valueToBinIndex(stats.quantitative.max);
-    let domain = [binIndexToValue(bin0), binIndexToValue(bin1 + 1)];
+  // Quantitative or temporal data, infer binning
+  if (stats.quantitative || stats.temporal) {
+    let binning: Binning;
+    let inputExpr: SQL.ExprNode;
+    let hasNA = false;
 
-    let hasNA = stats.quantitative.countNonFinite > 0;
-    if (binning.scale.type == "log" && stats.quantitative.min < 0) {
+    if (stats.quantitative) {
+      binning = inferBinning(stats.quantitative, {
+        scale: scaleType,
+        desiredCount: binCount ?? 20,
+      });
+      hasNA = stats.quantitative.countNonFinite > 0;
+      inputExpr = SQL.cast(stats.field, "DOUBLE");
+    } else if (stats.temporal) {
+      binning = inferTimeBinning(stats.temporal, {
+        desiredCount: binCount ?? 20,
+        hasTimezone: stats.temporal.hasTimezone,
+      });
+      hasNA = stats.temporal.countNonFinite > 0;
+      inputExpr = SQL.epoch_ms(stats.field);
+    } else {
+      throw new Error("invalid stats");
+    }
+
+    let select = binning.binIndexExpr(inputExpr);
+
+    // For log scale, if we have <= values, we have n/a.
+    if (stats.quantitative && binning.scale.type == "log" && stats.quantitative.min <= 0) {
       hasNA = true;
     }
 
     let valueToPredicate = (v: AggregateValue | AggregateValue[]): SQL.ExprNode => {
       if (typeof v == "string") {
         if (v == "n/a") {
-          return SQL.or(SQL.not(SQL.isFinite(inputExpr)), SQL.isNull(inputExpr));
+          return binning.nullPredicateExpr(inputExpr);
         }
       } else if (v instanceof Array) {
         if (v.length == 2 && typeof v[0] == "number") {
@@ -205,7 +297,7 @@ export function inferAggregate({
       scale: {
         type: binning.scale.type,
         constant: binning.scale.constant,
-        domain: domain,
+        domain: binning.scale.domain,
         specialValues: hasNA ? ["n/a"] : [],
       },
       predicate: valueToPredicate,
@@ -221,7 +313,7 @@ export function inferAggregate({
         if (v == undefined) {
           return "n/a";
         } else {
-          return [binIndexToValue(v), binIndexToValue(v + 1)];
+          return binning.rangeForIndex(v);
         }
       },
     };

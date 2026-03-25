@@ -9,6 +9,7 @@
   import type { ColumnStyle } from "../../renderers/types.js";
   import type { ColumnDesc } from "../../utils/database.js";
   import type { RowID } from "../chart.js";
+  import { inferColumnFormatters } from "./infer_formatters.js";
   import type { SortOrder } from "./types.js";
 
   interface Props {
@@ -36,6 +37,8 @@
   }: Props = $props();
 
   let highlightSet = $derived(new Set(highlight));
+  let columnFormatters = $derived(inferColumnFormatters(data, columns));
+
   let idMapper = new Map<RowID, Element>();
 
   // Table UI state (owned by Table component)
@@ -186,7 +189,7 @@
               class="overflow-wrap-anywhere"
               class:line-clamp-3={!expandedRows.has(index) && isCellClamped(row[column])}
             >
-              <ContentRenderer value={row[column]} style={columnStyles[column]} />
+              <ContentRenderer value={row[column]} style={columnStyles[column]} formatter={columnFormatters[column]} />
             </div>
             {#if !expandedRows.has(index) && isCellClamped(row[column]) && hoveredCell?.row === index && hoveredCell?.col === column}
               <button
