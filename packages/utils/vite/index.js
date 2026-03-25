@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 export function fixAbsoluteImport() {
   // Fix a bug where vite outputs absolute paths for workers.
   return {

@@ -1,3 +1,4 @@
+<!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts" module>
   let currentlyPlaying: HTMLAudioElement | null = null;
 </script>

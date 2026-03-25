@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 use std::io::{Read, Write};
 
 use density_clustering::Array2D;
