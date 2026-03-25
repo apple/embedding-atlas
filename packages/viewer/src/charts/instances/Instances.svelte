@@ -247,6 +247,12 @@
     return Math.min(600, Math.max(80, characterLength * 8 + 40));
   }
 
+  const scrollParameters = {
+    behavior: "smooth",
+    block: "center",
+    container: "nearest",
+  } as const;
+
   // Animate to a point. When the point is in the same page, scroll to the point;
   // otherwise, go to the page with the point, and reveal the element directly.
   async function animateToPoint(id: RowID) {
@@ -261,7 +267,7 @@
     // Check if highlighted item is in current page
     let isInCurrentPage = data.data.some((row) => row.__id__ === id);
     if (isInCurrentPage) {
-      contentView?.getElementForId(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      contentView?.getElementForId(id)?.scrollIntoView(scrollParameters);
     } else {
       let newOffset = await data?.offsetForId?.(id);
       if (newOffset != undefined) {
@@ -285,7 +291,7 @@
     if (currentData?.offset == scrollTo.offset) {
       scrollToOnLoadPage = undefined;
       untrack(() => {
-        contentView?.getElementForId(scrollTo.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        contentView?.getElementForId(scrollTo.id)?.scrollIntoView(scrollParameters);
       });
     }
   });
