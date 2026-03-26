@@ -1,5 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
+  import { interactionHandler } from "@embedding-atlas/utils";
   import { makeClient, type Coordinator, type Selection, type SelectionClause } from "@uwdata/mosaic-core";
   import * as SQL from "@uwdata/mosaic-sql";
 
@@ -32,6 +33,7 @@
 
   let { selection } = $derived(chartState);
   let { limit = 10, labels = "#/#", order = "total-descending" } = $derived(spec);
+  let dataField = $derived(spec.data.field);
   let isListData = $derived(spec.data.isList ?? false);
   let showTotalBars = $derived(labels == "#/#");
 
@@ -50,6 +52,8 @@
 
   let chartData = $state.raw<ChartData | undefined>(undefined);
   let chartWidth = $state.raw(400);
+  let categoryWidth = $derived(spec.categoryWidth ?? 150);
+  const labelWidth = 120;
 
   let maxCount = $derived(
     chartData?.items
@@ -303,7 +307,7 @@
   }
 
   $effect.pre(() => {
-    return initializeClient(coordinator, context.table, spec.data.field, context.filter, order, limit, isListData);
+    return initializeClient(coordinator, context.table, dataField, context.filter, order, limit, isListData);
   });
 
   function toggleSelection(value: string, shift: boolean) {
@@ -388,7 +392,7 @@
 </script>
 
 <Container width={width} height={height} scrollY={true}>
-  <div class="flex flex-col text-sm w-full select-none" bind:clientWidth={chartWidth}>
+  <div class="flex flex-col relative text-sm w-full select-none" bind:clientWidth={chartWidth}>
     {#if chartData}
       {@const firstSpecialIndex = chartData.items.findIndex((x) => x.special != undefined)}
       {#each chartData.items as bar, i}
@@ -404,7 +408,7 @@
           onclick={(e) => toggleSelection(bar.value, e.shiftKey)}
           title={bar.value}
         >
-          <div class="w-40 flex-none overflow-hidden whitespace-nowrap text-ellipsis pr-1">
+          <div class="flex-none overflow-hidden whitespace-nowrap text-ellipsis pr-1" style:width="{categoryWidth}px">
             <span class:text-gray-400={!selected} class:dark:text-gray-400={!selected}>{bar.value}</span>
           </div>
           <CountPlotBar
@@ -419,23 +423,35 @@
                   { value: bar.countSelected, color: theme.markColorGray },
                 ]}
             maxValue={maxCount}
-            width={chartWidth - 250}
+            width={chartWidth - categoryWidth - labelWidth}
             label={formatted.label}
             title={formatted.title}
           />
         </button>
       {/each}
 
+      <div
+        class="absolute top-0 bottom-0 cursor-col-resize"
+        style:left="{categoryWidth - 3}px"
+        style:width="6px"
+        use:interactionHandler={{
+          drag: (e1) => {
+            let initial = categoryWidth;
+            return {
+              move: (e2) => {
+                let dx = e2.clientX - e1.clientX;
+                onSpecChange({ categoryWidth: Math.max(20, Math.min(chartWidth - labelWidth, initial + dx)) });
+              },
+            };
+          },
+        }}
+      ></div>
+
       <div class="flex mt-0.5">
-        <div class="w-40 flex-none overflow-hidden whitespace-nowrap text-ellipsis pr-1">
-          {#if isListData}
-            <div class="py-0.5 text-slate-400 dark:text-slate-500">(Occurrences in lists)</div>
-          {/if}
-        </div>
-        <div class="flex-1 mr-2 overflow-hidden">
+        <div class="flex-1 flex gap-2 mr-2 overflow-hidden">
           {#if limit != 10 || chartData.items.findIndex((x) => x.special == "other") >= 0}
             <button
-              class="py-0.5 text-left text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 whitespace-nowrap text-ellipsis w-full overflow-hidden"
+              class="py-0.5 text-left text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 whitespace-nowrap text-ellipsis overflow-hidden"
               onclick={() => {
                 let newLimit = limit < 50 ? 100 : 10;
                 onSpecChange({ limit: newLimit });
@@ -451,6 +467,13 @@
               {/if}
             </button>
           {/if}
+          {#if isListData}
+            <div
+              class="flex-1 py-0.5 text-slate-400 dark:text-slate-500 whitespace-nowrap text-ellipsis overflow-hidden"
+            >
+              (Occurrences in lists)
+            </div>
+          {/if}
         </div>
 
         <div class="flex gap-1">
@@ -463,6 +486,7 @@
                 { value: "selected-ascending", label: "↑ Selected" },
                 { value: "alphabetical", label: "↓ A-Z" },
               ]}
+              title="Sort order"
               value={order ?? "total-descending"}
               onChange={(v) => onSpecChange({ order: v })}
             />
@@ -473,6 +497,7 @@
               { value: "#", label: "#" },
               { value: "#/#", label: "#/#" },
             ]}
+            title={`#/#: count in selection / total count\n#: count in selection\n%: percentage in selection`}
             value={labels ?? "#/#"}
             onChange={(v) => onSpecChange({ labels: v })}
           />

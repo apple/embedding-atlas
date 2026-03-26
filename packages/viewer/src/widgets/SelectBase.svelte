@@ -10,6 +10,7 @@
   export interface Props {
     class?: string | null;
     style?: string | null;
+    title?: string;
     options?: Option[];
     value: any;
     placeholder?: string | null;
@@ -40,6 +41,7 @@
     disabled = false,
     placeholder = null,
     options = [],
+    title,
     onChange = undefined,
     class: className,
     style: style,
@@ -54,6 +56,7 @@
   bind:this={selectElement}
   class={className}
   style={style}
+  title={title}
   value={toOptionValue(value)}
   onchange={() => {
     if (selectElement && onChange) {
