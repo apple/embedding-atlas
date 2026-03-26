@@ -99,6 +99,11 @@
           name: c.name,
           type: "continuous",
         };
+      case "Date":
+        return {
+          name: c.name,
+          type: "continuous",
+        };
       case "string":
         return {
           name: c.name,

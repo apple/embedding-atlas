@@ -5,7 +5,9 @@ import * as SQL from "@uwdata/mosaic-sql";
 import * as d3 from "d3";
 
 import { distinctCount, jsTypeFromDBType } from "../../utils/database.js";
-import { inferBinning } from "../common/binning.js";
+import { computeFieldStats } from "../common/aggregate.js";
+import { inferBinning, inferTimeBinning, type Binning } from "../common/binning.js";
+import { inferNumberFormatter, inferTimeFormatter } from "../common/formatter.js";
 import { type ChartTheme } from "../common/theme.js";
 
 export interface EmbeddingLegend {
@@ -34,7 +36,7 @@ export async function makeCategoryColumn(
   let jsType = jsTypeFromDBType(desc.column_type);
   if (jsType == "string") {
     return await makeDiscreteCategoryColumn(coordinator, table, column, 10, theme);
-  } else if (jsType == "number") {
+  } else if (jsType == "number" || jsType == "Date") {
     let distinct = await distinctCount(coordinator, table, column);
     if (distinct <= 10) {
       return await makeDiscreteCategoryColumn(coordinator, table, column, 10, theme);
@@ -71,9 +73,10 @@ async function makeDiscreteCategoryColumn(
   await coordinator.exec(`
     ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${SQL.column(indexColumnName)} INTEGER DEFAULT 0;
     UPDATE ${table}
-    SET ${SQL.column(indexColumnName)} = CASE ${SQL.column(column)}::TEXT
-          ${values.map(({ value }, i) => SQL.sql`WHEN ${SQL.literal(value)} THEN ${SQL.literal(i)}`).join(" ")}
-          ELSE (CASE WHEN ${SQL.column(column)} IS NULL THEN ${SQL.literal(nullIndex)} ELSE ${SQL.literal(otherIndex)} END) END
+    SET ${SQL.column(indexColumnName)} =
+      CASE ${SQL.column(column)}::TEXT
+      ${values.map(({ value }, i) => SQL.sql`WHEN ${SQL.literal(value)} THEN ${SQL.literal(i)}`).join(" ")}
+      ELSE (CASE WHEN ${SQL.column(column)} IS NULL THEN ${SQL.literal(nullIndex)} ELSE ${SQL.literal(otherIndex)} END) END
   `);
 
   // Count by index.
@@ -106,7 +109,7 @@ async function makeDiscreteCategoryColumn(
         SELECT COUNT(DISTINCT(${SQL.column(column)}::TEXT)) AS otherCategoryCount
         FROM ${table}
         WHERE ${SQL.column(indexColumnName)} = ${SQL.literal(otherIndex)} AND ${SQL.column(column)} IS NOT NULL
-    `)
+      `)
     ).get(0);
     legend.push({
       label: `(other ${otherCategoryCount.toLocaleString()})`,
@@ -124,7 +127,7 @@ async function makeDiscreteCategoryColumn(
       await coordinator.exec(`
           UPDATE ${table}
           SET ${SQL.column(indexColumnName)} = ${SQL.column(indexColumnName)} - 1 WHERE ${SQL.column(indexColumnName)} = ${SQL.literal(nullIndex)}
-        `);
+      `);
       nullIndex -= 1;
     }
     legend.push({
@@ -147,29 +150,28 @@ async function makeBinnedNumericColumn(
   column: string,
   theme: ChartTheme,
 ): Promise<EmbeddingLegend> {
-  let stats = (
-    await coordinator.query(
-      SQL.Query.from(table)
-        .select({
-          count: SQL.count(),
-          min: SQL.min(SQL.column(column)),
-          max: SQL.max(SQL.column(column)),
-          mean: SQL.avg(SQL.column(column)),
-          median: SQL.median(SQL.column(column)),
-        })
-        .where(SQL.isFinite(SQL.column(column))),
-    )
-  ).get(0) as any;
-  let binning = inferBinning(stats);
+  let stats = await computeFieldStats(coordinator, table, SQL.column(column));
+
+  let binning: Binning;
+  let expr: SQL.ExprNode;
+  let inferFormatter: (v: number[]) => (v: number) => string;
+
+  if (stats?.quantitative) {
+    binning = inferBinning(stats.quantitative, { desiredCount: 5 });
+    expr = SQL.cast(SQL.column(column), "DOUBLE");
+    inferFormatter = inferNumberFormatter;
+  } else if (stats?.temporal) {
+    binning = inferTimeBinning(stats.temporal, { desiredCount: 5 });
+    expr = SQL.epoch_ms(SQL.column(column));
+    let hasTimezone = stats.temporal.hasTimezone;
+    inferFormatter = (v) => inferTimeFormatter(v, hasTimezone);
+  } else {
+    throw new Error("invalid data type");
+  }
+
   let indexColumnName = `__ev_${column}_id`;
 
-  let expr: SQL.ExprNode = SQL.cast(SQL.column(column), "DOUBLE");
-  expr = binning.scale.expr(expr, binning.scale.constant ?? 0);
-  let binIndexExpr = SQL.cond(
-    SQL.isFinite(SQL.cast(SQL.column(column), "DOUBLE")),
-    SQL.floor(SQL.mul(SQL.sub(expr, binning.binStart), 1 / binning.binSize)),
-    SQL.literal(null),
-  );
+  let binIndexExpr = binning.binIndexExpr(expr);
 
   await coordinator.exec(`
     ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${SQL.column(indexColumnName)} INTEGER DEFAULT 0;
@@ -191,7 +193,6 @@ async function makeBinnedNumericColumn(
   let maxIndex = null;
   let index2Count = new Map<number | null, number>();
 
-  let reverse = (x: number) => binning.scale.reverse(x, binning.scale.constant ?? 0);
   for (let { index, count } of counts as { index: number | null; count: number }[]) {
     if (index != null) {
       if (minIndex == null || index < minIndex) {
@@ -206,15 +207,19 @@ async function makeBinnedNumericColumn(
 
   let legend: EmbeddingLegend["legend"] = [];
 
-  let fmt = d3.format(".6");
-
   if (minIndex != null && maxIndex != null) {
     let colors = resolveOrdinalColors(theme, maxIndex - minIndex + 1);
+    let allValues = new Set<number>();
     for (let index = minIndex; index <= maxIndex; index++) {
-      let lowerBound = reverse(index * binning.binSize + binning.binStart);
-      let upperBound = reverse((index + 1) * binning.binSize + binning.binStart);
+      let [lowerBound, upperBound] = binning.rangeForIndex(index);
+      allValues.add(lowerBound);
+      allValues.add(upperBound);
+    }
+    let formatter = inferFormatter(Array.from(allValues));
+    for (let index = minIndex; index <= maxIndex; index++) {
+      let [lowerBound, upperBound] = binning.rangeForIndex(index);
       legend.push({
-        label: `[${fmt(lowerBound)}, ${fmt(upperBound)})`,
+        label: `[${formatter(lowerBound)}, ${formatter(upperBound)})`,
         color: colors[index - minIndex],
         predicate: SQL.eq(binIndexExpr, SQL.literal(index)),
         count: index2Count.get(index) ?? 0,
@@ -225,10 +230,10 @@ async function makeBinnedNumericColumn(
   if (index2Count.has(null)) {
     let nullIndex = legend.length;
     await coordinator.exec(`
-        UPDATE ${table}
-        SET ${SQL.column(indexColumnName)} = ${SQL.literal(nullIndex)}
-        WHERE ${SQL.column(indexColumnName)} IS NULL
-      `);
+      UPDATE ${table}
+      SET ${SQL.column(indexColumnName)} = ${SQL.literal(nullIndex)}
+      WHERE ${SQL.column(indexColumnName)} IS NULL
+    `);
     legend.push({
       label: "(null / nan / inf)",
       color: theme.nullColor,

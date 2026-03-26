@@ -285,7 +285,7 @@
         options={[
           { value: undefined, label: "--" },
           ...context.columns
-            .filter((c) => c.jsType == "string" || c.jsType == "number")
+            .filter((c) => c.jsType == "string" || c.jsType == "number" || c.jsType == "Date")
             .map((c) => ({ value: c.name, label: `${c.name} (${c.type})` })),
         ]}
       />

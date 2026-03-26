@@ -68,11 +68,12 @@ export interface ChartState {
 }
 
 interface ScaleHints {
-  kind: "quantitative" | "nominal";
+  kind: "quantitative" | "temporal" | "nominal";
   type?: ScaleConfig["type"];
   domain?: DataValue[];
   specialValues?: string[];
   includeZero?: boolean;
+  hasTimezone?: boolean;
 
   title?: string;
 
@@ -533,12 +534,17 @@ function buildEncoding(
       };
     } else {
       let select = ctx.fieldExpr(encoding.field);
+      if (stats.kind == "temporal") {
+        // Convert to milliseconds since epoch for temporal data
+        select = SQL.epoch_ms(select);
+      }
       return {
         select: select,
         grouping: fieldsInGroupBy ? [select] : [],
         scale: {
-          kind: stats.quantitative ? "quantitative" : "nominal",
+          kind: stats.kind,
           title: fieldTitle(encoding.field),
+          hasTimezone: stats.temporal?.hasTimezone,
           predicate: (v) => fieldPredicate(select, v),
         },
       };
@@ -615,6 +621,7 @@ function mergeScaleHints(current: ScaleHints, value: ScaleHints): ScaleHints {
     specialValues: (current.specialValues ?? []).concat(value.specialValues ?? []),
     title: newTitle,
     includeZero: current.includeZero === true || value.includeZero === true ? true : undefined,
+    hasTimezone: current.hasTimezone ?? value.hasTimezone,
     predicate: current.predicate ?? value.predicate,
   };
 }
@@ -660,6 +667,27 @@ function inferScale(spec: Scale, hints: ScaleHints, data: DataValue[][], channel
         range: spec.range,
         discontinuityAtZero:
           spec.discontinuityAtZero ?? (channel === "color" && hints.includeZero === true ? true : undefined),
+      };
+    }
+    case "temporal": {
+      let parts = [hints.domain ?? [], ...data].map((vals) => finiteExtent(vals.flat())).flat();
+      let [min, max] = finiteExtent(parts);
+      // Placeholder for no data
+      if (min == undefined || max == undefined || !isFinite(min) || !isFinite(max)) {
+        min = 0;
+        max = 1;
+      }
+      // Single point, extend one second each side.
+      if (min == max) {
+        min -= 1000;
+        max += 1000;
+      }
+      return {
+        type: "time",
+        domain: spec.domain ?? [min, max],
+        specialValues: hints.specialValues,
+        constant: spec.constant,
+        range: spec.range,
       };
     }
     case "nominal": {

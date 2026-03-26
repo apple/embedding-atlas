@@ -113,7 +113,7 @@ registerChartBuilder({
   icon: "chart-h-bar",
   description: "Create a count plot of a field",
   ui: [
-    { label: "Field", field: { key: "x", types: ["number", "string", "string[]"], required: true } }, //
+    { label: "Field", field: { key: "x", required: true } }, //
   ] as const,
   create: ({ x }): CountPlotSpec | undefined => {
     if (x.type == "discrete[]") {
@@ -136,8 +136,8 @@ registerChartBuilder({
   icon: "chart-stacked",
   description: "Create a histogram of a field",
   ui: [
-    { label: "Field", field: { key: "x", types: ["number", "string"], required: true } }, //
-    { label: "Group Field", field: { key: "color", types: ["number", "string"] } },
+    { label: "Field", field: { key: "x", types: ["number", "string", "Date"], required: true } }, //
+    { label: "Group Field", field: { key: "color", types: ["number", "string", "Date"] } },
   ] as const,
   create: ({ x, color }): ChartSpec | undefined => histogramSpec(x.name, color?.name),
 });
@@ -146,9 +146,9 @@ registerChartBuilder({
   icon: "chart-line",
   description: "Create a line chart of two fields",
   ui: [
-    { label: "X Field", field: { key: "x", types: ["number", "string"], required: true } }, //
+    { label: "X Field", field: { key: "x", types: ["number", "string", "Date"], required: true } }, //
     { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
-    { label: "Group Field", field: { key: "color", types: ["number", "string"] } },
+    { label: "Group Field", field: { key: "color", types: ["number", "string", "Date"] } },
   ] as const,
   create: ({ x, y, color }): ChartSpec | undefined => ({
     title: y.name,
@@ -176,7 +176,7 @@ registerChartBuilder({
   description: "Create a chart showing the empirical cumulative distribution (eCDF) of a field",
   ui: [
     { label: "Field", field: { key: "x", types: ["number"], required: true } }, //
-    { label: "Group Field", field: { key: "color", types: ["number", "string"] } },
+    { label: "Group Field", field: { key: "color", types: ["number", "string", "Date"] } },
   ] as const,
   create: ({ x, color }): ChartSpec | undefined => ({
     title: x.name,
@@ -200,8 +200,8 @@ registerChartBuilder({
   icon: "chart-heatmap",
   description: "Create a 2D heatmap of two fields",
   ui: [
-    { label: "X Field", field: { key: "x", types: ["number", "string"], required: true } }, //
-    { label: "Y Field", field: { key: "y", types: ["number", "string"], required: true } }, //
+    { label: "X Field", field: { key: "x", types: ["number", "string", "Date"], required: true } }, //
+    { label: "Y Field", field: { key: "y", types: ["number", "string", "Date"], required: true } }, //
   ] as const,
   create: ({ x, y }): ChartSpec | undefined => ({
     title: `${x.name}, ${y.name}`,
@@ -239,7 +239,7 @@ registerChartBuilder({
   icon: "chart-boxplot",
   description: "Create a box plot",
   ui: [
-    { label: "X Field", field: { key: "x", required: true } }, //
+    { label: "X Field", field: { key: "x", types: ["number", "string", "Date"], required: true } }, //
     { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
   ] as const,
   create: ({ x, y }): ChartSpec | undefined => ({
@@ -295,8 +295,8 @@ registerChartBuilder({
   ui: [
     { label: "X Field", field: { key: "x", types: ["number"], required: true } }, //
     { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
-    { label: "Color Field", field: { key: "color", types: ["number", "string"] } }, //
-    { label: "Group Field", field: { key: "group", types: ["number", "string"] } }, //
+    { label: "Color Field", field: { key: "color", types: ["number", "string", "Date"] } }, //
+    { label: "Group Field", field: { key: "group", types: ["number", "string", "Date"] } }, //
   ] as const,
   create: ({ x, y, color, group }): ChartSpec | undefined => ({
     title: x.name,
@@ -333,7 +333,7 @@ registerChartBuilder({
     { label: "X Field", field: { key: "x", types: ["number"], required: true } }, //
     { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
     { label: "Text Field", field: { key: "text", types: ["string"] } }, //
-    { label: "Category Field", field: { key: "category", types: ["string", "number"] } }, //
+    { label: "Category Field", field: { key: "category", types: ["string", "number", "Date"] } }, //
   ] as const,
   preview: false,
   create: ({ x, y, text, category }, context): EmbeddingSpec | undefined => ({

@@ -85,13 +85,15 @@ export async function distinctCount(coordinator: Coordinator, table: string, col
   return r.get(0).count;
 }
 
-export type JSType = "string" | "number" | "string[]";
+export type JSType = "string" | "number" | "string[]" | "Date";
 
 export function jsTypeFromDBType(dbType: string): JSType | null {
   if (numberTypes.has(dbType)) {
     return "number";
   } else if (stringTypes.has(dbType)) {
     return "string";
+  } else if (dateTypes.has(dbType)) {
+    return "Date";
   } else if (dbType.match(/^(VARCHAR|TEXT)\[\d*\]$/)) {
     return "string[]";
   } else {
@@ -125,4 +127,14 @@ const numberTypes = new Set([
   "UHUGEINT",
 ]);
 
-const stringTypes = new Set(["BOOLEAN", "DATE", "VARCHAR", "CHAR", "BPCHAR", "TEXT", "STRING"]);
+const stringTypes = new Set(["BOOLEAN", "VARCHAR", "CHAR", "BPCHAR", "TEXT", "STRING"]);
+
+const dateTypes = new Set([
+  "DATE",
+  "TIME",
+  "DATETIME",
+  "TIMESTAMP",
+  "TIMESTAMPTZ",
+  "TIMESTAMP WITH TIME ZONE",
+  "TIMESTAMP WITHOUT TIME ZONE",
+]);

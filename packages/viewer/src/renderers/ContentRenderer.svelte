@@ -10,15 +10,26 @@
   interface Props {
     value?: string;
     style?: ColumnStyle;
+    formatter?: (value: any) => string;
   }
 
-  let { value = "", style }: Props = $props();
+  let { value = "", style, formatter }: Props = $props();
 
   let renderer = $derived(style?.renderer);
   let rendererOptions = $derived(style?.options ?? {});
   let kind = $derived(valueKind(value));
 
   let rendererAction = $derived(renderer != null ? (renderers[renderer] ?? null) : null);
+
+  function stringifyWithFormatter(value: any, formatter?: (value: any) => string) {
+    if (formatter && typeof value == "number") {
+      return formatter(value);
+    } else if (formatter && value instanceof Date) {
+      return formatter(value.getTime());
+    } else {
+      return stringify(value);
+    }
+  }
 </script>
 
 {#if rendererAction == null}
@@ -29,7 +40,7 @@
   {:else if kind == "audio"}
     <AudioContent value={value} />
   {:else}
-    {stringify(value)}
+    {stringifyWithFormatter(value, formatter)}
   {/if}
 {:else}
   {#key rendererAction}

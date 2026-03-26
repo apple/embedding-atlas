@@ -146,7 +146,7 @@ export interface Layer {
 }
 
 /** Scale type */
-export type ScaleType = "linear" | "log" | "symlog" | "band";
+export type ScaleType = "linear" | "log" | "symlog" | "band" | "time";
 
 /** Scale */
 export interface Scale {

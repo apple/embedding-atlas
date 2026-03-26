@@ -18,7 +18,7 @@
 
 <div class="flex flex-wrap gap-2 justify-end flex-wrap">
   {#each spec.widgets ?? [] as widget}
-    {#if widget.type == "scale.type"}
+    {#if widget.type == "scale.type" && outputs.scale[widget.channel].type != "time"}
       <ScaleTypePicker
         label={widget.channel.toUpperCase()}
         bind:value={

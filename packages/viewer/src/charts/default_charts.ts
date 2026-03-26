@@ -123,7 +123,8 @@ export async function defaultCharts(options: {
         });
         break;
       }
-      case "number": {
+      case "number":
+      case "Date": {
         if (distinct <= 10) {
           charts.push({
             type: "count-plot",
