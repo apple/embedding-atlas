@@ -28,6 +28,9 @@ export interface CountPlotSpec {
     | "selected-ascending"
     | "alphabetical"
     | string[];
+
+  /** The width of the category column */
+  categoryWidth?: number;
 }
 
 export interface CountPlotState {
