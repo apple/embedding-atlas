@@ -36,13 +36,6 @@ After initialization, use the `run` method to update the embedding coordinates:
 ```js
 // Run the algorithm to completion.
 umap.run();
-
-// Alternatively, you can run up to a given number of epochs.
-// This can be useful for animation effects.
-for (let i = 0; i < 100; i++) {
-  // Run to the i-th epoch.
-  umap.run(i);
-}
 ```
 
 At any time, you can get the current embedding by calling the `embedding` method.
@@ -58,12 +51,12 @@ After you are done with the instance, use the `destroy` method to release resour
 umap.destroy();
 ```
 
-## KNN
+## NNDescent
 
-In addition, you can also use the `createKNN` function to perform approximate nearest neighbor search (with hnswlib or nndescent):
+You can use the `createNNDescent` function to perform approximate nearest neighbor search:
 
 ```js
-import { createKNN } from "embedding-atlas";
+import { createNNDescent } from "embedding-atlas";
 
 let count = 2000;
 let inputDim = 100;
@@ -76,15 +69,15 @@ let options = {
   metric: "cosine",
 };
 
-// Create the KNN instance
-let knn = await createKNN(count, inputDim, data, options);
+// Create the NNDescent index
+let index = await createNNDescent(count, inputDim, data, options);
 
 // Perform queries
 let query = new Float32Array(inputDim);
-knn.queryByVector(query, k);
+index.queryByVector(query, k);
 
 // Destroy the instance
-knn.destroy();
+index.destroy();
 ```
 
 ## Density-based Clustering

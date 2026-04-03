@@ -104,29 +104,7 @@ For the algorithm that automatically produces clusters and labels in the embeddi
 
 ## Development
 
-This repo contains multiple sub-packages:
-
-Frontend:
-
-- `packages/component`: The `EmbeddingView` and `EmbeddingViewMosaic` components.
-
-- `packages/viewer`: The frontend application for visualizing embedding and other columns. It also provides the `EmbeddingAtlas` component that can be embedded in other applications.
-
-- `packages/density-clustering`: The density clustering algorithm, written in Rust.
-
-- `packages/umap-wasm`: An implementation of UMAP algorithm in WebAssembly (with the [umappp](https://github.com/libscran/umappp) C++ library).
-
-- `packages/embedding-atlas`: The `embedding-atlas` package that get published. It imports all of the above and exposes their API in a single package.
-
-Python:
-
-- `packages/backend`: A Python package named `embedding-atlas` that provides the `embedding-atlas` command line tool.
-
-Documentation:
-
-- `packages/docs`: The documentation website.
-
-For more information, please visit <https://apple.github.io/embedding-atlas/develop.html>.
+For development instructions, please visit <https://apple.github.io/embedding-atlas/develop.html>, or checkout `packages/docs/develop.md`.
 
 ## License
 

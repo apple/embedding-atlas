@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "build:wasm": "cargo build -p density_clustering_wasm --target wasm32-unknown-unknown --release",
-    "build:binding": "wasm-bindgen target/wasm32-unknown-unknown/release/density_clustering_wasm.wasm --target web --out-dir density_clustering_wasm/pkg",
+    "build:binding": "rm -rf density_clustering_wasm/pkg && wasm-bindgen target/wasm32-unknown-unknown/release/density_clustering_wasm.wasm --target web --out-dir density_clustering_wasm/pkg",
     "build": "npm run build:wasm && npm run build:binding",
     "test": "vitest run"
   },

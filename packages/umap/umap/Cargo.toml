@@ -1,0 +1,11 @@
+[package]
+name = "umap"
+version = "0.1.0"
+edition = "2021"
+description = "UMAP - Uniform Manifold Approximation and Projection for Dimension Reduction"
+license = "MIT"
+
+[dependencies]
+nndescent = { path = "../nndescent" }
+ndarray = { version = "0.17", features = ["rayon"] }
+rayon = "1.11"

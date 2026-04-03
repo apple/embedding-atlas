@@ -1,0 +1,5 @@
+.DS_Store
+benchmark/datasets/
+benchmark/results/
+target/
+umap-wasm/pkg/

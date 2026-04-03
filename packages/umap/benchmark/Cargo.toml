@@ -1,0 +1,18 @@
+[package]
+name = "umap-benchmark"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+umap = { path = "../umap" }
+nndescent = { path = "../nndescent" }
+ndarray = "0.17"
+
+[[bin]]
+name = "umap-bench"
+path = "src/bin/umap_bench.rs"
+
+[[bin]]
+name = "nndescent-bench"
+path = "src/bin/nndescent_bench.rs"
