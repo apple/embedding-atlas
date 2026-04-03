@@ -1,0 +1,28 @@
+{
+  "name": "@embedding-atlas/umap-wasm",
+  "private": true,
+  "type": "module",
+  "description": "WASM bindings for UMAP and NNDescent",
+  "version": "0.1.0",
+  "license": "MIT",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "pkg/umap_wasm.js",
+    "pkg/umap_wasm_bg.js",
+    "pkg/umap_wasm.d.ts",
+    "pkg/umap_wasm_bg.wasm.d.ts",
+    "pkg/umap_wasm_bg.wasm"
+  ],
+  "scripts": {
+    "build:wasm": "cargo build --target wasm32-unknown-unknown --release",
+    "build:binding": "rm -rf pkg && wasm-bindgen ../target/wasm32-unknown-unknown/release/umap_wasm.wasm --target web --out-dir pkg",
+    "build": "npm run build:wasm && npm run build:binding",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.0"
+  }
+}

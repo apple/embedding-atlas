@@ -11,6 +11,6 @@ import { EmbeddingViewMosaic } from "embedding-atlas";
 // Embedding Atlas component
 import { EmbeddingAtlas } from "embedding-atlas";
 
-// UMAP and KNN algorithms
-import { createUMAP, createKNN } from "embedding-atlas";
+// UMAP and NNDescent algorithms
+import { createUMAP, createNNDescent } from "embedding-atlas";
 ```

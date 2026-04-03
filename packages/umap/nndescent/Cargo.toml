@@ -1,0 +1,15 @@
+[package]
+name = "nndescent"
+version = "0.1.0"
+edition = "2021"
+description = "Rust port of PyNNDescent - fast approximate nearest neighbor search"
+license = "MIT"
+
+[dependencies]
+ndarray = { version = "0.17", features = ["rayon"] }
+rayon = "1.11"
+ordered-float = "5.2"
+getrandom = "0.4"
+wide = "1.2.0"
+
+[dev-dependencies]

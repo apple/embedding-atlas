@@ -6,11 +6,14 @@ yarn.lock
 node_modules/
 
 packages/backend/embedding_atlas/widget_static/
+packages/backend/embedding_atlas/static/
+
 packages/docs/.vitepress/cache/
 packages/docs/public/
 packages/docs/demo-data/
-packages/umap-wasm/runtime.js
-packages/umap-wasm/notebooks/data/
-packages/umap-wasm/third_party/
+
+packages/umap/nndescent/bench/
+packages/umap/umap/bench/
+packages/umap/umap-wasm/pkg
+
 packages/density-clustering/density_clustering_wasm/pkg/
-packages/backend/embedding_atlas/static/
