@@ -1,13 +1,15 @@
 # Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
-from typing import Callable, Literal
+from typing import IO, Callable, Literal
 
 import numpy as np
 import pandas as pd
 
-from .utils import Hasher, cache_path, logger
+from .cache import file_cache_value
+from .utils import logger
 
 
 @dataclass
@@ -24,6 +26,24 @@ class Projection:
             path.with_suffix(".projection.npy").exists()
             and path.with_suffix(".knn_indices.npy").exists()
             and path.with_suffix(".knn_distances.npy").exists()
+        )
+
+    @staticmethod
+    def serialize(value: "Projection", fd: IO[bytes]) -> None:
+        np.savez(
+            fd,
+            projection=value.projection,
+            knn_indices=value.knn_indices,
+            knn_distances=value.knn_distances,
+        )
+
+    @staticmethod
+    def deserialize(fd: IO[bytes]) -> "Projection":
+        d = np.load(fd, allow_pickle=False)
+        return Projection(
+            projection=d["projection"],
+            knn_indices=d["knn_indices"],
+            knn_distances=d["knn_distances"],
         )
 
     @staticmethod
@@ -64,8 +84,12 @@ class Projection:
 
 def _run_umap(
     hidden_vectors: np.ndarray,
-    umap_args: dict = {},
+    *,
+    umap_args: dict | None = None,
 ) -> Projection:
+    if umap_args is None:
+        umap_args = {}
+
     logger.info("Running UMAP for input with shape %s...", str(hidden_vectors.shape))  # type: ignore
 
     import umap
@@ -173,42 +197,17 @@ def _project_text_with_litellm(
 
 def _projection_for_texts(
     texts: list[str],
+    *,
     model: str | None = None,
     batch_size: int | None = None,
     text_projector_args: dict | None = None,
     text_projector: TextProjectorCallback | None = None,
-    umap_args: dict = {},
+    umap_args: dict | None = None,
 ) -> Projection:
     if model is None:
         model = "all-MiniLM-L6-v2"
     if text_projector is None:
         text_projector = _project_text_with_sentence_transformers
-
-    # Some arguments may contain sensitive info (e.g., API keys) or do not invalidate the cache, so we exclude them
-    excluded_text_projector_args = {"api_key", "api_base", "sync"}
-    hashed_text_projector_args = {
-        k: v
-        for k, v in (text_projector_args or {}).items()
-        if k not in excluded_text_projector_args
-    }
-    hasher = Hasher()
-    hasher.update(
-        {
-            "version": 2,
-            "texts": texts,
-            "model": model,
-            "batch_size": batch_size,
-            "text_projector_args": hashed_text_projector_args,
-            "text_projector": text_projector.__name__,
-            "umap_args": umap_args,
-        }
-    )
-    digest = hasher.hexdigest()
-    cpath = cache_path("projections") / digest
-
-    if Projection.exists(cpath):
-        logger.info("Using cached projection from %s", str(cpath))
-        return Projection.load(cpath)
 
     # Set default batch size if not provided
     if batch_size is None:
@@ -218,64 +217,56 @@ def _projection_for_texts(
             batch_size,
         )
 
-    logger.info(
-        "Running embedding for %d texts with batch size %d using %s...",
-        len(texts),
-        batch_size,
-        text_projector.__name__,
-    )
-    hidden_vectors = text_projector(texts, batch_size, model, text_projector_args)
+    def compute():
+        logger.info(
+            "Running embedding for %d texts with batch size %d using %s...",
+            len(texts),
+            batch_size,
+            text_projector.__name__,
+        )
+        hidden_vectors = text_projector(texts, batch_size, model, text_projector_args)
 
-    result = _run_umap(hidden_vectors, umap_args)
-    Projection.save(cpath, result)
-    return result
+        return _run_umap(hidden_vectors, umap_args=umap_args)
+
+    # Some arguments may contain sensitive info (e.g., API keys) or do not invalidate the cache, so we exclude them
+    excluded_text_projector_args = {"api_key", "api_base", "sync"}
+    hashed_text_projector_args = {
+        k: v
+        for k, v in (text_projector_args or {}).items()
+        if k not in excluded_text_projector_args
+    }
+    cache_key = {
+        "version": 2,
+        "texts": texts,
+        "model": model,
+        "batch_size": batch_size,
+        "text_projector_args": hashed_text_projector_args,
+        "text_projector": text_projector.__name__,
+        "umap_args": umap_args,
+    }
+
+    return file_cache_value(
+        cache_key,
+        compute,
+        scope="projection_for_texts",
+        serializer=Projection.serialize,
+        deserializer=Projection.deserialize,
+        callback=lambda cache_path: logger.info(
+            "Using cached projection from " + str(cache_path)
+        ),
+    )
 
 
 def _projection_for_images(
     images: list,
+    *,
     model: str | None = None,
     trust_remote_code: bool = False,
     batch_size: int | None = None,
-    umap_args: dict = {},
+    umap_args: dict | None = None,
 ) -> Projection:
     if model is None:
         model = "google/vit-base-patch16-384"
-    hasher = Hasher()
-    hasher.update(
-        {
-            "version": 1,
-            "images": images,
-            "model": model,
-            "batch_size": batch_size,
-            "umap_args": umap_args,
-        }
-    )
-    digest = hasher.hexdigest()
-    cpath = cache_path("projections") / (digest + ".npy")
-
-    if Projection.exists(cpath):
-        logger.info("Using cached projection from %s", str(cpath))
-        return Projection.load(cpath)
-
-    # Import on demand.
-    from io import BytesIO
-
-    import torch
-    import tqdm
-    from PIL import Image
-    from transformers import pipeline
-
-    def load_image(value):
-        if isinstance(value, bytes):
-            return Image.open(BytesIO(value)).convert("RGB")
-        elif isinstance(value, dict) and "bytes" in value:
-            return Image.open(BytesIO(value["bytes"])).convert("RGB")
-        else:
-            raise ValueError("invalid image value")
-
-    logger.info("Loading model %s...", model)
-
-    pipe = pipeline("image-feature-extraction", model=model, device_map="auto")
 
     # Set default batch size if not provided
     if batch_size is None:
@@ -285,34 +276,77 @@ def _projection_for_images(
             batch_size,
         )
 
-    logger.info(
-        "Running embedding for %d images with batch size %d...", len(images), batch_size
+    cache_key = {
+        "version": 1,
+        "images": images,
+        "model": model,
+        "batch_size": batch_size,
+        "umap_args": umap_args,
+    }
+
+    def compute():
+        # Import on demand.
+        import torch
+        import tqdm
+        from PIL import Image
+        from transformers import pipeline
+
+        def load_image(value):
+            if isinstance(value, bytes):
+                return Image.open(BytesIO(value)).convert("RGB")
+            elif isinstance(value, dict) and "bytes" in value:
+                return Image.open(BytesIO(value["bytes"])).convert("RGB")
+            else:
+                raise ValueError("invalid image value")
+
+        logger.info("Loading model %s...", model)
+
+        pipe = pipeline(
+            "image-feature-extraction",
+            model=model,
+            device_map="auto",
+            trust_remote_code=trust_remote_code,
+        )
+
+        logger.info(
+            "Running embedding for %d images with batch size %d...",
+            len(images),
+            batch_size,
+        )
+        tensors = []
+
+        current_batch = []
+
+        @torch.no_grad()
+        def process_batch():
+            rs: torch.Tensor = pipe(current_batch, return_tensors=True)  # type: ignore
+            current_batch.clear()
+            for r in rs:
+                if len(r.shape) == 3:
+                    r = r.mean(1)
+                assert len(r.shape) == 2
+                tensors.append(r)
+
+        for image in tqdm.tqdm(images, smoothing=0.1):
+            current_batch.append(load_image(image))
+            if len(current_batch) >= batch_size:
+                process_batch()
+        process_batch()
+
+        hidden_vectors = torch.concat(tensors).to(torch.float32).cpu().numpy()
+        result = _run_umap(hidden_vectors, umap_args=umap_args)
+        return result
+
+    return file_cache_value(
+        cache_key,
+        compute,
+        scope="projection_for_images",
+        serializer=Projection.serialize,
+        deserializer=Projection.deserialize,
+        callback=lambda cache_path: logger.info(
+            "Using cached projection from " + str(cache_path)
+        ),
     )
-    tensors = []
-
-    current_batch = []
-
-    @torch.no_grad()
-    def process_batch():
-        rs: torch.Tensor = pipe(current_batch, return_tensors=True)  # type: ignore
-        current_batch.clear()
-        for r in rs:
-            if len(r.shape) == 3:
-                r = r.mean(1)
-            assert len(r.shape) == 2
-            tensors.append(r)
-
-    for image in tqdm.tqdm(images, smoothing=0.1):
-        current_batch.append(load_image(image))
-        if len(current_batch) >= batch_size:
-            process_batch()
-    process_batch()
-
-    hidden_vectors = torch.concat(tensors).to(torch.float32).cpu().numpy()
-
-    result = _run_umap(hidden_vectors, umap_args)
-    Projection.save(cpath, result)
-    return result
 
 
 def _find_text_projector_callback(name: str) -> TextProjectorCallback:
@@ -342,7 +376,7 @@ def compute_text_projection(
         "sentence_transformers",
         "litellm",
     ] = "sentence_transformers",
-    umap_args: dict = {},
+    umap_args: dict | None = None,
     **kwargs,
 ):
     """
@@ -411,7 +445,7 @@ def compute_text_projection(
     data_frame[x] = proj.projection[:, 0]
     data_frame[y] = proj.projection[:, 1]
     if neighbors is not None:
-        data_frame[neighbors] = [
+        data_frame[neighbors] = [  # type: ignore
             {"distances": b, "ids": a}  # ID is always the same as the row index.
             for a, b in zip(proj.knn_indices, proj.knn_distances)
         ]
@@ -424,7 +458,7 @@ def compute_vector_projection(
     x: str = "projection_x",
     y: str = "projection_y",
     neighbors: str | None = "neighbors",
-    umap_args: dict = {},
+    umap_args: dict | None = None,
 ):
     """
     Generate 2D projections from pre-existing vector embeddings using UMAP.
@@ -464,13 +498,13 @@ def compute_vector_projection(
     hidden_vectors = np.stack(vector_list)
 
     # Run UMAP on the pre-existing vectors
-    proj = _run_umap(hidden_vectors, umap_args)
+    proj = _run_umap(hidden_vectors, umap_args=umap_args)
 
     # Add projection results to dataframe
     data_frame[x] = proj.projection[:, 0]
     data_frame[y] = proj.projection[:, 1]
     if neighbors is not None:
-        data_frame[neighbors] = [
+        data_frame[neighbors] = [  # type: ignore
             {"distances": b, "ids": a}  # ID is always the same as the row index.
             for a, b in zip(proj.knn_indices, proj.knn_distances)
         ]
@@ -486,7 +520,7 @@ def compute_image_projection(
     model: str | None = None,
     trust_remote_code: bool = False,
     batch_size: int | None = None,
-    umap_args: dict = {},
+    umap_args: dict | None = None,
 ):
     """
     Compute image embeddings and generate 2D projections using UMAP.
@@ -524,7 +558,7 @@ def compute_image_projection(
     data_frame[x] = proj.projection[:, 0]
     data_frame[y] = proj.projection[:, 1]
     if neighbors is not None:
-        data_frame[neighbors] = [
+        data_frame[neighbors] = [  # type: ignore
             {"distances": b, "ids": a}  # ID is always the same as the row index.
             for a, b in zip(proj.knn_indices, proj.knn_distances)
         ]

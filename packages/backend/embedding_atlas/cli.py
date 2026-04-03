@@ -16,11 +16,11 @@ import numpy as np
 import pandas as pd
 import uvicorn
 
+from .cache import sha256_hexdigest
 from .data_source import DataSource
 from .options import make_embedding_atlas_props
 from .server import make_server
 from .utils import (
-    Hasher,
     apply_logging_config,
     load_huggingface_data,
     load_pandas_data,
@@ -488,12 +488,7 @@ def main(
         "props": props,
     }
 
-    hasher = Hasher()
-    hasher.update(__version__)
-    hasher.update(inputs)
-    hasher.update(metadata)
-    identifier = hasher.hexdigest()
-
+    identifier = sha256_hexdigest([__version__, inputs, metadata], scope="DataSource")
     dataset = DataSource(identifier, df, metadata)
 
     if static is None:

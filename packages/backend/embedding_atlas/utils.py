@@ -1,17 +1,13 @@
 # Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import hashlib
-import json
 import logging
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 import inquirer
-import numpy as np
 import pandas as pd
 import pyarrow as pa
-from platformdirs import user_cache_path
 
 logger = logging.getLogger("embedding-atlas")
 
@@ -97,15 +93,6 @@ def to_parquet_bytes(df: pd.DataFrame) -> bytes:
     return result
 
 
-def cache_path(*subfolders: str, mkdir=True) -> Path:
-    p = user_cache_path("embedding_atlas")
-    for f in subfolders:
-        p = p / f
-    if mkdir:
-        p.mkdir(parents=True, exist_ok=True)
-    return p
-
-
 def apply_logging_config():
     logging.basicConfig(
         level=logging.INFO,
@@ -113,41 +100,3 @@ def apply_logging_config():
     )
 
     logging.getLogger("httpx").setLevel(logging.WARNING)
-
-
-class Hasher:
-    def __init__(self):
-        self.hash = hashlib.sha256()
-        self.counter = 0
-
-    def _emit(self, type: bytes, data: bytes):
-        self.hash.update(type + b"{")
-        self.hash.update(data)
-        self.hash.update(b"}")
-
-    def _emit_value(self, value):
-        if isinstance(value, bytes):
-            self._emit(b"bytes", value)
-        elif isinstance(value, str):
-            self._emit(b"str", value.encode("utf-8"))
-        elif isinstance(value, np.ndarray):
-            self._emit(b"np.ndarray", value.tobytes())
-        elif isinstance(value, list):
-            self.hash.update(b"list{")
-            for item in value:
-                self._emit_value(item)
-            self.hash.update(b"}")
-        elif isinstance(value, dict):
-            self.hash.update(b"dict{")
-            for key, value in value.items():
-                self._emit_value(key)
-                self._emit_value(value)
-            self.hash.update(b"}")
-        else:
-            self._emit(b"json", json.dumps(value, sort_keys=True).encode("utf-8"))
-
-    def update(self, value):
-        self._emit_value(value)
-
-    def hexdigest(self):
-        return self.hash.hexdigest()

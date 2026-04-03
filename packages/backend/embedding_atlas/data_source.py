@@ -6,10 +6,12 @@ import pathlib
 import shutil
 import zipfile
 from io import BytesIO
+from typing import Any
 
 import pandas as pd
 
-from .utils import cache_path, to_parquet_bytes
+from .cache import file_cache_get, file_cache_set
+from .utils import to_parquet_bytes
 
 
 def _deep_merge(base: dict, overrides: dict) -> dict:
@@ -32,20 +34,45 @@ class DataSource:
         self.identifier = identifier
         self.dataset = dataset
         self.metadata = metadata
-        self.cache_path = cache_path("cache", self.identifier)
+        self._cache_index: set[str] = set(self._cache_index_load())
+
+    def _cache_index_key(self):
+        return [self.identifier, "__index__"]
+
+    def _cache_index_load(self) -> list[str]:
+        index = file_cache_get(self._cache_index_key(), scope="DataSource")
+        if index is None:
+            return []
+        return index
+
+    def _cache_index_save(self):
+        file_cache_set(
+            self._cache_index_key(), sorted(self._cache_index), scope="DataSource"
+        )
+
+    def _cache_index_add(self, name: str):
+        if name not in self._cache_index:
+            self._cache_index.add(name)
+            # Re-read from disk and merge to avoid losing entries from other processes
+            persisted = set(self._cache_index_load())
+            merged = self._cache_index | persisted
+            file_cache_set(self._cache_index_key(), sorted(merged), scope="DataSource")
 
     def cache_set(self, name: str, data):
-        path = self.cache_path / name
-        with open(path, "w") as f:
-            json.dump(data, f)
+        file_cache_set([self.identifier, name], data, scope="DataSource")
+        self._cache_index_add(name)
 
     def cache_get(self, name: str):
-        path = self.cache_path / name
-        if path.exists():
-            with open(path, "r") as f:
-                return json.load(f)
-        else:
-            return None
+        return file_cache_get([self.identifier, name], scope="DataSource")
+
+    def cache_items(self) -> dict[str, Any]:
+        """Return all cached entries as a dict of {name: value}."""
+        result = {}
+        for name in self._cache_index:
+            value = self.cache_get(name)
+            if value is not None:
+                result[name] = value
+        return result
 
     def _build_metadata(self, metadata_overrides: dict | None = None) -> dict:
         metadata = self.metadata | {
@@ -68,13 +95,11 @@ class DataSource:
                 for fn in files:
                     p = os.path.relpath(os.path.join(root, fn), static_path)
                     zip.write(os.path.join(root, fn), p)
-            for root, _, files in os.walk(self.cache_path):
-                for fn in files:
-                    p = os.path.join(
-                        "data/cache",
-                        os.path.relpath(os.path.join(root, fn), str(self.cache_path)),
-                    )
-                    zip.write(os.path.join(root, fn), p)
+            for name, value in self.cache_items().items():
+                zip.writestr(
+                    f"data/cache/{name}",
+                    json.dumps(value),
+                )
         return io.getvalue()
 
     def export_to_folder(
@@ -103,11 +128,9 @@ class DataSource:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
 
-        # Copy cache files
-        for root, _, files in os.walk(self.cache_path):
-            for fn in files:
-                src = os.path.join(root, fn)
-                rel = os.path.relpath(src, str(self.cache_path))
-                dst = data_dir / "cache" / rel
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
+        # Write cache files
+        cache_dir = data_dir / "cache"
+        for name, value in self.cache_items().items():
+            cache_file = cache_dir / name
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(value))
