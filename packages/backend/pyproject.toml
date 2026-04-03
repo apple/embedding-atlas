@@ -30,6 +30,7 @@ dependencies = [
   "tqdm >= 4.60.0",
   "litellm >= 1.70.0, != 1.82.7, != 1.82.8", # Critical supply chain attack: https://futuresearch.ai/blog/litellm-pypi-supply-chain-attack/
   "websockets >= 15.0.1",
+  "cryptography >= 35.0.0",
 ]
 
 [project.scripts]
