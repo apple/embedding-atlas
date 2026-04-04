@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from embedding_atlas.cache import (
+    async_file_cache_value,
     file_cache_get,
     file_cache_set,
     file_cache_value,
@@ -187,3 +188,59 @@ def test_cache_files_are_encrypted(cache_dir):
     assert len(data_files) == 1
     raw = data_files[0].read_bytes()
     assert b"secret_value" not in raw
+
+
+# ---------------------------------------------------------------------------
+# file_cache_value_async
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_file_cache_value_async_miss(cache_dir):
+    calls = []
+
+    async def compute():
+        calls.append(1)
+        return "computed"
+
+    result = await async_file_cache_value("k", compute, cache_root=cache_dir)
+    assert result == "computed"
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_file_cache_value_async_hit(cache_dir):
+    file_cache_set("k", "cached", cache_root=cache_dir)
+    calls = []
+
+    async def compute():
+        calls.append(1)
+        return "computed"
+
+    result = await async_file_cache_value("k", compute, cache_root=cache_dir)
+    assert result == "cached"
+    assert len(calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_file_cache_value_async_populates_cache(cache_dir):
+    async def compute():
+        return [1, 2, 3]
+
+    await async_file_cache_value("k", compute, cache_root=cache_dir)
+    assert file_cache_get("k", cache_root=cache_dir) == [1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_file_cache_value_async_callback(cache_dir):
+    file_cache_set("k", "cached", cache_root=cache_dir)
+    paths = []
+
+    async def compute():
+        return "x"
+
+    result = await async_file_cache_value(
+        "k", compute, cache_root=cache_dir, callback=lambda p: paths.append(p)
+    )
+    assert result == "cached"
+    assert len(paths) == 1

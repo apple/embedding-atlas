@@ -114,7 +114,7 @@ jobs:
           embedding-atlas --help
 
           python -c "import embedding_atlas"
-          python -c "from embedding_atlas.projection import compute_text_projection, compute_image_projection, compute_vector_projection"
+          python -c "from embedding_atlas.projection import compute_projection"
 
           pip install jupyterlab anywidget
           python -c "from embedding_atlas.widget import EmbeddingAtlasWidget"

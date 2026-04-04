@@ -8,7 +8,6 @@ import logging
 import pathlib
 import socket
 from pathlib import Path
-from typing import Literal
 
 import click
 import inquirer
@@ -150,6 +149,7 @@ def import_modules(names: list[str]):
 @click.argument("inputs", nargs=-1, required=True)
 @click.option("--text", default=None, help="Column containing text data.")
 @click.option("--image", default=None, help="Column containing image data.")
+@click.option("--audio", default=None, help="Column containing audio data.")
 @click.option(
     "--vector", default=None, help="Column containing pre-computed vector embeddings."
 )
@@ -183,10 +183,10 @@ def import_modules(names: list[str]):
     help="Batch size for processing embeddings (default: 32 for text, 16 for images). Larger values use more memory but may be faster.",
 )
 @click.option(
-    "--text-projector",
-    type=click.Choice(["sentence_transformers", "litellm"]),
-    default="sentence_transformers",
-    help="Embedding provider: 'sentence_transformers' (local) or 'litellm' (API-based).",
+    "--embedder",
+    type=str,
+    default=None,
+    help="Embedding backend: 'sentence-transformers' (default for text), 'transformers' (default for image/audio), or 'litellm' (API-based).",
 )
 @click.option(
     "--api-key",
@@ -207,10 +207,10 @@ def import_modules(names: list[str]):
     help="Number of dimensions for output embeddings (litellm only, supported by OpenAI text-embedding-3+).",
 )
 @click.option(
-    "--sync",
-    is_flag=True,
-    default=False,
-    help="Process embeddings synchronously (litellm only). Use for local servers like Ollama to avoid memory issues.",
+    "--max-concurrency",
+    type=int,
+    default=None,
+    help="Maximum number of concurrent embedding batches. Use 1 for local servers like Ollama to avoid memory issues.",
 )
 @click.option(
     "--x",
@@ -337,24 +337,25 @@ def main(
     inputs,
     text: str | None,
     image: str | None,
+    audio: str | None,
     vector: str | None,
     split: list[str] | None,
     enable_projection: bool,
     model: str | None,
     trust_remote_code: bool,
     batch_size: int | None,
-    text_projector: Literal["sentence_transformers", "litellm"],
+    embedder: str | None,
     api_key: str | None,
     api_base: str | None,
     dimensions: int | None,
-    sync: bool,
+    max_concurrency: int | None,
     x_column: str | None,
     y_column: str | None,
     neighbors_column: str | None,
     query: str | None,
     sample: int | None,
     umap_n_neighbors: int | None,
-    umap_min_dist: int | None,
+    umap_min_dist: float | None,
     umap_metric: str | None,
     umap_random_state: int | None,
     static: str | None,
@@ -382,10 +383,12 @@ def main(
 
     if enable_projection and (x_column is None or y_column is None):
         # No x, y column selected, first see if text/image/vectors column is specified, if not, ask for it
-        if text is None and image is None and vector is None:
-            text = prompt_for_column(
+        if text is None and image is None and audio is None and vector is None:
+            selected_column = prompt_for_column(
                 df, "Select a column you want to run the embedding on"
             )
+        else:
+            selected_column = None
         umap_args = {}
         if umap_min_dist is not None:
             umap_args["min_dist"] = umap_min_dist
@@ -396,12 +399,14 @@ def main(
         if umap_metric is not None:
             umap_args["metric"] = umap_metric
         # Run embedding and projection
-        if text is not None or image is not None or vector is not None:
-            from .projection import (
-                compute_image_projection,
-                compute_text_projection,
-                compute_vector_projection,
-            )
+        if (
+            text is not None
+            or image is not None
+            or audio is not None
+            or vector is not None
+            or selected_column is not None
+        ):
+            from .projection import compute_projection
 
             x_column = find_column_name(df.columns, "projection_x")
             y_column = find_column_name(df.columns, "projection_y")
@@ -411,54 +416,51 @@ def main(
             else:
                 # If neighbors_column is already specified, don't overwrite it.
                 new_neighbors_column = None
-            if vector is not None:
-                compute_vector_projection(
-                    df,
-                    vector=vector,
-                    x=x_column,
-                    y=y_column,
-                    neighbors=new_neighbors_column,
-                    umap_args=umap_args,
-                )
-            elif text is not None:
-                # Build kwargs for litellm projector
-                litellm_kwargs = {}
-                if api_key is not None:
-                    litellm_kwargs["api_key"] = api_key
-                if api_base is not None:
-                    litellm_kwargs["api_base"] = api_base
-                if dimensions is not None:
-                    litellm_kwargs["dimensions"] = dimensions
-                if sync:
-                    litellm_kwargs["sync"] = sync
 
-                compute_text_projection(
-                    df,
-                    text=text,
-                    x=x_column,
-                    y=y_column,
-                    neighbors=new_neighbors_column,
-                    model=model,
-                    text_projector=text_projector,
-                    trust_remote_code=trust_remote_code,
-                    batch_size=batch_size,
-                    umap_args=umap_args,
-                    **litellm_kwargs,
-                )
+            # Determine modality and input column
+            if vector is not None:
+                modality = "vector"
+                input_column = vector
             elif image is not None:
-                compute_image_projection(
-                    df,
-                    image=image,
-                    x=x_column,
-                    y=y_column,
-                    neighbors=new_neighbors_column,
-                    model=model,
-                    trust_remote_code=trust_remote_code,
-                    batch_size=batch_size,
-                    umap_args=umap_args,
-                )
+                modality = "image"
+                input_column = image
+            elif audio is not None:
+                modality = "audio"
+                input_column = audio
+            elif text is not None:
+                modality = "text"
+                input_column = text
+            elif selected_column is not None:
+                modality = "auto"
+                input_column = selected_column
             else:
                 raise RuntimeError("unreachable")
+
+            # Build embedder_args from CLI options
+            embedder_args = {}
+            if trust_remote_code:
+                embedder_args["trust_remote_code"] = True
+            if api_key is not None:
+                embedder_args["api_key"] = api_key
+            if api_base is not None:
+                embedder_args["api_base"] = api_base
+            if dimensions is not None:
+                embedder_args["dimensions"] = dimensions
+            # Pass embedder directly; compute_projection handles defaults and validation
+            df = compute_projection(
+                df,
+                inputs=input_column,
+                modality=modality,
+                x=x_column,
+                y=y_column,
+                neighbors=new_neighbors_column,
+                embedder=embedder,
+                model=model,
+                batch_size=batch_size,
+                max_concurrency=max_concurrency,
+                embedder_args=embedder_args or None,
+                umap_args=umap_args or None,
+            )
 
     id_column = find_column_name(df.columns, "__row_index__")
     df[id_column] = range(df.shape[0])

@@ -12,10 +12,11 @@ pip install embedding-atlas
 
 ```python
 from embedding_atlas.streamlit import embedding_atlas
-from embedding_atlas.projection import compute_text_projection
+from embedding_atlas.projection import compute_projection
 
 # Compute text embedding and projection of the embedding
-compute_text_projection(df, text="description",
+# Note: In async environments (e.g. Jupyter notebooks), use async_compute_projection instead.
+df = compute_projection(df, inputs="description", modality="text",
     x="projection_x", y="projection_y", neighbors="neighbors"
 )
 

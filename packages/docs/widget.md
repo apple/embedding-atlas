@@ -18,11 +18,17 @@ from embedding_atlas.widget import EmbeddingAtlasWidget
 EmbeddingAtlasWidget(df)
 
 # Compute text embedding and projection of the embedding
-from embedding_atlas.projection import compute_text_projection
+from embedding_atlas.projection import compute_projection
 
-compute_text_projection(df, text="description",
+df = compute_projection(df, inputs="description", modality="text",
     x="projection_x", y="projection_y", neighbors="neighbors"
 )
+
+# In async environments (e.g. Jupyter notebooks), use async_compute_projection instead:
+# from embedding_atlas.projection import async_compute_projection
+# df = await async_compute_projection(df, inputs="description", modality="text",
+#     x="projection_x", y="projection_y", neighbors="neighbors"
+# )
 
 # Create an Embedding Atlas widget with the pre-computed projection
 widget = EmbeddingAtlasWidget(df, text="description",

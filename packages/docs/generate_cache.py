@@ -9,7 +9,7 @@ import click
 import duckdb
 import pandas as pd
 import requests
-from embedding_atlas.projection import compute_text_projection
+from embedding_atlas.projection import compute_projection
 
 
 def load_and_check_integrity(url: str, *, sha256: str) -> bytes:
@@ -46,9 +46,10 @@ def generate_dataset_embedding(
 
     umap_args = {"random_state": 42} | umap_args
 
-    compute_text_projection(
+    df = compute_projection(
         df,
-        text="text",
+        inputs="text",
+        modality="text",
         x="x",
         y="y",
         neighbors="neighbors",

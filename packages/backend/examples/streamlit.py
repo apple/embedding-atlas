@@ -2,7 +2,7 @@ import duckdb
 import pandas as pd
 import streamlit as st
 from datasets import load_dataset
-from embedding_atlas.projection import compute_text_projection
+from embedding_atlas.projection import compute_projection
 from embedding_atlas.streamlit import embedding_atlas
 
 
@@ -23,9 +23,10 @@ def main():
     df = load_data()
 
     # Compute text embedding and projection of the embedding
-    compute_text_projection(
+    df = compute_projection(
         df,
-        text="description",
+        inputs="description",
+        modality="text",
         x="projection_x",
         y="projection_y",
         neighbors="neighbors",
@@ -43,9 +44,10 @@ def main():
 
     # Show selected rows in a Streamlit data frame
     st.write("Selected rows:")
-    if value is not None and value.get("predicate") is not None:
+    predicate = value.get("predicate")
+    if value is not None and predicate is not None:
         subset = duckdb.query_df(
-            df, "dataframe", "SELECT * FROM dataframe WHERE " + value.get("predicate")
+            df, "dataframe", "SELECT * FROM dataframe WHERE " + predicate
         )
         st.dataframe(subset)
     else:
