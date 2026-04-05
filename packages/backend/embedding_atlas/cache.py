@@ -239,6 +239,67 @@ def file_cache_value(
     return value
 
 
+async def async_file_cache_value(
+    key: Any,
+    value_func: Callable[[], Any],
+    *,
+    scope: str | None = None,
+    cache_root: str | Path | None = None,
+    serializer: Callable[[Any, IO[bytes]], None] | None = None,
+    deserializer: Callable[[IO[bytes]], Any] | None = None,
+    callback: Callable[[Path], None] | None = None,
+):
+    """Async version of ``file_cache_value``.
+
+    Identical behaviour but *value_func* is awaited on a cache miss.
+    """
+    cache_root = _resolve_cache_root(cache_root)
+    if serializer is None:
+        serializer = default_serializer
+    if deserializer is None:
+        deserializer = default_deserializer
+
+    cache_key, encryption_key = _derive_cache_key_and_encryption_key(
+        key, scope, cache_root
+    )
+
+    cache_path = cache_root / cache_key[:2] / cache_key
+
+    if cache_path.exists():
+        try:
+            with open(cache_path, "rb") as file:
+                data = _decrypt_data(file.read(), key=encryption_key)
+
+            result = deserializer(BytesIO(data))
+
+            if callback is not None:
+                callback(cache_path)
+
+            return result
+        except Exception:
+            logger.debug("Cache read failed for key %s", cache_key, exc_info=True)
+
+    value = await value_func()
+
+    try:
+        random_suffix = secrets.token_hex(8)
+        cache_path_tmp = cache_root / cache_key[:2] / f"{cache_key}.tmp-{random_suffix}"
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+        buffer = BytesIO()
+        serializer(value, buffer)
+        encrypted_data = _encrypt_data(buffer.getvalue(), key=encryption_key)
+
+        with open(cache_path_tmp, "wb") as file:
+            file.write(encrypted_data)
+
+        cache_path_tmp.rename(cache_path)
+    except Exception:
+        logger.debug("Cache write failed for key %s", cache_key, exc_info=True)
+
+    return value
+
+
 def _resolve_cache_root(cache_root: str | Path | None = None) -> Path:
     if cache_root is None:
         return (user_cache_path("embedding_atlas") / "cache").resolve()

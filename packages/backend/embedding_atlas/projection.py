@@ -1,15 +1,336 @@
 # Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
-from io import BytesIO
 from pathlib import Path
-from typing import IO, Callable, Literal
+from typing import IO
 
+import narwhals as nw
 import numpy as np
-import pandas as pd
+from narwhals.typing import IntoDataFrameT
 
-from .cache import file_cache_value
+from .cache import async_file_cache_value
+from .embedding import create_embedder
 from .utils import logger
+
+DEFAULT_MAX_CONCURRENCY = 8
+
+
+def compute_projection(
+    data_frame: IntoDataFrameT,
+    *,
+    inputs: str,
+    modality: str = "auto",
+    x: str = "projection_x",
+    y: str = "projection_y",
+    neighbors: str | None = "neighbors",
+    embedder: str | Callable | None = None,
+    model: str | None = None,
+    batch_size: int | None = None,
+    max_concurrency: int | None = None,
+    embedder_args: dict | None = None,
+    umap_args: dict | None = None,
+    cache_root: str | Path | None = None,
+) -> IntoDataFrameT:
+    """
+    Compute embeddings and generate 2D projections for a DataFrame column.
+
+    This is a unified entry point that auto-detects the modality of the input
+    data (text, image, audio, or vector) and delegates to the appropriate
+    projection function.
+
+    Note: This function cannot be called from within a running async event loop
+    (e.g. Jupyter notebooks). Use ``async_compute_projection`` instead.
+
+    Args:
+        data_frame: DataFrame containing the data to process. Accepts any
+            narwhals-compatible frame (pandas, Polars, cuDF, Modin, etc.).
+        inputs: str, column name containing the data to embed/project.
+        modality: str, the type of data in the inputs column. One of
+            'text', 'image', 'audio', 'vector', or 'auto' (auto-detect).
+        x: str, column name where the UMAP X coordinates will be stored.
+        y: str, column name where the UMAP Y coordinates will be stored.
+        neighbors: str or None, column name where nearest neighbor indices
+            will be stored. Set to None to skip.
+        embedder: the embedding backend to use. Can be:
+            - A string: 'sentence-transformers', 'transformers', or 'litellm'
+              to use a built-in embedder.
+            - An async callable with signature
+              ``async def(batch: list[Any], *, model, embedder_args) -> np.ndarray``
+              to use a custom embedder. The function receives a list of canonical
+              items (strings for text, ``{"bytes": bytes}`` dicts for image/audio)
+              and must return an ndarray of shape ``(batch_size, embedding_dim)``.
+            - None (default): auto-selects 'sentence-transformers' for text,
+              'transformers' for image/audio.
+        model: str or None, name of the embedding model.
+        batch_size: int or None, batch size for processing.
+        max_concurrency: int or None, maximum number of concurrent batches.
+        embedder_args: dict, embedder-specific arguments (e.g., api_key, api_base).
+        umap_args: dict, arguments for the UMAP algorithm.
+        cache_root: str or Path or None, root directory for caching results.
+
+    Returns:
+        A new DataFrame (same type as input) with projection columns added.
+    """
+    return asyncio.run(
+        async_compute_projection(
+            data_frame,
+            inputs=inputs,
+            modality=modality,
+            x=x,
+            y=y,
+            neighbors=neighbors,
+            embedder=embedder,
+            model=model,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+            embedder_args=embedder_args,
+            umap_args=umap_args,
+            cache_root=cache_root,
+        )
+    )
+
+
+async def async_compute_projection(
+    data_frame: IntoDataFrameT,
+    *,
+    inputs: str,
+    modality: str = "auto",
+    x: str = "projection_x",
+    y: str = "projection_y",
+    neighbors: str | None = "neighbors",
+    embedder: str | Callable | None = None,
+    model: str | None = None,
+    batch_size: int | None = None,
+    max_concurrency: int | None = None,
+    embedder_args: dict | None = None,
+    umap_args: dict | None = None,
+    cache_root: str | Path | None = None,
+) -> IntoDataFrameT:
+    """
+    Async version of ``compute_projection``.
+
+    Use this when calling from within a running async event loop (e.g. Jupyter
+    notebooks)::
+
+        df = await async_compute_projection(df, inputs="text")
+
+    See ``compute_projection`` for full argument documentation.
+    """
+    nw_frame = nw.from_native(data_frame, eager_only=True)
+    series = nw_frame[inputs]
+    embedder_args = embedder_args or {}
+    umap_args = umap_args or {}
+
+    # 1. Infer modality
+    if modality == "auto":
+        modality = _infer_modality(series)
+        logger.info("Auto-detected modality: %s", modality)
+
+    # 2. Convert inputs to canonical format
+    if modality == "text":
+        canonical = _to_canonical_text(series)
+    elif modality in ("image", "audio"):
+        canonical = _to_canonical_binary(series)
+    elif modality == "vector":
+        canonical = _to_canonical_vector(series)
+    else:
+        raise ValueError(
+            f"Unknown modality: {modality}. Must be one of: text, image, audio, vector, auto"
+        )
+
+    # 3. Resolve embedder (not needed for vector modality)
+    embedder_max_concurrency: int | None = None
+    if modality == "vector":
+        embedder_name = None
+    else:
+        if callable(embedder):
+            embedder_name = getattr(embedder, "__name__", type(embedder).__name__)
+        else:
+            if embedder is None:
+                embedder = _default_embedder(modality)
+            elif embedder == "sentence_transformers":
+                embedder = "sentence-transformers"
+
+            if embedder in ("sentence-transformers", "transformers"):
+                embedder_max_concurrency = 1
+
+            embedder_name = embedder
+
+    if max_concurrency is None:
+        max_concurrency = DEFAULT_MAX_CONCURRENCY
+    if embedder_max_concurrency is not None:
+        max_concurrency = min(embedder_max_concurrency, max_concurrency)
+
+    cache_key = {
+        "version": 1,
+        "inputs": canonical,
+        "modality": modality,
+        "embedder": embedder_name,
+        "model": model,
+        "umap_args": umap_args,
+        "embedder_args": _caching_embedder_args(embedder_args),
+    }
+
+    async def run() -> Projection:
+        if modality == "vector":
+            embedding = np.array(canonical).astype(np.float32)
+        else:
+            if callable(embedder):
+                embed_fn = embedder
+            elif embedder is not None:
+                embed_fn = create_embedder(
+                    embedder,
+                    modality=modality,
+                    model=model,
+                    embedder_args=embedder_args,
+                )
+            else:
+                raise RuntimeError("unreachable")
+            embedding = await _run_embedding(
+                embed_fn,
+                canonical,
+                model=model,
+                embedder_args=embedder_args,
+                batch_size=batch_size,
+                max_concurrency=max_concurrency,
+            )
+
+        return _run_umap(embedding, umap_args=umap_args)
+
+    proj = await async_file_cache_value(
+        cache_key,
+        run,
+        scope="compute_projection",
+        serializer=Projection.serialize,
+        deserializer=Projection.deserialize,
+        callback=lambda cache_path: print(
+            "Using cached projection from " + str(cache_path)
+        ),
+        cache_root=cache_root,
+    )
+
+    # Create a new data frame with the columns from the original, and add proj columns to it.
+    backend = nw.get_native_namespace(nw_frame)
+    new_columns = [
+        nw.new_series(x, proj.projection[:, 0].tolist(), nw.Float64, backend=backend),
+        nw.new_series(y, proj.projection[:, 1].tolist(), nw.Float64, backend=backend),
+    ]
+    if neighbors is not None:
+        new_columns.append(
+            nw.new_series(
+                neighbors,
+                [
+                    {"distances": b, "ids": a}
+                    for a, b in zip(proj.knn_indices, proj.knn_distances)
+                ],
+                backend=backend,
+            )
+        )
+    return nw.to_native(nw_frame.with_columns(new_columns))
+
+
+def _detect_binary_modality(data: bytes) -> str:
+    """Detect whether binary data is an image or audio based on magic bytes."""
+    # Image formats
+    if data[:8] == b"\x89PNG\r\n\x1a\n":  # PNG
+        return "image"
+    if data[:2] == b"\xff\xd8":  # JPEG
+        return "image"
+    if data[:4] == b"GIF8":  # GIF87a / GIF89a
+        return "image"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":  # WebP
+        return "image"
+    if data[:4] == b"\x00\x00\x01\x00":  # ICO
+        return "image"
+    if data[:2] in (b"BM",):  # BMP
+        return "image"
+    if data[:4] in (b"II\x2a\x00", b"MM\x00\x2a"):  # TIFF
+        return "image"
+
+    # Audio formats
+    if data[:4] == b"RIFF" and data[8:12] == b"WAVE":  # WAV
+        return "audio"
+    if data[:4] == b"fLaC":  # FLAC
+        return "audio"
+    if data[:4] == b"OggS":  # OGG (Vorbis/Opus)
+        return "audio"
+    if data[:3] == b"ID3" or data[:2] == b"\xff\xfb":  # MP3 (ID3 tag or sync frame)
+        return "audio"
+    if len(data) >= 12 and data[4:8] == b"ftyp":  # MP4/M4A container
+        return "audio"
+    if data[:4] == b".snd":  # AU
+        return "audio"
+    if data[:4] in (b"FORM",) and data[8:12] == b"AIFF":  # AIFF
+        return "audio"
+
+    # Default to image for unrecognized binary data
+    return "image"
+
+
+def _infer_modality(series: nw.Series) -> str:
+    """Infer the modality by inspecting the first non-null value in the series."""
+    non_null = series.drop_nulls()
+    if len(non_null) == 0:
+        return "text"
+    sample = non_null[0]
+
+    # Check for vector: list[float] or 1-dimensional ndarray
+    if isinstance(sample, np.ndarray) and sample.ndim == 1:
+        return "vector"
+    if (
+        isinstance(sample, list)
+        and len(sample) > 0
+        and isinstance(sample[0], (int, float))
+    ):
+        return "vector"
+
+    # Check for image/audio: bytes or {"bytes": ...}
+    if isinstance(sample, bytes):
+        return _detect_binary_modality(sample)
+    if isinstance(sample, dict) and "bytes" in sample:
+        raw = sample["bytes"]
+        if isinstance(raw, list):
+            raw = bytes(raw)
+        return _detect_binary_modality(raw)
+
+    # Default to text
+    return "text"
+
+
+def _to_canonical_text(series: nw.Series) -> list[str]:
+    """Convert series to canonical text format: list[str] with nulls as 'null'."""
+    return series.fill_null("null").cast(nw.String).to_list()
+
+
+def _to_canonical_binary(series: nw.Series) -> list[dict]:
+    """Convert series to canonical image format: list[{"bytes": bytes}]."""
+    result = []
+    for value in series.to_list():
+        if isinstance(value, bytes):
+            result.append({"bytes": value})
+        elif isinstance(value, dict) and "bytes" in value:
+            raw = value["bytes"]
+            if isinstance(raw, list):
+                raw = bytes(raw)
+            result.append({"bytes": raw})
+        else:
+            raise ValueError(
+                f"Cannot convert value of type {type(value)} to image/audio format"
+            )
+    return result
+
+
+def _to_canonical_vector(series: nw.Series) -> list[np.ndarray]:
+    """Convert series to canonical vector format: list[ndarray[float32]]."""
+    result = []
+    for value in series.to_list():
+        if isinstance(value, np.ndarray):
+            result.append(value.astype(np.float32))
+        else:
+            result.append(np.array(value, dtype=np.float32))
+    return result
 
 
 @dataclass
@@ -19,14 +340,6 @@ class Projection:
 
     knn_indices: np.ndarray
     knn_distances: np.ndarray
-
-    @staticmethod
-    def exists(path: Path):
-        return (
-            path.with_suffix(".projection.npy").exists()
-            and path.with_suffix(".knn_indices.npy").exists()
-            and path.with_suffix(".knn_distances.npy").exists()
-        )
 
     @staticmethod
     def serialize(value: "Projection", fd: IO[bytes]) -> None:
@@ -44,41 +357,6 @@ class Projection:
             projection=d["projection"],
             knn_indices=d["knn_indices"],
             knn_distances=d["knn_distances"],
-        )
-
-    @staticmethod
-    def save(path: Path, value: "Projection"):
-        np.save(
-            path.with_suffix(".projection.npy"),
-            value.projection,
-            allow_pickle=False,
-        )
-        np.save(
-            path.with_suffix(".knn_indices.npy"),
-            value.knn_indices,
-            allow_pickle=False,
-        )
-        np.save(
-            path.with_suffix(".knn_distances.npy"),
-            value.knn_distances,
-            allow_pickle=False,
-        )
-
-    @staticmethod
-    def load(path: Path) -> "Projection":
-        return Projection(
-            projection=np.load(
-                path.with_suffix(".projection.npy"),
-                allow_pickle=False,
-            ),
-            knn_indices=np.load(
-                path.with_suffix(".knn_indices.npy"),
-                allow_pickle=False,
-            ),
-            knn_distances=np.load(
-                path.with_suffix(".knn_distances.npy"),
-                allow_pickle=False,
-            ),
         )
 
 
@@ -114,451 +392,47 @@ def _run_umap(
     return Projection(projection=result, knn_indices=knn[0], knn_distances=knn[1])
 
 
-# Signature of a function that takes a list of strings, batch size, model name, and optional args, and returns a numpy array of embeddings.
-TextProjectorCallback = Callable[
-    [list[str], int, str, dict | None],
-    np.ndarray,
-]
-
-
-def _project_text_with_sentence_transformers(
-    texts: list[str],
-    batch_size: int,
-    model: str,
-    args: dict | None = None,
+async def _run_embedding(
+    fn: Callable,
+    data: list,
+    *,
+    model: str | None,
+    embedder_args: dict,
+    batch_size: int | None,
+    max_concurrency: int | None,
 ) -> np.ndarray:
-    from sentence_transformers import SentenceTransformer
+    """Run an embedder function over *data* in batches, return concatenated result."""
+    batch_size = batch_size or 32
+    batches = [data[i : i + batch_size] for i in range(0, len(data), batch_size)]
 
-    default_args = {
-        "trust_remote_code": False,
-    }
-    merged_args = {**default_args, **(args or {})}
-
-    logger.info("Loading model %s...", model)
-    transformer = SentenceTransformer(model, **merged_args)
-    return transformer.encode(texts, batch_size=batch_size)
-
-
-def _project_text_with_litellm(
-    texts: list[str],
-    batch_size: int,
-    model: str,
-    args: dict | None = None,
-) -> np.ndarray:
-    from litellm import aembedding, embedding
-
-    default_args = {
-        "sync": False,
-    }
-    merged_args = {**default_args, **(args or {})}
-
-    def run_sync() -> list:
-        # Process batches synchronously
-        return [
-            embedding(
-                input=texts[i : i + batch_size],
-                model=model,
-                **merged_args,
-            )
-            for i in range(0, len(texts), batch_size)
-        ]
-
-    def run_async() -> list:
-        import asyncio
-
-        async def run_async_coro() -> list:
-            # Create coroutines for each batch for asynchronous processing
-            response_coroutines = [
-                aembedding(
-                    input=texts[i : i + batch_size],
-                    model=model,
-                    **merged_args,
-                )
-                for i in range(0, len(texts), batch_size)
-            ]
-
-            return await asyncio.gather(*response_coroutines)
-
-        return asyncio.run(run_async_coro())
-
-    # Determine whether to run synchronously or asynchronously
-    should_run_sync: bool = merged_args["sync"]
-    responses = run_sync() if should_run_sync else run_async()
-
-    # Unnest embeddings from response wrapper objects
-    return np.array(
-        [
-            np.array(item["embedding"])
-            for response in responses
-            for item in response.data
-        ]
+    logger.info(
+        "Running embedding for %d items in %d batches (batch_size=%d)...",
+        len(data),
+        len(batches),
+        batch_size,
     )
 
+    from .async_map import async_map
 
-def _projection_for_texts(
-    texts: list[str],
-    *,
-    model: str | None = None,
-    batch_size: int | None = None,
-    text_projector_args: dict | None = None,
-    text_projector: TextProjectorCallback | None = None,
-    umap_args: dict | None = None,
-) -> Projection:
-    if model is None:
-        model = "all-MiniLM-L6-v2"
-    if text_projector is None:
-        text_projector = _project_text_with_sentence_transformers
+    results = await async_map(
+        batches,
+        lambda b: fn(b, model=model, embedder_args=embedder_args),
+        concurrency=max_concurrency or 1,
+        max_retry=10,
+        description="Embedding",
+    )
+    return np.concatenate(results, axis=0)
 
-    # Set default batch size if not provided
-    if batch_size is None:
-        batch_size = 32
-        logger.info(
-            "Using default batch size of %d for text. Adjust with --batch-size if you encounter memory issues or want to speed up processing.",
-            batch_size,
-        )
 
-    def compute():
-        logger.info(
-            "Running embedding for %d texts with batch size %d using %s...",
-            len(texts),
-            batch_size,
-            text_projector.__name__,
-        )
-        hidden_vectors = text_projector(texts, batch_size, model, text_projector_args)
+def _default_embedder(modality: str):
+    if modality == "text":
+        return "sentence-transformers"
+    else:
+        return "transformers"
 
-        return _run_umap(hidden_vectors, umap_args=umap_args)
 
-    # Some arguments may contain sensitive info (e.g., API keys) or do not invalidate the cache, so we exclude them
-    excluded_text_projector_args = {"api_key", "api_base", "sync"}
-    hashed_text_projector_args = {
-        k: v
-        for k, v in (text_projector_args or {}).items()
-        if k not in excluded_text_projector_args
+def _caching_embedder_args(embedder_args: dict) -> dict:
+    IGNORED_KEYS = ["api_key", "api_base"]
+    return {
+        key: value for key, value in embedder_args.items() if key not in IGNORED_KEYS
     }
-    cache_key = {
-        "version": 2,
-        "texts": texts,
-        "model": model,
-        "batch_size": batch_size,
-        "text_projector_args": hashed_text_projector_args,
-        "text_projector": text_projector.__name__,
-        "umap_args": umap_args,
-    }
-
-    return file_cache_value(
-        cache_key,
-        compute,
-        scope="projection_for_texts",
-        serializer=Projection.serialize,
-        deserializer=Projection.deserialize,
-        callback=lambda cache_path: logger.info(
-            "Using cached projection from " + str(cache_path)
-        ),
-    )
-
-
-def _projection_for_images(
-    images: list,
-    *,
-    model: str | None = None,
-    trust_remote_code: bool = False,
-    batch_size: int | None = None,
-    umap_args: dict | None = None,
-) -> Projection:
-    if model is None:
-        model = "google/vit-base-patch16-384"
-
-    # Set default batch size if not provided
-    if batch_size is None:
-        batch_size = 16
-        logger.info(
-            "Using default batch size of %d for images. Adjust with --batch-size if you encounter memory issues or want to speed up processing.",
-            batch_size,
-        )
-
-    cache_key = {
-        "version": 1,
-        "images": images,
-        "model": model,
-        "batch_size": batch_size,
-        "umap_args": umap_args,
-    }
-
-    def compute():
-        # Import on demand.
-        import torch
-        import tqdm
-        from PIL import Image
-        from transformers import pipeline
-
-        def load_image(value):
-            if isinstance(value, bytes):
-                return Image.open(BytesIO(value)).convert("RGB")
-            elif isinstance(value, dict) and "bytes" in value:
-                return Image.open(BytesIO(value["bytes"])).convert("RGB")
-            else:
-                raise ValueError("invalid image value")
-
-        logger.info("Loading model %s...", model)
-
-        pipe = pipeline(
-            "image-feature-extraction",
-            model=model,
-            device_map="auto",
-            trust_remote_code=trust_remote_code,
-        )
-
-        logger.info(
-            "Running embedding for %d images with batch size %d...",
-            len(images),
-            batch_size,
-        )
-        tensors = []
-
-        current_batch = []
-
-        @torch.no_grad()
-        def process_batch():
-            rs: torch.Tensor = pipe(current_batch, return_tensors=True)  # type: ignore
-            current_batch.clear()
-            for r in rs:
-                if len(r.shape) == 3:
-                    r = r.mean(1)
-                assert len(r.shape) == 2
-                tensors.append(r)
-
-        for image in tqdm.tqdm(images, smoothing=0.1):
-            current_batch.append(load_image(image))
-            if len(current_batch) >= batch_size:
-                process_batch()
-        process_batch()
-
-        hidden_vectors = torch.concat(tensors).to(torch.float32).cpu().numpy()
-        result = _run_umap(hidden_vectors, umap_args=umap_args)
-        return result
-
-    return file_cache_value(
-        cache_key,
-        compute,
-        scope="projection_for_images",
-        serializer=Projection.serialize,
-        deserializer=Projection.deserialize,
-        callback=lambda cache_path: logger.info(
-            "Using cached projection from " + str(cache_path)
-        ),
-    )
-
-
-def _find_text_projector_callback(name: str) -> TextProjectorCallback:
-    projector_map = {
-        "sentence_transformers": _project_text_with_sentence_transformers,
-        "litellm": _project_text_with_litellm,
-    }
-
-    if name in projector_map:
-        return projector_map[name]
-
-    raise ValueError(
-        f"Unknown text projector: {name}. Must be one of: {list(projector_map.keys())}"
-    )
-
-
-def compute_text_projection(
-    data_frame: pd.DataFrame,
-    *,
-    text: str,
-    x: str = "projection_x",
-    y: str = "projection_y",
-    neighbors: str | None = "neighbors",
-    model: str | None = None,
-    batch_size: int | None = None,
-    text_projector: Literal[
-        "sentence_transformers",
-        "litellm",
-    ] = "sentence_transformers",
-    umap_args: dict | None = None,
-    **kwargs,
-):
-    """
-    Compute text embeddings and generate 2D projections using UMAP.
-
-    This function processes text data by creating embeddings and then reducing the
-    dimensionality to 2D coordinates using UMAP for visualization purposes.
-
-    Args:
-        data_frame: pandas DataFrame containing the text data to process.
-        text: str, column name containing the texts to embed.
-        x: str, column name where the UMAP X coordinates will be stored.
-        y: str, column name where the UMAP Y coordinates will be stored.
-        neighbors: str, column name where the nearest neighbor indices will be stored.
-        model: str, name or path of the embedding model to use. The interpretation
-            depends on the text_projector:
-            - For 'sentence_transformers': A SentenceTransformer model name or path.
-              See https://www.sbert.net/docs/sentence_transformer/pretrained_models.html
-            - For 'litellm': A LiteLLM-supported model identifier.
-              See https://docs.litellm.ai/docs/embedding/supported_embedding
-        batch_size: int, batch size for processing embeddings. Larger values use more
-            memory but may be faster. Default is 32. When using 'litellm', note that
-            different providers have different limits on input tokens per request, so
-            batch size should be set accordingly to avoid exceeding API limits.
-        text_projector: str, the embedding provider to use. Options are:
-            - 'sentence_transformers' (default): Computes embeddings locally using the
-              SentenceTransformers library. Requires the sentence-transformers package.
-              This approach runs the model on your local machine and is suitable for
-              privacy-sensitive data or when you want full control over the embedding
-              process.
-            - 'litellm': Computes embeddings remotely using API calls through the LiteLLM
-              library. Requires the litellm package and appropriate API credentials.
-              This approach supports a wide range of cloud-based embedding APIs
-              (OpenAI, Cohere, Azure, etc.) and is useful when you want to leverage
-              remote models without local computational overhead.
-        umap_args: dict, additional keyword arguments to pass to the UMAP algorithm
-            (e.g., n_neighbors, min_dist, metric).
-        **kwargs: Additional configuration options for the embedding provider:
-            - For 'sentence_transformers': Options passed to SentenceTransformer.encode().
-              See https://www.sbert.net/docs/package_reference/sentence_transformer/SentenceTransformer.html#sentence_transformers.SentenceTransformer.encode
-              Common options include 'trust_remote_code', 'normalize_embeddings', etc.
-            - For 'litellm': Options passed to litellm.aembedding().
-              See https://docs.litellm.ai/docs/embedding/supported_embedding#input-params-for-litellmembedding
-              Common options include API keys, timeout settings, custom endpoints, etc.
-              Special option 'sync' (bool, default False): Controls whether embeddings are
-              processed asynchronously or synchronously. By default (False), batches are
-              processed asynchronously, which is ideal for remote APIs like OpenAI, Vertex AI,
-              etc., where the embedding happens on a remote instance and the task is IO-bound.
-              However, when performing embeddings through a locally-running server (e.g., Ollama),
-              setting sync=True can help avoid memory issues by processing batches sequentially.
-
-    Returns:
-        The input DataFrame with added columns for X, Y coordinates and nearest neighbors.
-    """
-    text_series = data_frame[text].astype(str).fillna("")
-    text_projector_callback = _find_text_projector_callback(text_projector)
-
-    proj = _projection_for_texts(
-        list(text_series),
-        model=model,
-        batch_size=batch_size,
-        text_projector_args=kwargs,
-        text_projector=text_projector_callback,
-        umap_args=umap_args,
-    )
-    data_frame[x] = proj.projection[:, 0]
-    data_frame[y] = proj.projection[:, 1]
-    if neighbors is not None:
-        data_frame[neighbors] = [  # type: ignore
-            {"distances": b, "ids": a}  # ID is always the same as the row index.
-            for a, b in zip(proj.knn_indices, proj.knn_distances)
-        ]
-
-
-def compute_vector_projection(
-    data_frame: pd.DataFrame,
-    *,
-    vector: str,
-    x: str = "projection_x",
-    y: str = "projection_y",
-    neighbors: str | None = "neighbors",
-    umap_args: dict | None = None,
-):
-    """
-    Generate 2D projections from pre-existing vector embeddings using UMAP.
-
-    This function takes pre-computed vector embeddings and reduces their dimensionality
-    to 2D coordinates using UMAP for visualization purposes.
-
-    Args:
-        data_frame: pandas DataFrame containing the vector data to process.
-        vector: str, column name containing the pre-computed vector embeddings.
-                Each entry should be a list or numpy array of numbers.
-        x: str, column name where the UMAP X coordinates will be stored.
-        y: str, column name where the UMAP Y coordinates will be stored.
-        neighbors: str, column name where the nearest neighbor indices will be stored.
-        umap_args: dict, additional keyword arguments to pass to the UMAP algorithm
-            (e.g., n_neighbors, min_dist, metric).
-
-    Returns:
-        The input DataFrame with added columns for X, Y coordinates and nearest neighbors.
-    """
-    # Convert vector column to numpy array
-    vector_series = data_frame[vector]
-
-    # Convert each vector entry to numpy array and stack them
-    vector_list = []
-    for vector in vector_series:
-        if isinstance(vector, list):
-            vector_array = np.array(vector)
-        elif isinstance(vector, np.ndarray):
-            vector_array = vector
-        else:
-            # Try to convert to numpy array
-            vector_array = np.array(vector)
-        vector_list.append(vector_array)
-
-    # Stack all vectors into a single numpy array
-    hidden_vectors = np.stack(vector_list)
-
-    # Run UMAP on the pre-existing vectors
-    proj = _run_umap(hidden_vectors, umap_args=umap_args)
-
-    # Add projection results to dataframe
-    data_frame[x] = proj.projection[:, 0]
-    data_frame[y] = proj.projection[:, 1]
-    if neighbors is not None:
-        data_frame[neighbors] = [  # type: ignore
-            {"distances": b, "ids": a}  # ID is always the same as the row index.
-            for a, b in zip(proj.knn_indices, proj.knn_distances)
-        ]
-
-
-def compute_image_projection(
-    data_frame: pd.DataFrame,
-    *,
-    image: str,
-    x: str = "projection_x",
-    y: str = "projection_y",
-    neighbors: str | None = "neighbors",
-    model: str | None = None,
-    trust_remote_code: bool = False,
-    batch_size: int | None = None,
-    umap_args: dict | None = None,
-):
-    """
-    Compute image embeddings and generate 2D projections using UMAP.
-
-    This function processes image data by creating embeddings using a model and
-    then reducing the dimensionality to 2D coordinates using UMAP for
-    visualization purposes.
-
-    Args:
-        data_frame: pandas DataFrame containing the image data to process.
-        image: str, column name containing the images to embed.
-        x: str, column name where the UMAP X coordinates will be stored.
-        y: str, column name where the UMAP Y coordinates will be stored.
-        neighbors: str, column name where the nearest neighbor indices will be stored.
-        model: str, name or path of the model to use for embedding.
-        trust_remote_code: bool, whether to trust and execute remote code when loading
-            the model from HuggingFace Hub. Default is False.
-        batch_size: int, batch size for processing images. Larger values use more
-            memory but may be faster. Default is 16.
-        umap_args: dict, additional keyword arguments to pass to the UMAP algorithm
-            (e.g., n_neighbors, min_dist, metric).
-
-    Returns:
-        The input DataFrame with added columns for X, Y coordinates and nearest neighbors.
-    """
-
-    image_series = data_frame[image]
-    proj = _projection_for_images(
-        list(image_series),
-        model=model,
-        trust_remote_code=trust_remote_code,
-        batch_size=batch_size,
-        umap_args=umap_args,
-    )
-    data_frame[x] = proj.projection[:, 0]
-    data_frame[y] = proj.projection[:, 1]
-    if neighbors is not None:
-        data_frame[neighbors] = [  # type: ignore
-            {"distances": b, "ids": a}  # ID is always the same as the row index.
-            for a, b in zip(proj.knn_indices, proj.knn_distances)
-        ]

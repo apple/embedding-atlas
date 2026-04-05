@@ -1,6 +1,11 @@
 {
   "python.analysis.typeCheckingMode": "standard",
-  "python.defaultInterpreterPath": "packages/backend/.venv/bin/python",
+  "python-envs.pythonProjects": [
+    {
+      "path": "packages/backend",
+      "envManager": "ms-python.python:venv"
+    }
+  ],
   "files.trimTrailingWhitespace": true,
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",

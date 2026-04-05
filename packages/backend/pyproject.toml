@@ -31,6 +31,7 @@ dependencies = [
   "litellm >= 1.70.0, != 1.82.7, != 1.82.8", # Critical supply chain attack: https://futuresearch.ai/blog/litellm-pypi-supply-chain-attack/
   "websockets >= 15.0.1",
   "cryptography >= 35.0.0",
+  "narwhals >= 2.0.0",
 ]
 
 [project.scripts]
@@ -53,6 +54,11 @@ artifacts = [
 [tool.hatch.build.targets.wheel]
 packages = ["embedding_atlas"]
 
+[tool.pytest.ini_options]
+markers = [
+  "external: tests requiring external resources such as models or APIs (skipped unless --run-external is passed)",
+]
+
 [dependency-groups]
 dev = [
   "datasets >= 3.1.0",
@@ -61,4 +67,8 @@ dev = [
   "anywidget >= 0.9.0",
   "docutils >= 0.22.0",
   "pytest >= 9.0.2",
+  "pytest-asyncio>=1.3.0",
+  "pyright >= 1.1.0",
+  "soundfile >= 0.12.0",
+  "polars >= 1.0.0",
 ]

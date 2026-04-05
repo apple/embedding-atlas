@@ -6,9 +6,7 @@ The `embedding-atlas` package contains some useful algorithms for computing embe
 
 This package provides a WebAssembly implementation of [UMAP (Uniform Manifold Approximation and Projection for Dimension Reduction)](https://umap-learn.readthedocs.io/en/latest/) and approximate nearest neighbor search.
 
-The UMAP implementation is [umappp](https://github.com/libscran/umappp/) by Aaron Lun.
-
-The approximate nearest neighbor search is based on [knncolle](https://github.com/knncolle/knncolle), with two algorithms, including HNSW ([hnswlib](https://github.com/nmslib/hnswlib)) and [nndescent](https://github.com/brj0/nndescent) by Jon Brugger.
+The implementation is based on the original Python libraries [umap-learn](https://github.com/lmcinnes/umap) and [pynndescent](https://github.com/lmcinnes/pynndescent) by Leland McInnes, ported to Rust and compiled to WebAssembly.
 
 To initialize the UMAP algorithm, use `createUMAP`:
 
