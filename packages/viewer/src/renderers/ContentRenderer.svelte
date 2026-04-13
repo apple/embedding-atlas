@@ -1,8 +1,9 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
+  import { imageToDataUrl } from "@embedding-atlas/utils";
+
   import AudioContent from "./AudioContent.svelte";
 
-  import { imageToDataUrl } from "../utils/media.js";
   import { renderers } from "./renderer_types.js";
   import { stringify, valueKind } from "./renderer_utils.js";
   import type { ColumnStyle } from "./types.js";

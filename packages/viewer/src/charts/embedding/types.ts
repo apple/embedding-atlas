@@ -10,6 +10,8 @@ export interface EmbeddingSpec {
     x: string;
     y: string;
     text?: string | null;
+    image?: string | null;
+    importance?: string | null;
     category?: string | null;
   };
 

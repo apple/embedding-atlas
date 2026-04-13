@@ -1,9 +1,9 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import { createUMAP } from "@embedding-atlas/umap-wasm";
+import { imageToDataUrl } from "@embedding-atlas/utils";
 import { load_image, pipeline } from "@huggingface/transformers";
 
-import { imageToDataUrl } from "../utils/media.js";
 import { WorkerRPC } from "./worker_helper.js";
 
 let { handler, register } = WorkerRPC.runtime();

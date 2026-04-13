@@ -27,5 +27,7 @@
     "editor.codeActionsOnSave": {
       "source.organizeImports": "explicit"
     }
-  }
+  },
+  "python.testing.pytestArgs": ["packages/backend"],
+  "python.testing.pytestEnabled": true
 }

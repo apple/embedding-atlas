@@ -34,6 +34,14 @@ export interface EmbeddingViewMosaicProps {
    *  The text content is also used to generate labels automatically. */
   text?: string | null;
 
+  /** The name of the image column.
+   *  If specified along with `importance`, cluster labels will display the highest-importance image per region. */
+  image?: string | null;
+
+  /** The name of the importance score column (e.g., PageRank, centrality).
+   *  Used together with `image` to select representative images for cluster labels. */
+  importance?: string | null;
+
   /** The name of the identifier (aka., id) column.
    *  If specified, the `selection` object will contain an `identifier` property that you can use to identify the point. */
   identifier?: string | null;

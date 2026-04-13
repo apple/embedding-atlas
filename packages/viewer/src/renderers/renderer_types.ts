@@ -1,5 +1,6 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import { imageToDataUrl } from "@embedding-atlas/utils";
 import type { Component } from "svelte";
 import type { Action } from "svelte/action";
 import { createClassComponent } from "svelte/legacy";
@@ -9,7 +10,6 @@ import ImageOptions from "./ImageOptions.svelte";
 import LiquidTemplateOptions from "./LiquidTemplateOptions.svelte";
 
 import { compileLiquidTemplate, renderMarkdown } from "../utils/html_template.js";
-import { imageToDataUrl } from "../utils/media.js";
 import { renderMessages } from "./messages.js";
 import { safeJSONStringify } from "./renderer_utils.js";
 import type {

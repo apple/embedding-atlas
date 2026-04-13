@@ -17,6 +17,13 @@ class EmbeddingAtlasOptions(TypedDict, total=False):
     text:
         The column name for the textual data.
 
+    image:
+        The column name for image data.
+
+    importance:
+        The column name for importance scores (e.g., PageRank). Used with ``image`` to select
+        representative images for cluster labels. Maps to ``importance`` in the frontend API.
+
     neighbors:
         The column name containing precomputed K-nearest neighbors for each point.
         Each value in the column should be a dictionary with the format:
@@ -60,6 +67,8 @@ class EmbeddingAtlasOptions(TypedDict, total=False):
     x: str | None
     y: str | None
     text: str | None
+    image: str | None
+    importance: str | None
     neighbors: str | None
 
     point_size: float | None
@@ -109,6 +118,8 @@ def make_embedding_atlas_props(**options: Unpack[EmbeddingAtlasOptions]) -> dict
     if options.get("x") is not None and options.get("y") is not None:
         set_prop("data.projection", {"x": options.get("x"), "y": options.get("y")})
     set_prop("data.text", options.get("text"))
+    set_prop("data.image", options.get("image"))
+    set_prop("data.importance", options.get("importance"))
     set_prop("data.neighbors", options.get("neighbors"))
 
     # Embedding View
