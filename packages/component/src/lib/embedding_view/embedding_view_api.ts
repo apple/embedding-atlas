@@ -7,7 +7,7 @@ import Component from "./EmbeddingView.svelte";
 import type { Point, Rectangle, ViewportState } from "../utils.js";
 import type { EmbeddingViewConfig } from "./embedding_view_config.js";
 import type { ThemeConfig } from "./theme.js";
-import type { Cache, CustomComponent, DataPoint, Label, OverlayProxy } from "./types.js";
+import type { Cache, CustomComponent, DataPoint, Label, LabelContent, OverlayProxy } from "./types.js";
 
 export interface EmbeddingViewProps {
   /** The data. */
@@ -86,7 +86,7 @@ export interface EmbeddingViewProps {
 
   /** An async function that returns labels for a list of clusters.
    *  Each cluster is given as a list of rectangles that approximately cover the region. */
-  queryClusterLabels?: ((clusters: Rectangle[][]) => Promise<(string | null)[]>) | null;
+  queryClusterLabels?: ((clusters: Rectangle[][]) => Promise<(LabelContent | null)[]>) | null;
 
   /** A custom renderer to draw the tooltip content. */
   customTooltip?: CustomComponent<HTMLDivElement, { tooltip: DataPoint }> | null;

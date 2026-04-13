@@ -217,6 +217,8 @@
     x={spec.data.x}
     y={spec.data.y}
     text={spec.data.text}
+    image={spec.data.image}
+    importance={spec.data.importance}
     category={categoryLegend?.indexColumn}
     categoryColors={categoryLegend?.legend.map((x) => x.color) ?? [theme.embeddingColor]}
     config={{

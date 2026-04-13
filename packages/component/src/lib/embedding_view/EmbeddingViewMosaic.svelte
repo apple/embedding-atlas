@@ -1,5 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
+  import { imageToDataUrl } from "@embedding-atlas/utils";
   import { coordinator as defaultCoordinator, isSelection, makeClient, type MosaicClient } from "@uwdata/mosaic-core";
   import * as SQL from "@uwdata/mosaic-sql";
   import { untrack } from "svelte";
@@ -8,13 +9,14 @@
 
   import { deepEquals, type Point, type Rectangle, type ViewportState } from "../utils.js";
   import type { EmbeddingViewMosaicProps } from "./embedding_view_mosaic_api.js";
+  import { IMAGE_LABEL_SIZE } from "./labels.js";
   import {
     DataPointQuery,
     predicateForDataPoints,
     predicateForRangeSelection,
     queryApproximateDensity,
   } from "./mosaic_client.js";
-  import type { DataPoint, DataPointID } from "./types.js";
+  import type { DataPoint, DataPointID, LabelContent } from "./types.js";
   import {
     textSummarizerAdd,
     textSummarizerCreate,
@@ -29,6 +31,8 @@
     y,
     category = null,
     text = null,
+    image = null,
+    importance = null,
     identifier = null,
     filter = null,
     categoryColors = null,
@@ -331,7 +335,12 @@
   }
 
   // Cluster Labels
-  async function queryClusterLabels(clusters: Rectangle[][]): Promise<(string | null)[]> {
+  async function queryClusterLabels(clusters: Rectangle[][]): Promise<(LabelContent | null)[]> {
+    // If we have image + importance columns, query for representative images
+    if (image != null && importance != null) {
+      return await queryClusterImageLabels(clusters);
+    }
+    // Otherwise fall back to text summarization
     if (text == null) {
       return clusters.map(() => null);
     }
@@ -379,6 +388,81 @@
       } else {
         return words.join("-");
       }
+    });
+  }
+
+  async function queryClusterImageLabels(clusters: Rectangle[][]): Promise<(LabelContent | null)[]> {
+    if (image == null || importance == null) {
+      return [];
+    }
+    // Build a VALUES table of all rectangles with their region index
+    let values = clusters
+      .flatMap((rects, regionId) =>
+        rects.map(
+          (r) => SQL.sql`(
+            ${SQL.literal(regionId)},
+            ${SQL.literal(r.xMin)}, ${SQL.literal(r.xMax)},
+            ${SQL.literal(r.yMin)}, ${SQL.literal(r.yMax)}
+          )`,
+        ),
+      )
+      .join(", ");
+    let sql = `
+      WITH rectangles(regionId, xMin, xMax, yMin, yMax) AS (VALUES ${values})
+      SELECT
+        r.regionId AS regionId,
+        arg_max(${SQL.column(image, "t")}, ${SQL.column(importance, "t")}) AS bestImage,
+        arg_max(${SQL.column(x, "t")}, ${SQL.column(importance, "t")}) AS bestX,
+        arg_max(${SQL.column(y, "t")}, ${SQL.column(importance, "t")}) AS bestY
+      FROM rectangles r
+      JOIN "${table}" AS t ON
+        ${SQL.column(x, "t")} BETWEEN r.xMin AND r.xMax AND
+        ${SQL.column(y, "t")} BETWEEN r.yMin AND r.yMax
+      GROUP BY r.regionId
+      ORDER BY r.regionId
+    `;
+    let result = await coordinator.query(sql);
+    let rows = result.toArray();
+
+    // Map results back by region_id, measuring image dimensions for aspect ratio
+    let output: ({
+      image: string;
+      width: number;
+      height: number;
+      x: number;
+      y: number;
+    } | null)[] = clusters.map(() => null);
+
+    for (let i = 0; i < rows.length; i++) {
+      let { bestImage, bestX, bestY, regionId } = rows[i];
+      if (bestImage == null) continue;
+      let dataUrl = imageToDataUrl(bestImage);
+      if (dataUrl == null) continue;
+      output[regionId] = { image: dataUrl, width: 0, height: 0, x: bestX, y: bestY };
+    }
+
+    await Promise.all(
+      output.map(async (item) => {
+        if (item == null) {
+          return;
+        }
+        let { width, height } = await measureImageSize(item.image);
+        // Fit to IMAGE_LABEL_SIZE while maintaining aspect ratio
+        let scale = Math.min(IMAGE_LABEL_SIZE / width, IMAGE_LABEL_SIZE / height);
+        item.width = width * scale;
+        item.height = height * scale;
+      }),
+    );
+
+    return output;
+  }
+
+  function measureImageSize(src: string): Promise<{ width: number; height: number }> {
+    return new Promise((resolve) => {
+      let img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.onerror = () => resolve({ width: IMAGE_LABEL_SIZE, height: IMAGE_LABEL_SIZE });
+      img.src = src;
     });
   }
 </script>

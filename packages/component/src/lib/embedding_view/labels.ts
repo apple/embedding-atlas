@@ -2,11 +2,14 @@
 
 import { measureText } from "../measure_text.js";
 import { type Point, type Rectangle } from "../utils.js";
-import type { Label } from "./types.js";
+import type { Label, LabelContent } from "./types.js";
 import { dynamicLabelPlacement } from "./worker/index.js";
 
+/** Maximum size of image labels in pixels. */
+export const IMAGE_LABEL_SIZE = 48;
+
 export interface LabelWithPlacement {
-  text: string;
+  content: LabelContent;
   fontSize: number;
   bounds: Rectangle;
   locationAtZero: Point;
@@ -28,15 +31,21 @@ export async function layoutLabels(
     let location = { x: cluster.x, y: cluster.y };
     let level = cluster.level ?? 0;
     let fontSize = level == 0 ? 14 : 12;
-    let size = measureText({
-      text: cluster.text,
-      fontSize: fontSize,
-      fontFamily: fontFamily,
-    });
-    size.width += 4;
-    size.height += 4;
+    let size;
+    if (typeof cluster.content !== "string") {
+      // Use the pre-computed display dimensions for collision detection
+      size = { width: cluster.content.width + 4, height: cluster.content.height + 4 };
+    } else {
+      size = measureText({
+        text: cluster.content,
+        fontSize: fontSize,
+        fontFamily: fontFamily,
+      });
+      size.width += 4;
+      size.height += 4;
+    }
     return {
-      text: cluster.text,
+      content: cluster.content,
       fontSize: fontSize,
       bounds: {
         xMin: location.x - size.width / 2,

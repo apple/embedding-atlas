@@ -16,7 +16,7 @@
     totalCount: number | null;
     maxDensity: number | null;
     labels?: Label[] | null;
-    queryClusterLabels: ((clusters: Rectangle[][]) => Promise<(string | null)[]>) | null;
+    queryClusterLabels: ((clusters: Rectangle[][]) => Promise<(LabelContent | null)[]>) | null;
     tooltip: Selection | null;
     selection: Selection[] | null;
     querySelection: ((x: number, y: number, unitDistance: number) => Promise<Selection | null>) | null;
@@ -38,7 +38,7 @@
     sumDensity: number;
     rects: Rectangle[];
     bandwidth: number;
-    label?: string | null;
+    content?: LabelContent | null;
   }
 
   function viewingParameters(
@@ -118,7 +118,7 @@
   import { layoutLabels, type LabelWithPlacement } from "./labels.js";
   import { simplifyPolygon } from "./simplify_polygon.js";
   import { resolveTheme, type ThemeConfig } from "./theme.js";
-  import type { Cache, CustomComponent, Label, OverlayProxy } from "./types.js";
+  import type { Cache, CustomComponent, Label, LabelContent, OverlayProxy } from "./types.js";
   import { findClusters } from "./worker/index.js";
 
   interface SelectionBase {
@@ -619,7 +619,7 @@
 
     let cacheKey = await cacheKeyForObject({
       autoLabel: {
-        version: 1,
+        version: 3,
         viewport,
         stopWords: config?.autoLabelStopWords,
         densityThreshold: config?.autoLabelDensityThreshold,
@@ -636,19 +636,24 @@
     let newClusters = await generateClusters(renderer, 10, viewport, config?.autoLabelDensityThreshold ?? 0.005);
     newClusters = newClusters.concat(await generateClusters(renderer, 5, viewport));
 
-    if (queryClusterLabels) {
-      let labels = await queryClusterLabels(newClusters.map((x) => x.rects));
-      for (let i = 0; i < newClusters.length; i++) {
-        newClusters[i].label = labels[i];
+    let labels = await queryClusterLabels(newClusters.map((x) => x.rects));
+    for (let i = 0; i < newClusters.length; i++) {
+      let label = labels[i];
+      newClusters[i].content = label;
+      if (typeof label == "object" && label != null && "x" in label && "y" in label) {
+        if (label.x != null && label.y != null) {
+          newClusters[i].x = label.x;
+          newClusters[i].y = label.y;
+        }
       }
     }
 
     let result: Label[] = newClusters
-      .filter((x) => x.label != null && x.label.length > 0)
+      .filter((x) => x.content != null && (typeof x.content !== "string" || x.content.length > 0))
       .map((x) => ({
         x: x.x,
         y: x.y,
-        text: x.label!,
+        content: x.content!,
         priority: x.sumDensity,
         level: x.bandwidth == 10 ? 0 : 1,
       }));
@@ -669,9 +674,14 @@
       clusterLabels = await layoutLabels(vp.scale(), labels, resolvedTheme.fontFamily);
     } else {
       statusMessage = "Generating labels...";
-      let result = await generateLabels(viewport);
-      clusterLabels = await layoutLabels(vp.scale(), result, resolvedTheme.fontFamily);
-      statusMessage = null;
+      try {
+        let result = await generateLabels(viewport);
+        clusterLabels = await layoutLabels(vp.scale(), result, resolvedTheme.fontFamily);
+      } catch (e) {
+        console.error("Error while generating labels", e);
+      } finally {
+        statusMessage = null;
+      }
     }
   }
 
@@ -767,36 +777,49 @@
     {#if showClusterLabels}
       <g>
         {#each clusterLabels as label}
-          {@const rows = label.text.split("\n")}
           {@const location = pointLocation(label.coordinate.x, label.coordinate.y)}
           {@const scale = resolvedViewport.scale()}
           {@const isVisible =
             label.placement != null && label.placement.minScale <= scale && scale <= label.placement.maxScale}
           <g transform="translate({location.x},{location.y})">
             {#if isVisible}
-              <g>
-                {#each rows as row, index}
-                  <text
-                    style:paint-order="stroke"
-                    style:stroke-width="4"
-                    style:stroke-linejoin="round"
-                    style:stroke-linecap="round"
-                    style:text-anchor="middle"
-                    style:fill={resolvedTheme.clusterLabelColor}
-                    style:stroke={resolvedTheme.clusterLabelOutlineColor}
-                    style:opacity={resolvedTheme.clusterLabelOpacity}
-                    style:user-select="none"
-                    style:-webkit-user-select="none"
-                    style:font-family={resolvedTheme.fontFamily}
-                    x={0}
-                    y={(index - (rows.length - 1) / 2) * label.fontSize}
-                    font-size={label.fontSize}
-                    dominant-baseline="middle"
-                  >
-                    {row}
-                  </text>
-                {/each}
-              </g>
+              {#if typeof label.content !== "string"}
+                <image
+                  href={label.content.image}
+                  x={-label.content.width / 2}
+                  y={-label.content.height / 2}
+                  width={label.content.width}
+                  height={label.content.height}
+                  style:user-select="none"
+                  style:-webkit-user-select="none"
+                  style:opacity={resolvedTheme.clusterLabelOpacity}
+                />
+              {:else}
+                {@const rows = label.content.split("\n")}
+                <g>
+                  {#each rows as row, index}
+                    <text
+                      style:paint-order="stroke"
+                      style:stroke-width="4"
+                      style:stroke-linejoin="round"
+                      style:stroke-linecap="round"
+                      style:text-anchor="middle"
+                      style:fill={resolvedTheme.clusterLabelColor}
+                      style:stroke={resolvedTheme.clusterLabelOutlineColor}
+                      style:opacity={resolvedTheme.clusterLabelOpacity}
+                      style:user-select="none"
+                      style:-webkit-user-select="none"
+                      style:font-family={resolvedTheme.fontFamily}
+                      x={0}
+                      y={(index - (rows.length - 1) / 2) * label.fontSize}
+                      font-size={label.fontSize}
+                      dominant-baseline="middle"
+                    >
+                      {row}
+                    </text>
+                  {/each}
+                </g>
+              {/if}
             {/if}
           </g>
         {/each}

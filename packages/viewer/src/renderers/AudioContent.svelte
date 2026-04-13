@@ -1,8 +1,8 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import AudioPlayer from "./AudioPlayer.svelte";
+  import { audioToDataUrl } from "@embedding-atlas/utils";
 
-  import { audioToDataUrl } from "../utils/media.js";
+  import AudioPlayer from "./AudioPlayer.svelte";
 
   interface Props {
     value: any;

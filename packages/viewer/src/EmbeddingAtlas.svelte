@@ -264,6 +264,8 @@
           ? {
               ...data.projection,
               text: data.text ?? undefined,
+              image: data.image ?? undefined,
+              importance: data.importance ?? undefined,
             }
           : undefined,
         config: defaultChartsConfig ?? undefined,

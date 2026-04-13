@@ -40,6 +40,12 @@ export interface EmbeddingAtlasProps {
 
     /** The column for text. The text will be used as content for the tooltip and search features. */
     text?: string | null;
+
+    /** The column for image data. Used with `importance` to select representative images for cluster labels. */
+    image?: string | null;
+
+    /** The column for importance scores (e.g., PageRank, centrality). Used with `image` to select representative images for cluster labels. */
+    importance?: string | null;
   };
 
   /** The color scheme. */

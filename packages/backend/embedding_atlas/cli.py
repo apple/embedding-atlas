@@ -228,6 +228,14 @@ def import_modules(names: list[str]):
     help='Column containing pre-computed nearest neighbors in format: {"ids": [n1, n2, ...], "distances": [d1, d2, ...]}. IDs should be zero-based row indices.',
 )
 @click.option(
+    "--pagerank",
+    "pagerank_column",
+    default=None,
+    is_flag=False,
+    flag_value="__compute__",
+    help="Compute PageRank scores from the neighbor graph, or specify a column containing pre-computed scores. Automatically computed when --image is specified.",
+)
+@click.option(
     "--query",
     default=None,
     type=str,
@@ -352,6 +360,7 @@ def main(
     x_column: str | None,
     y_column: str | None,
     neighbors_column: str | None,
+    pagerank_column: str | None,
     query: str | None,
     sample: int | None,
     umap_n_neighbors: int | None,
@@ -475,12 +484,32 @@ def main(
         labels_df = load_pandas_data(labels)
         labels_resolved = labels_df.to_dict("records")
 
+    # Compute PageRank from neighbor graph when requested or when --image is specified
+    should_compute_pagerank = (pagerank_column == "__compute__") or (
+        image is not None and pagerank_column is None
+    )
+    if (
+        should_compute_pagerank
+        and neighbors_column is not None
+        and neighbors_column in df.columns
+    ):
+        from embedding_atlas.pagerank import compute_pagerank_column
+
+        logger.info("Computing PageRank scores from neighbor graph...")
+        pagerank_column = find_column_name(df.columns, "pagerank")
+        df[pagerank_column] = compute_pagerank_column(df, neighbors=neighbors_column)
+    elif pagerank_column == "__compute__":
+        logger.warning("Cannot compute PageRank: no neighbor data available.")
+        pagerank_column = None
+
     props = make_embedding_atlas_props(
         row_id=id_column,
         x=x_column,
         y=y_column,
         neighbors=neighbors_column,
+        importance=pagerank_column,
         text=text,
+        image=image,
         point_size=point_size,
         stop_words=stop_words_resolved,
         labels=labels_resolved,

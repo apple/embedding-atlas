@@ -18,13 +18,16 @@ export interface Cache {
   set: (key: string, value: any) => Promise<void>;
 }
 
+/** The content of a label: either a text string or an image with display dimensions (and optionally x, y coordinates). */
+export type LabelContent = string | { x?: number; y?: number; image: string; width: number; height: number };
+
 export interface Label {
   /** X coordinate. */
   x: number;
   /** Y coordinate. */
   y: number;
-  /** Label text, use "\n" for a new line. */
-  text: string;
+  /** Label content: a text string or an image reference. */
+  content: LabelContent;
   /** Label level. The label will be shown around 2^level zoom factor. */
   level?: number | null;
   /** Placement priority. */
