@@ -71,4 +71,8 @@ dev = [
   "pyright >= 1.1.0",
   "soundfile >= 0.12.0",
   "polars >= 1.0.0",
+  "marimo >= 0.20.0",
+  "gymnasium >= 1.0.0",
+  "stable-baselines3 >= 2.4.0",
+  "matplotlib >= 3.9.0",
 ]

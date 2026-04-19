@@ -16,7 +16,7 @@ Prerequisites:
 
 import marimo
 
-__generated_with = "0.20.4"
+__generated_with = "0.23.1"
 app = marimo.App(width="full", app_title="RL Visualization — Embedding Atlas")
 
 
@@ -32,7 +32,7 @@ def _():
 @app.cell
 def _():
     from embedding_atlas.widget import EmbeddingAtlasWidget
-    from embedding_atlas.projection import compute_vector_projection
+    from embedding_atlas.projection import async_compute_projection
     import gymnasium as gym
     from stable_baselines3 import DQN
     import matplotlib
@@ -40,7 +40,7 @@ def _():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    return DQN, EmbeddingAtlasWidget, compute_vector_projection, gym, plt
+    return DQN, EmbeddingAtlasWidget, async_compute_projection, gym, plt
 
 
 @app.cell
@@ -249,35 +249,37 @@ def _(
     else:
         cartpole_enriched = None
         print("Skipped — data not available.")
-    return
+    return (cartpole_enriched,)
 
 
-app._unparsable_cell(
-    """
-    \"\"\"UMAP projection of CartPole (state, action) vectors.\"\"\"
-
+@app.cell(hide_code=True)
+async def _(
+    async_compute_projection,
+    cartpole_enriched,
+    prepare_rl_data_for_projection,
+):
+    """UMAP projection of CartPole (state, action) vectors."""
     cartpole_proj = cartpole_enriched.copy()
     cartpole_proj, _vec = prepare_rl_data_for_projection(
         cartpole_proj,
-        observation_columns=[\"state\"],
-        action_columns=[\"action\"],
+        observation_columns=["state"],
+        action_columns=["action"],
     )
-     compute_vector_projection(
-        cartpole_proj, vector=_vec,
-        x=\"projection_x\", y=\"projection_y\", neighbors=\"neighbors\",
-        umap_args={\"n_neighbors\": 15, \"min_dist\": 0.1, \"metric\": \"cosine\"},
+    cartpole_proj = await async_compute_projection(
+        cartpole_proj,
+        inputs=_vec,
+        modality="vector",
+        x="projection_x",
+        y="projection_y",
+        neighbors="neighbors",
+        umap_args={"n_neighbors": 15, "min_dist": 0.1, "metric": "cosine"},
     )
-    # Drop heavy columns not needed for visualization
+
     cartpole_proj = cartpole_proj.drop(
-        columns=[c for c in [_vec, \"state\", \"next_state\"] if c in cartpole_proj.columns]
+        columns=[c for c in [_vec, "state", "next_state"] if c in cartpole_proj.columns]
     )
-    print(f\"CartPole projection ready: {len(cartpole_proj)} points\")
-    """,
-    column=None,
-    disabled=False,
-    hide_code=True,
-    name="_",
-)
+    print(f"CartPole projection ready: {len(cartpole_proj)} points")
+    return (cartpole_proj,)
 
 
 @app.cell(hide_code=True)
@@ -580,7 +582,6 @@ def _(DQN, gym, pd):
     ]
     lunar_df = pd.DataFrame(_rows)
     print(f"Extracted {len(lunar_df)} LunarLander transitions.")
-
     return lunar_df, lunar_model
 
 
@@ -690,11 +691,7 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(
-    compute_vector_projection,
-    lunar_enriched,
-    prepare_rl_data_for_projection,
-):
+async def _(async_compute_projection, lunar_enriched, prepare_rl_data_for_projection):
     """UMAP projection of LunarLander (state, action) vectors."""
     lunar_proj = lunar_enriched.copy()
     lunar_proj, _vec = prepare_rl_data_for_projection(
@@ -702,17 +699,15 @@ def _(
         observation_columns=["state"],
         action_columns=["action"],
     )
-    compute_vector_projection(
+    lunar_proj = await async_compute_projection(
         lunar_proj,
-        vector=_vec,
+        inputs=_vec,
+        modality="vector",
         x="projection_x",
         y="projection_y",
         neighbors="neighbors",
         umap_args={"n_neighbors": 15, "min_dist": 0.1, "metric": "cosine"},
     )
-
-    # Add caching
-
     lunar_proj = lunar_proj.drop(
         columns=[c for c in [_vec, "state", "next_state"] if c in lunar_proj.columns]
     )
