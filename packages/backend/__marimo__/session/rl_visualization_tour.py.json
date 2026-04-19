@@ -1,0 +1,350 @@
+{
+  "version": "1",
+  "metadata": {
+    "marimo_version": "0.20.4",
+    "script_metadata_hash": null
+  },
+  "cells": [
+    {
+      "id": "Hbol",
+      "code_hash": "4bbba70131cb68a5fe3e2ef867b949a7",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "MJUe",
+      "code_hash": "8ef9d308d8c503a2ac7a2557adbf362b",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "vblA",
+      "code_hash": "c6883c420c8aef03dddf0e8c7046dc3a",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "bkHC",
+      "code_hash": "ac4933419215d0136fdb0452603f0678",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h1 id=\"rl-replay-buffer-visualization\">RL Replay Buffer Visualization</h1>\n<span class=\"paragraph\">This notebook demonstrates how <strong>Embedding Atlas</strong> can visualize reinforcement\nlearning replay buffers \u2014 turning opaque training data into explorable,\ninteractive maps.</span>\n<span class=\"paragraph\">Inspired by <a href=\"https://arxiv.org/abs/2007.05577\" rel=\"noopener noreferrer\" target=\"_blank\">Vizarel (Deshpande &amp; Schneider, 2020)</a>,\nwe project replay buffer experiences into 2D and enrich them with metadata that\nreveals <strong>what the agent learned</strong>, <strong>where it struggled</strong>, and <strong>how its policy evolved</strong>.</span>\n<table>\n<thead>\n<tr>\n<th>#</th>\n<th>Section</th>\n<th>What you'll see</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n<td><strong>CartPole DQN</strong></td>\n<td>Policy evolution \u2014 safe vs dangerous states, Q-value landscapes</td>\n</tr>\n<tr>\n<td>2</td>\n<td><strong>Episode Trajectories</strong></td>\n<td>Follow individual episodes through the embedding</td>\n</tr>\n<tr>\n<td>3</td>\n<td><strong>LunarLander DQN</strong></td>\n<td>Dense rewards, flight phases, landing vs crashing</td>\n</tr>\n</tbody>\n</table></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "lEQa",
+      "code_hash": "2c4f9c25048d62dadf21a8feeda7864a",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><hr />\n<h2 id=\"section-1-cartpole-dqn-watching-an-agent-learn\">Section 1 \u00b7 CartPole DQN \u2014 Watching an Agent Learn</h2>\n<span class=\"paragraph\">We train a DQN agent on <strong>CartPole-v1</strong> for <strong>50 000 steps</strong>. The agent starts\nwith a random policy and gradually learns to balance the pole.</span>\n<span class=\"paragraph\">The replay buffer captures every experience <code>(state, action, reward, next_state, done)</code>.\nWe unpack the 4D state into named physical quantities, compute Q-values and\nTD errors, then project everything to 2D with UMAP.</span></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "PKri",
+      "code_hash": "3a976edadad5d3e09ca064ecce8871a4",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stdout",
+          "text": "Extracted 50000 replay buffer transitions.\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "Xref",
+      "code_hash": "f6c01d85e6f87bc24a1b174401018699",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stdout",
+          "text": "Enriched 50000 transitions with metadata.\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "SFPL",
+      "code_hash": "510cacab7af3d0c0e45b552156163909",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stdout",
+          "text": "CartPole projection ready: 50000 points\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "BYtC",
+      "code_hash": "d4e1b2ce924c26db51c6a9f68bdbb48c",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h3 id=\"what-to-look-for\">What to look for</h3>\n<ul>\n<li><strong>Charts panel</strong> (right side): Click on a bar in <code>pole_danger</code> to highlight\n  <em>safe</em> vs <em>critical</em> states. Critical states (large pole angle) tend to cluster\n  separately \u2014 these are moments right before the pole falls.</li>\n<li><strong><code>training_stage</code></strong>: Filter by <em>early</em> / <em>mid</em> / <em>late</em> to see how the agent's\n  experience distribution shifts as it learns.</li>\n<li><strong><code>episode_outcome</code></strong>: <em>survived</em> episodes (length \u2265 200) cluster in the \"safe\"\n  region of the embedding.</li>\n<li><strong>Hover</strong> over any point to see its state description (pole angle, cart position,\n  action, Q-value).</li>\n<li><strong>Lasso-select</strong> a cluster to see detailed statistics below the widget.</li>\n</ul></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "RGSE",
+      "code_hash": "c19b95ec276a970707ae09fff409cc0c",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "Kclp",
+      "code_hash": "86cc4a56429327de1da0e8b85f7354f7",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<marimo-ui-element object-id='Kclp-0' random-id='8d8ad968-225a-1132-6835-d375f750b401'><marimo-anywidget data-initial-value='{&quot;model_id&quot;:&quot;f38363d98538441b9cdd827aac16116d&quot;}' data-label='null' data-js-url='&quot;./@file/3585251-946839-NbrnTP3f.js&quot;' data-js-hash='&quot;19bea2e9f3f4e55104e0985aab356f88&quot;'></marimo-anywidget></marimo-ui-element>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "emfo",
+      "code_hash": "b2e3c78d3c6752b40257fc8fef6496bd",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "Hstk",
+      "code_hash": "1d192f9b8dc4d8512d35149347b6e99c",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><hr />\n<h2 id=\"section-2-episode-trajectories-following-an-episode\">Section 2 \u00b7 Episode Trajectories \u2014 Following an Episode</h2>\n<span class=\"paragraph\">RL is fundamentally <strong>sequential</strong>. The UMAP projection above treats each\ntransition as an independent point \u2014 losing the temporal structure.</span>\n<span class=\"paragraph\">Here we restore that structure: <strong>select an episode</strong> with the slider and see:</span>\n<ul>\n<li>Its <strong>path through the embedding</strong> (which regions of state-space the agent visited)</li>\n<li>A <strong>timeline</strong> showing how the pole angle and Q-value evolved step by step</li>\n</ul>\n<blockquote>\n<span class=\"paragraph\"><strong>Try this:</strong> Compare an early episode (short, agent falls fast) with a late\nepisode (long, agent balances). Notice how late episodes trace extended paths\nthrough the \"safe\" region of the embedding.</span>\n</blockquote></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "nWHF",
+      "code_hash": "1a45fb29b31031a0ac2a3c130a9847df",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "iLit",
+      "code_hash": "c4afd9fb4ff68f5a2c654cdf7feee1d8",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "ZHCJ",
+      "code_hash": "04ac4df310fd86ff997a8577689253cb",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "ROlb",
+      "code_hash": "abf6b1756a2a52390fd486cf43173410",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><hr />\n<h2 id=\"section-3-lunarlander-dqn-dense-rewards-and-rich-state\">Section 3 \u00b7 LunarLander DQN \u2014 Dense Rewards and Rich State</h2>\n<span class=\"paragraph\">LunarLander provides <strong>dense reward shaping</strong>: the agent earns continuous rewards\nfor approaching the landing pad and penalties for using fuel, plus large bonuses\n(+100 for landing, -100 for crashing).</span>\n<span class=\"paragraph\">The 8D state captures intuitive physics: position, velocity, angle, angular\nvelocity, and leg contact. We unpack these into named columns so you can\n<strong>see clusters correspond to flight phases</strong> \u2014 high altitude, approach, and landing.</span>\n<table>\n<thead>\n<tr>\n<th>Column</th>\n<th>Meaning</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>flight_phase</code></td>\n<td>high_altitude / approach / landing (based on altitude)</td>\n</tr>\n<tr>\n<td><code>action_name</code></td>\n<td>noop / left_engine / main_engine / right_engine</td>\n</tr>\n<tr>\n<td><code>reward_category</code></td>\n<td>high_penalty / small_penalty / small_reward / high_reward</td>\n</tr>\n<tr>\n<td><code>landing_outcome</code></td>\n<td>landed / crashed / in_flight (terminal states only)</td>\n</tr>\n<tr>\n<td><code>speed</code></td>\n<td>sqrt(vel_x^2 + vel_y^2) \u2014 how fast the lander is moving</td>\n</tr>\n</tbody>\n</table></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "qnkX",
+      "code_hash": "0178906d3990ccd83f8ab69a9be50e88",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stdout",
+          "text": "Extracted 200000 LunarLander transitions.\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "TqIu",
+      "code_hash": "16236f049bdada635a59bc77b1c44d56",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stdout",
+          "text": "Enriched 200000 LunarLander transitions.\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "Vxnm",
+      "code_hash": "ca80b35964a441a52aa393e15a9b66b1",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stdout",
+          "text": "LunarLander projection ready: 200000 points\n",
+          "mimetype": "text/plain"
+        }
+      ]
+    },
+    {
+      "id": "DnEU",
+      "code_hash": "41231f0d236652cc653457db638d4adf",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h3 id=\"what-to-look-for\">What to look for</h3>\n<ul>\n<li><strong><code>flight_phase</code></strong> in the charts panel creates the most visible clustering:\n  <em>high_altitude</em> points (early in episode) cluster separately from <em>landing</em>\n  points (near the pad). Filter each phase to see how they map spatially.</li>\n<li><strong><code>reward_category</code></strong>: <em>high_reward</em> points cluster near successful landings.\n  <em>high_penalty</em> points cluster near crashes and excessive fuel use.</li>\n<li><strong><code>landing_outcome</code></strong>: Filter to <em>landed</em> or <em>crashed</em> to see where successful\n  vs failed episodes end up in the embedding.</li>\n<li><strong><code>training_stage</code></strong>: Compare <em>early</em> (random behavior) vs <em>late</em> (learned policy)\n  to see how the experience distribution shifts toward successful regions.</li>\n<li><strong>Hover</strong> shows position, speed, angle, action, Q-value, and reward.</li>\n</ul></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "ulZA",
+      "code_hash": "92533240f060b0e7c5fbb9f71224d498",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "ecfG",
+      "code_hash": "8b1137a958d4137d9e8f7c8e0d58b52c",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<marimo-ui-element object-id='ecfG-0' random-id='18be9317-01d7-ee74-b275-da8c3a9ac8be'><marimo-anywidget data-initial-value='{&quot;model_id&quot;:&quot;eef49c4296754352aa4b6fc6aa96a6e4&quot;}' data-label='null' data-js-url='&quot;./@file/3585251-946839-H8xIZM1J.js&quot;' data-js-hash='&quot;19bea2e9f3f4e55104e0985aab356f88&quot;'></marimo-anywidget></marimo-ui-element>"
+          }
+        }
+      ],
+      "console": []
+    }
+  ]
+}

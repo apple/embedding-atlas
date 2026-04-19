@@ -89,6 +89,15 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
             show_charts:
                 Whether to display charts when the widget opens.
 
+            color:
+                The column name to use for coloring points in the embedding view.
+
+            default_charts_include:
+                If provided, only these columns will appear as auto-generated charts.
+
+            default_charts_exclude:
+                Columns to exclude from auto-generated charts.
+
             show_embedding:
                 Whether to display the embedding view when the widget opens.
 

@@ -49,6 +49,19 @@ class EmbeddingAtlasOptions(TypedDict, total=False):
     point_size:
         Override the default point size for the embedding view.
 
+    color:
+        The column name to use for coloring points in the embedding view.
+        String or low-cardinality numeric columns work best.  When set, the
+        embedding opens with points colored by this column instead of a
+        uniform color.
+
+    default_charts_include:
+        If provided, only these columns will appear as auto-generated charts
+        in the sidebar. Useful for curating the chart panel.
+
+    default_charts_exclude:
+        Columns to exclude from auto-generated charts.
+
     show_table:
         Whether to display the data table when the widget opens.
 
@@ -75,6 +88,10 @@ class EmbeddingAtlasOptions(TypedDict, total=False):
 
     labels: list[dict] | None
     stop_words: list[str] | None
+
+    color: str | None
+    default_charts_include: list[str] | None
+    default_charts_exclude: list[str] | None
 
     show_table: bool | None
     show_charts: bool | None
@@ -129,6 +146,21 @@ def make_embedding_atlas_props(**options: Unpack[EmbeddingAtlasOptions]) -> dict
 
     # Initial state
     set_prop("initialState", options.get("initial_state"))
+
+    # Default color column for the embedding view
+    color = options.get("color")
+    if color is not None:
+        set_prop("defaultChartsConfig.embedding", {
+            "data": {"category": color},
+        })
+
+    # Chart column curation
+    charts_include = options.get("default_charts_include")
+    charts_exclude = options.get("default_charts_exclude")
+    if charts_include is not None:
+        set_prop("defaultChartsConfig.include", charts_include)
+    if charts_exclude is not None:
+        set_prop("defaultChartsConfig.exclude", charts_exclude)
 
     # Layout
     set_prop("initialState.layoutStates.list.showTable", options.get("show_table"))
