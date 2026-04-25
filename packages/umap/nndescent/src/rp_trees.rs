@@ -6,6 +6,18 @@ use crate::rng::TauRng;
 
 const EPS: f32 = 1e-8;
 
+/// Dot product of two slices. Written as a simple loop so the compiler
+/// can auto-vectorize it (LLVM generates SIMD for contiguous slice iteration).
+#[inline]
+fn dot_product(a: &[f32], b: &[f32]) -> f32 {
+    debug_assert_eq!(a.len(), b.len());
+    let mut sum = 0.0f32;
+    for i in 0..a.len() {
+        sum += a[i] * b[i];
+    }
+    sum
+}
+
 /// A flattened RP tree for efficient storage and query traversal.
 #[derive(Clone)]
 pub struct FlatTree {
@@ -83,21 +95,27 @@ fn angular_random_projection_split(
 
     let left_point = indices[left_idx] as usize;
     let right_point = indices[right_idx] as usize;
+    let left_row = data.row(left_point);
+    let left_row = left_row.as_slice().unwrap();
+    let right_row = data.row(right_point);
+    let right_row = right_row.as_slice().unwrap();
 
     // Compute norms
     let mut left_norm = 0.0f32;
     let mut right_norm = 0.0f32;
     for d in 0..dim {
-        left_norm += data[[left_point, d]] * data[[left_point, d]];
-        right_norm += data[[right_point, d]] * data[[right_point, d]];
+        left_norm += left_row[d] * left_row[d];
+        right_norm += right_row[d] * right_row[d];
     }
     left_norm = left_norm.sqrt().max(EPS);
     right_norm = right_norm.sqrt().max(EPS);
 
     // Hyperplane = normalized left - normalized right
+    let inv_left = 1.0 / left_norm;
+    let inv_right = 1.0 / right_norm;
     let mut hyperplane = vec![0.0f32; dim];
     for d in 0..dim {
-        hyperplane[d] = data[[left_point, d]] / left_norm - data[[right_point, d]] / right_norm;
+        hyperplane[d] = left_row[d] * inv_left - right_row[d] * inv_right;
     }
 
     // Normalize hyperplane
@@ -105,20 +123,19 @@ fn angular_random_projection_split(
     for d in 0..dim {
         hp_norm += hyperplane[d] * hyperplane[d];
     }
-    hp_norm = hp_norm.sqrt().max(EPS);
+    let inv_hp_norm = 1.0 / hp_norm.sqrt().max(EPS);
     for d in 0..dim {
-        hyperplane[d] /= hp_norm;
+        hyperplane[d] *= inv_hp_norm;
     }
 
-    // Split points by margin
+    // Split points by margin (dot product with hyperplane)
     let mut left_indices = Vec::new();
     let mut right_indices = Vec::new();
 
     for &idx in indices {
-        let mut margin = 0.0f32;
-        for d in 0..dim {
-            margin += hyperplane[d] * data[[idx as usize, d]];
-        }
+        let row = data.row(idx as usize);
+        let row = row.as_slice().unwrap();
+        let margin = dot_product(&hyperplane, row);
 
         if margin.abs() < EPS {
             if rng.tau_rand_int().unsigned_abs() % 2 == 0 {
@@ -174,13 +191,17 @@ fn euclidean_random_projection_split(
 
     let left_point = indices[left_idx] as usize;
     let right_point = indices[right_idx] as usize;
+    let left_row = data.row(left_point);
+    let left_row = left_row.as_slice().unwrap();
+    let right_row = data.row(right_point);
+    let right_row = right_row.as_slice().unwrap();
 
     // Hyperplane = left - right
     let mut hyperplane = vec![0.0f32; dim];
     let mut offset = 0.0f32;
     for d in 0..dim {
-        hyperplane[d] = data[[left_point, d]] - data[[right_point, d]];
-        offset -= hyperplane[d] * (data[[left_point, d]] + data[[right_point, d]]) / 2.0;
+        hyperplane[d] = left_row[d] - right_row[d];
+        offset -= hyperplane[d] * (left_row[d] + right_row[d]) * 0.5;
     }
 
     // Split points by margin
@@ -188,10 +209,9 @@ fn euclidean_random_projection_split(
     let mut right_indices = Vec::new();
 
     for &idx in indices {
-        let mut margin = offset;
-        for d in 0..dim {
-            margin += hyperplane[d] * data[[idx as usize, d]];
-        }
+        let row = data.row(idx as usize);
+        let row = row.as_slice().unwrap();
+        let margin = dot_product(&hyperplane, row) + offset;
 
         if margin.abs() < EPS {
             if rng.tau_rand_int().unsigned_abs() % 2 == 0 {
@@ -488,10 +508,7 @@ pub fn rptree_leaf_array(forest: &[FlatTree]) -> Array2<i32> {
 /// Select which side of a hyperplane a point falls on (for query-time tree traversal).
 /// Returns 0 for left, 1 for right.
 pub fn select_side(hyperplane: &[f32], offset: f32, point: &[f32], rng: &mut TauRng) -> usize {
-    let mut margin = offset;
-    for d in 0..hyperplane.len().min(point.len()) {
-        margin += hyperplane[d] * point[d];
-    }
+    let margin = dot_product(hyperplane, &point[..hyperplane.len()]) + offset;
 
     if margin.abs() < EPS {
         (rng.tau_rand_int().unsigned_abs() % 2) as usize
@@ -500,6 +517,362 @@ pub fn select_side(hyperplane: &[f32], offset: f32, point: &[f32], rng: &mut Tau
     } else {
         1
     }
+}
+
+// ===== GPU-accelerated RP tree construction (BFS with batched projections) =====
+
+/// Minimum total points across all nodes to use batched GPU projection.
+#[cfg(feature = "gpu")]
+const GPU_BATCH_THRESHOLD: usize = 4096;
+
+/// Compute a hyperplane for an angular split between two random points.
+#[cfg(feature = "gpu")]
+fn compute_angular_hyperplane(
+    data: &Array2<f32>,
+    indices: &[i32],
+    rng: &mut TauRng,
+) -> (Vec<f32>, f32) {
+    let dim = data.ncols();
+    let n = indices.len();
+
+    let left_idx = (rng.tau_rand_int().unsigned_abs() as usize) % n;
+    let mut right_idx = (rng.tau_rand_int().unsigned_abs() as usize) % n;
+    if left_idx == right_idx {
+        right_idx = (right_idx + 1) % n;
+    }
+
+    let left_row = data.row(indices[left_idx] as usize);
+    let left_row = left_row.as_slice().unwrap();
+    let right_row = data.row(indices[right_idx] as usize);
+    let right_row = right_row.as_slice().unwrap();
+
+    let mut left_norm = 0.0f32;
+    let mut right_norm = 0.0f32;
+    for d in 0..dim {
+        left_norm += left_row[d] * left_row[d];
+        right_norm += right_row[d] * right_row[d];
+    }
+    left_norm = left_norm.sqrt().max(EPS);
+    right_norm = right_norm.sqrt().max(EPS);
+
+    let inv_left = 1.0 / left_norm;
+    let inv_right = 1.0 / right_norm;
+    let mut hyperplane = vec![0.0f32; dim];
+    for d in 0..dim {
+        hyperplane[d] = left_row[d] * inv_left - right_row[d] * inv_right;
+    }
+
+    let mut hp_norm = 0.0f32;
+    for d in 0..dim {
+        hp_norm += hyperplane[d] * hyperplane[d];
+    }
+    let inv_hp_norm = 1.0 / hp_norm.sqrt().max(EPS);
+    for d in 0..dim {
+        hyperplane[d] *= inv_hp_norm;
+    }
+
+    (hyperplane, 0.0)
+}
+
+/// Compute a hyperplane for a euclidean split between two random points.
+#[cfg(feature = "gpu")]
+fn compute_euclidean_hyperplane(
+    data: &Array2<f32>,
+    indices: &[i32],
+    rng: &mut TauRng,
+) -> (Vec<f32>, f32) {
+    let dim = data.ncols();
+    let n = indices.len();
+
+    let left_idx = (rng.tau_rand_int().unsigned_abs() as usize) % n;
+    let mut right_idx = (rng.tau_rand_int().unsigned_abs() as usize) % n;
+    if left_idx == right_idx {
+        right_idx = (right_idx + 1) % n;
+    }
+
+    let left_row = data.row(indices[left_idx] as usize);
+    let left_row = left_row.as_slice().unwrap();
+    let right_row = data.row(indices[right_idx] as usize);
+    let right_row = right_row.as_slice().unwrap();
+
+    let mut hyperplane = vec![0.0f32; dim];
+    let mut offset = 0.0f32;
+    for d in 0..dim {
+        hyperplane[d] = left_row[d] - right_row[d];
+        offset -= hyperplane[d] * (left_row[d] + right_row[d]) * 0.5;
+    }
+
+    (hyperplane, offset)
+}
+
+/// Partition points by margins, handling edge cases.
+#[cfg(feature = "gpu")]
+fn partition_by_margins(
+    indices: &[i32],
+    margins: &[f32],
+    rng: &mut TauRng,
+) -> (Vec<i32>, Vec<i32>) {
+    let mut left = Vec::new();
+    let mut right = Vec::new();
+
+    for (k, &idx) in indices.iter().enumerate() {
+        let m = margins[k];
+        if m.abs() < EPS {
+            if rng.tau_rand_int().unsigned_abs() % 2 == 0 {
+                left.push(idx);
+            } else {
+                right.push(idx);
+            }
+        } else if m > 0.0 {
+            left.push(idx);
+        } else {
+            right.push(idx);
+        }
+    }
+
+    if left.is_empty() || right.is_empty() {
+        left.clear();
+        right.clear();
+        for &idx in indices {
+            if rng.tau_rand_int().unsigned_abs() % 2 == 0 {
+                left.push(idx);
+            } else {
+                right.push(idx);
+            }
+        }
+        if left.is_empty() {
+            left.push(right.pop().unwrap());
+        }
+        if right.is_empty() {
+            right.push(left.pop().unwrap());
+        }
+    }
+
+    (left, right)
+}
+
+/// Build a single RP tree using BFS with batched GPU projections.
+///
+/// At each BFS level, all pending nodes compute their hyperplanes on CPU,
+/// then batch all dot-product projections into a single GPU dispatch.
+#[cfg(feature = "gpu")]
+pub async fn make_dense_tree_gpu(
+    data: &Array2<f32>,
+    rng: &mut TauRng,
+    leaf_size: usize,
+    angular: bool,
+    max_depth: usize,
+    gpu: &crate::gpu::GpuContext,
+) -> FlatTree {
+    let n = data.nrows();
+    let dim = data.ncols();
+
+    // BFS tree storage indexed by node ID
+    let mut hyperplanes_out: Vec<Vec<f32>> = Vec::new();
+    let mut offsets_out: Vec<f32> = Vec::new();
+    let mut children_out: Vec<(i32, i32)> = Vec::new();
+    let mut point_indices_out: Vec<Vec<i32>> = Vec::new();
+
+    // Allocate root
+    hyperplanes_out.push(vec![0.0; dim]);
+    offsets_out.push(0.0);
+    children_out.push((-1, -1));
+    point_indices_out.push(vec![-1]);
+
+    let hyperplane_fn = if angular {
+        compute_angular_hyperplane
+    } else {
+        compute_euclidean_hyperplane
+    };
+
+    // BFS queue: (node_id, indices, depth)
+    let mut current_level: Vec<(usize, Vec<i32>, usize)> = vec![(0, (0..n as i32).collect(), 0)];
+
+    while !current_level.is_empty() {
+        // Separate leaves from nodes to split
+        let mut to_split: Vec<(usize, Vec<i32>, usize)> = Vec::new();
+        for (node_id, indices, depth) in current_level.drain(..) {
+            if indices.len() <= leaf_size || depth >= max_depth {
+                hyperplanes_out[node_id] = vec![-1.0];
+                offsets_out[node_id] = f32::NEG_INFINITY;
+                children_out[node_id] = (-1, -1);
+                point_indices_out[node_id] = indices;
+            } else {
+                to_split.push((node_id, indices, depth));
+            }
+        }
+
+        if to_split.is_empty() {
+            break;
+        }
+
+        // Compute hyperplanes for all nodes (CPU — O(n_nodes × dim), fast)
+        let mut node_hyperplanes: Vec<(Vec<f32>, f32)> = Vec::with_capacity(to_split.len());
+        for (_, indices, _) in &to_split {
+            node_hyperplanes.push(hyperplane_fn(data, indices, rng));
+        }
+
+        // Total points across all nodes at this level
+        let total_points: usize = to_split.iter().map(|(_, idx, _)| idx.len()).sum();
+
+        // Compute margins: batch GPU or CPU based on total work
+        let margins_flat: Vec<f32> = if total_points >= GPU_BATCH_THRESHOLD {
+            let batch: Vec<(&[f32], f32, Vec<u32>)> = to_split
+                .iter()
+                .zip(node_hyperplanes.iter())
+                .map(|((_, indices, _), (hp, offset))| {
+                    let gpu_indices: Vec<u32> = indices.iter().map(|&i| i as u32).collect();
+                    (hp.as_slice(), *offset, gpu_indices)
+                })
+                .collect();
+
+            let batch_refs: Vec<(&[f32], f32, &[u32])> = batch
+                .iter()
+                .map(|(hp, off, idx)| (*hp, *off, idx.as_slice()))
+                .collect();
+
+            gpu.compute_projections_batch(&batch_refs).await
+        } else {
+            let mut margins = Vec::with_capacity(total_points);
+            for ((_, indices, _), (hp, offset)) in to_split.iter().zip(node_hyperplanes.iter()) {
+                for &idx in indices.iter() {
+                    let row = data.row(idx as usize);
+                    let row = row.as_slice().unwrap();
+                    margins.push(dot_product(hp, row) + offset);
+                }
+            }
+            margins
+        };
+
+        // Partition each node and create children
+        let mut margin_offset = 0usize;
+        let mut next_level: Vec<(usize, Vec<i32>, usize)> = Vec::new();
+
+        for ((node_id, indices, depth), (hp, offset)) in
+            to_split.into_iter().zip(node_hyperplanes.into_iter())
+        {
+            let n_pts = indices.len();
+            let node_margins = &margins_flat[margin_offset..margin_offset + n_pts];
+            margin_offset += n_pts;
+
+            let (left_indices, right_indices) = partition_by_margins(&indices, node_margins, rng);
+
+            // Allocate child node IDs
+            let left_id = hyperplanes_out.len();
+            hyperplanes_out.push(vec![0.0; dim]);
+            offsets_out.push(0.0);
+            children_out.push((-1, -1));
+            point_indices_out.push(vec![-1]);
+
+            let right_id = hyperplanes_out.len();
+            hyperplanes_out.push(vec![0.0; dim]);
+            offsets_out.push(0.0);
+            children_out.push((-1, -1));
+            point_indices_out.push(vec![-1]);
+
+            hyperplanes_out[node_id] = hp;
+            offsets_out[node_id] = offset;
+            children_out[node_id] = (left_id as i32, right_id as i32);
+            point_indices_out[node_id] = vec![-1];
+
+            next_level.push((left_id, left_indices, depth + 1));
+            next_level.push((right_id, right_indices, depth + 1));
+        }
+
+        current_level = next_level;
+    }
+
+    // Convert BFS tree to FlatTree via DFS traversal into TreeBuilder
+    let mut builder = TreeBuilder::new();
+    let mut bfs_to_builder: Vec<usize> = vec![0; hyperplanes_out.len()];
+
+    fn dfs_convert(
+        node: usize,
+        hyperplanes: &[Vec<f32>],
+        offsets: &[f32],
+        children: &[(i32, i32)],
+        point_indices: &[Vec<i32>],
+        builder: &mut TreeBuilder,
+        mapping: &mut [usize],
+    ) -> usize {
+        let (left, right) = children[node];
+        if left < 0 {
+            let id = builder.add_leaf(point_indices[node].clone());
+            mapping[node] = id;
+            id
+        } else {
+            let left_id = dfs_convert(
+                left as usize,
+                hyperplanes,
+                offsets,
+                children,
+                point_indices,
+                builder,
+                mapping,
+            );
+            let right_id = dfs_convert(
+                right as usize,
+                hyperplanes,
+                offsets,
+                children,
+                point_indices,
+                builder,
+                mapping,
+            );
+            let id =
+                builder.add_internal(hyperplanes[node].clone(), offsets[node], left_id, right_id);
+            mapping[node] = id;
+            id
+        }
+    }
+
+    let root = dfs_convert(
+        0,
+        &hyperplanes_out,
+        &offsets_out,
+        &children_out,
+        &point_indices_out,
+        &mut builder,
+        &mut bfs_to_builder,
+    );
+
+    convert_builder_to_flat_tree(&builder, root, n, dim)
+}
+
+/// Build an RP forest with GPU acceleration using batched projections.
+#[cfg(feature = "gpu")]
+pub async fn make_forest_gpu(
+    data: &Array2<f32>,
+    n_neighbors: usize,
+    n_trees: usize,
+    leaf_size: Option<usize>,
+    rng_state: &[i64; 3],
+    angular: bool,
+    max_depth: usize,
+    gpu: &crate::gpu::GpuContext,
+) -> Vec<FlatTree> {
+    let leaf_size = leaf_size.unwrap_or_else(|| (5 * n_neighbors).max(60).min(256));
+
+    let mut master_rng = TauRng::from_state(*rng_state);
+    let rng_states: Vec<[i64; 3]> = (0..n_trees)
+        .map(|_| {
+            let s0 = master_rng.tau_rand_int() as i64;
+            let s1 = master_rng.tau_rand_int() as i64;
+            let s2 = master_rng.tau_rand_int() as i64;
+            [
+                s0.wrapping_add(0xFFFF),
+                s1.wrapping_add(0xFFFF),
+                s2.wrapping_add(0xFFFF),
+            ]
+        })
+        .collect();
+
+    let mut trees = Vec::with_capacity(n_trees);
+    for state in rng_states {
+        let mut rng = TauRng::from_state(state);
+        trees.push(make_dense_tree_gpu(data, &mut rng, leaf_size, angular, max_depth, gpu).await);
+    }
+    trees
 }
 
 /// Search a flat tree to find the leaf containing a query point.
@@ -530,10 +903,384 @@ pub fn search_flat_tree(tree: &FlatTree, point: &[f32], rng: &mut TauRng) -> (us
 
 // ===== Hub tree (graph-informed RP tree for search optimization) =====
 
+/// Minimum split balance threshold. If the best split has balance below this,
+/// create a leaf instead of a poor split. 0.1 means a 10/90 split.
+const MIN_SPLIT_BALANCE: f32 = 0.1;
+
+/// Compute global in-degree for all points: how many times each point appears
+/// as a neighbor of other points in the KNN graph.
+fn compute_global_degrees(neighbor_indices: &Array2<i32>) -> Vec<i32> {
+    let n_points = neighbor_indices.nrows();
+    let mut degrees = vec![0i32; n_points];
+    for row in neighbor_indices.rows() {
+        for &neighbor in row.iter() {
+            if neighbor >= 0 && (neighbor as usize) < n_points {
+                degrees[neighbor as usize] += 1;
+            }
+        }
+    }
+    degrees
+}
+
+/// Return the actual point indices of the top-k highest-degree points from a subset.
+fn get_top_k_hub_indices(indices: &[i32], global_degrees: &[i32], k: usize) -> Vec<i32> {
+    let actual_k = k.min(indices.len());
+    // (degree, point_index), sorted descending by degree
+    let mut top: Vec<(i32, i32)> = Vec::with_capacity(actual_k);
+
+    for &idx in indices {
+        let deg = global_degrees[idx as usize];
+        if top.len() < actual_k {
+            // Insert in sorted position
+            let pos = top.iter().position(|&(d, _)| deg > d).unwrap_or(top.len());
+            top.insert(pos, (deg, idx));
+        } else if deg > top[actual_k - 1].0 {
+            let pos = top
+                .iter()
+                .position(|&(d, _)| deg > d)
+                .unwrap_or(actual_k - 1);
+            top.pop();
+            top.insert(pos, (deg, idx));
+        }
+    }
+
+    top.iter().map(|&(_, idx)| idx).collect()
+}
+
+/// Euclidean hub-based split: uses top-3 highest-degree points to generate
+/// hyperplanes between all pairs, picks the most balanced split.
+fn euclidean_hub_split(
+    data: &Array2<f32>,
+    indices: &[i32],
+    global_degrees: &[i32],
+    rng: &mut TauRng,
+) -> (Vec<i32>, Vec<i32>, Vec<f32>, f32, f32) {
+    let dim = data.ncols();
+    let n_points = indices.len();
+
+    let top_hubs = get_top_k_hub_indices(indices, global_degrees, 3);
+    let n_hubs = top_hubs.len();
+
+    let mut best_balance: f32 = 0.0;
+    let mut best_hyperplane = vec![0.0f32; dim];
+    let mut best_offset: f32 = 0.0;
+    let mut best_side = vec![0i8; n_points];
+    let mut best_n_left: u32 = 0;
+    let mut best_n_right: u32 = 0;
+    let mut side = vec![0i8; n_points];
+
+    for hi in 0..n_hubs {
+        for hj in (hi + 1)..n_hubs {
+            let left_pt = top_hubs[hi] as usize;
+            let right_pt = top_hubs[hj] as usize;
+            let left_row = data.row(left_pt);
+            let left_row = left_row.as_slice().unwrap();
+            let right_row = data.row(right_pt);
+            let right_row = right_row.as_slice().unwrap();
+
+            // Hyperplane = left - right, offset = midpoint projection
+            let mut hyperplane = vec![0.0f32; dim];
+            let mut offset = 0.0f32;
+            for d in 0..dim {
+                hyperplane[d] = left_row[d] - right_row[d];
+                offset -= hyperplane[d] * (left_row[d] + right_row[d]) * 0.5;
+            }
+
+            // Project all points
+            let mut n_left: u32 = 0;
+            let mut n_right: u32 = 0;
+            for (i, &idx) in indices.iter().enumerate() {
+                let row = data.row(idx as usize);
+                let row = row.as_slice().unwrap();
+                let margin = dot_product(&hyperplane, row) + offset;
+
+                if margin > EPS {
+                    side[i] = 0;
+                    n_left += 1;
+                } else if margin < -EPS {
+                    side[i] = 1;
+                    n_right += 1;
+                } else {
+                    side[i] = (i % 2) as i8;
+                    if side[i] == 0 {
+                        n_left += 1;
+                    } else {
+                        n_right += 1;
+                    }
+                }
+            }
+
+            if n_left == 0 || n_right == 0 {
+                continue;
+            }
+
+            let balance = (n_left.min(n_right) as f32) / (n_points as f32);
+            if balance > best_balance {
+                best_balance = balance;
+                best_n_left = n_left;
+                best_n_right = n_right;
+                best_offset = offset;
+                best_hyperplane.copy_from_slice(&hyperplane);
+                best_side.copy_from_slice(&side);
+            }
+        }
+    }
+
+    // Fallback to random assignment if no valid split found
+    if best_n_left == 0 || best_n_right == 0 {
+        best_n_left = 0;
+        best_n_right = 0;
+        for i in 0..n_points {
+            best_side[i] = (rng.tau_rand_int().unsigned_abs() % 2) as i8;
+            if best_side[i] == 0 {
+                best_n_left += 1;
+            } else {
+                best_n_right += 1;
+            }
+        }
+    }
+
+    let mut left_indices = Vec::with_capacity(best_n_left as usize);
+    let mut right_indices = Vec::with_capacity(best_n_right as usize);
+    for (i, &idx) in indices.iter().enumerate() {
+        if best_side[i] == 0 {
+            left_indices.push(idx);
+        } else {
+            right_indices.push(idx);
+        }
+    }
+
+    (
+        left_indices,
+        right_indices,
+        best_hyperplane,
+        best_offset,
+        best_balance,
+    )
+}
+
+/// Angular hub-based split: uses top-3 highest-degree points to generate
+/// normalized hyperplanes between all pairs, picks the most balanced split.
+fn angular_hub_split(
+    data: &Array2<f32>,
+    indices: &[i32],
+    global_degrees: &[i32],
+    rng: &mut TauRng,
+) -> (Vec<i32>, Vec<i32>, Vec<f32>, f32, f32) {
+    let dim = data.ncols();
+    let n_points = indices.len();
+
+    let top_hubs = get_top_k_hub_indices(indices, global_degrees, 3);
+    let n_hubs = top_hubs.len();
+
+    let mut best_balance: f32 = 0.0;
+    let mut best_hyperplane = vec![0.0f32; dim];
+    let mut best_side = vec![0i8; n_points];
+    let mut best_n_left: u32 = 0;
+    let mut best_n_right: u32 = 0;
+    let mut side = vec![0i8; n_points];
+
+    for hi in 0..n_hubs {
+        for hj in (hi + 1)..n_hubs {
+            let left_pt = top_hubs[hi] as usize;
+            let right_pt = top_hubs[hj] as usize;
+            let left_row = data.row(left_pt);
+            let left_row = left_row.as_slice().unwrap();
+            let right_row = data.row(right_pt);
+            let right_row = right_row.as_slice().unwrap();
+
+            // Compute norms
+            let mut left_norm = 0.0f32;
+            let mut right_norm = 0.0f32;
+            for d in 0..dim {
+                left_norm += left_row[d] * left_row[d];
+                right_norm += right_row[d] * right_row[d];
+            }
+            left_norm = left_norm.sqrt().max(EPS);
+            right_norm = right_norm.sqrt().max(EPS);
+
+            // Normalized hyperplane
+            let inv_left = 1.0 / left_norm;
+            let inv_right = 1.0 / right_norm;
+            let mut hyperplane = vec![0.0f32; dim];
+            for d in 0..dim {
+                hyperplane[d] = left_row[d] * inv_left - right_row[d] * inv_right;
+            }
+
+            // Normalize hyperplane vector
+            let mut hp_norm = 0.0f32;
+            for d in 0..dim {
+                hp_norm += hyperplane[d] * hyperplane[d];
+            }
+            let inv_hp_norm = 1.0 / hp_norm.sqrt().max(EPS);
+            for d in 0..dim {
+                hyperplane[d] *= inv_hp_norm;
+            }
+
+            // Project all points
+            let mut n_left: u32 = 0;
+            let mut n_right: u32 = 0;
+            for (i, &idx) in indices.iter().enumerate() {
+                let row = data.row(idx as usize);
+                let row = row.as_slice().unwrap();
+                let margin = dot_product(&hyperplane, row);
+
+                if margin > EPS {
+                    side[i] = 0;
+                    n_left += 1;
+                } else if margin < -EPS {
+                    side[i] = 1;
+                    n_right += 1;
+                } else {
+                    side[i] = (i % 2) as i8;
+                    if side[i] == 0 {
+                        n_left += 1;
+                    } else {
+                        n_right += 1;
+                    }
+                }
+            }
+
+            if n_left == 0 || n_right == 0 {
+                continue;
+            }
+
+            let balance = (n_left.min(n_right) as f32) / (n_points as f32);
+            if balance > best_balance {
+                best_balance = balance;
+                best_n_left = n_left;
+                best_n_right = n_right;
+                best_hyperplane.copy_from_slice(&hyperplane);
+                best_side.copy_from_slice(&side);
+            }
+        }
+    }
+
+    // Fallback to random assignment if no valid split found
+    if best_n_left == 0 || best_n_right == 0 {
+        best_n_left = 0;
+        best_n_right = 0;
+        for i in 0..n_points {
+            best_side[i] = (rng.tau_rand_int().unsigned_abs() % 2) as i8;
+            if best_side[i] == 0 {
+                best_n_left += 1;
+            } else {
+                best_n_right += 1;
+            }
+        }
+    }
+
+    let mut left_indices = Vec::with_capacity(best_n_left as usize);
+    let mut right_indices = Vec::with_capacity(best_n_right as usize);
+    for (i, &idx) in indices.iter().enumerate() {
+        if best_side[i] == 0 {
+            left_indices.push(idx);
+        } else {
+            right_indices.push(idx);
+        }
+    }
+
+    (
+        left_indices,
+        right_indices,
+        best_hyperplane,
+        0.0,
+        best_balance,
+    )
+}
+
+/// Recursively build a hub-based euclidean tree.
+fn make_hub_euclidean_tree(
+    data: &Array2<f32>,
+    indices: Vec<i32>,
+    global_degrees: &[i32],
+    rng: &mut TauRng,
+    leaf_size: usize,
+    max_depth: usize,
+    builder: &mut TreeBuilder,
+) -> usize {
+    if indices.len() <= leaf_size || max_depth == 0 {
+        return builder.add_leaf(indices);
+    }
+
+    let (left_indices, right_indices, hyperplane, offset, balance) =
+        euclidean_hub_split(data, &indices, global_degrees, rng);
+
+    // If split is too unbalanced, make a leaf instead
+    if balance < MIN_SPLIT_BALANCE {
+        return builder.add_leaf(indices);
+    }
+
+    let left_node = make_hub_euclidean_tree(
+        data,
+        left_indices,
+        global_degrees,
+        rng,
+        leaf_size,
+        max_depth - 1,
+        builder,
+    );
+    let right_node = make_hub_euclidean_tree(
+        data,
+        right_indices,
+        global_degrees,
+        rng,
+        leaf_size,
+        max_depth - 1,
+        builder,
+    );
+
+    builder.add_internal(hyperplane, offset, left_node, right_node)
+}
+
+/// Recursively build a hub-based angular tree.
+fn make_hub_angular_tree(
+    data: &Array2<f32>,
+    indices: Vec<i32>,
+    global_degrees: &[i32],
+    rng: &mut TauRng,
+    leaf_size: usize,
+    max_depth: usize,
+    builder: &mut TreeBuilder,
+) -> usize {
+    if indices.len() <= leaf_size || max_depth == 0 {
+        return builder.add_leaf(indices);
+    }
+
+    let (left_indices, right_indices, hyperplane, offset, balance) =
+        angular_hub_split(data, &indices, global_degrees, rng);
+
+    // If split is too unbalanced, make a leaf instead
+    if balance < MIN_SPLIT_BALANCE {
+        return builder.add_leaf(indices);
+    }
+
+    let left_node = make_hub_angular_tree(
+        data,
+        left_indices,
+        global_degrees,
+        rng,
+        leaf_size,
+        max_depth - 1,
+        builder,
+    );
+    let right_node = make_hub_angular_tree(
+        data,
+        right_indices,
+        global_degrees,
+        rng,
+        leaf_size,
+        max_depth - 1,
+        builder,
+    );
+
+    builder.add_internal(hyperplane, offset, left_node, right_node)
+}
+
 /// Build a hub tree that uses neighbor graph information for better splits.
 pub fn make_hub_tree(
     data: &Array2<f32>,
-    _neighbor_indices: &Array2<i32>,
+    neighbor_indices: &Array2<i32>,
     rng: &mut TauRng,
     leaf_size: usize,
     angular: bool,
@@ -541,15 +1288,30 @@ pub fn make_hub_tree(
 ) -> FlatTree {
     let n = data.nrows();
     let indices: Vec<i32> = (0..n as i32).collect();
+    let global_degrees = compute_global_degrees(neighbor_indices);
 
     let mut builder = TreeBuilder::new();
 
-    // For hub trees, we use the same split logic but could add scoring
-    // For now, use the basic split (the key optimization is in the tree structure)
     let root = if angular {
-        make_angular_tree(data, indices, rng, leaf_size, max_depth, &mut builder)
+        make_hub_angular_tree(
+            data,
+            indices,
+            &global_degrees,
+            rng,
+            leaf_size,
+            max_depth,
+            &mut builder,
+        )
     } else {
-        make_euclidean_tree(data, indices, rng, leaf_size, max_depth, &mut builder)
+        make_hub_euclidean_tree(
+            data,
+            indices,
+            &global_degrees,
+            rng,
+            leaf_size,
+            max_depth,
+            &mut builder,
+        )
     };
 
     convert_builder_to_flat_tree(&builder, root, data.nrows(), data.ncols())

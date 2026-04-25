@@ -20,15 +20,36 @@ pub mod graph;
 pub mod optimize;
 pub mod spectral;
 
+#[cfg(feature = "gpu")]
+pub mod gpu_optimize;
+
 use std::fmt;
 
 use ndarray::Array2;
 use nndescent::rng::Xoshiro256StarStar;
 use nndescent::NNDescent;
 
+pub use nndescent::{Logger, ProgressCallback};
+
 use crate::graph::{fuzzy_simplicial_set, make_epochs_per_sample};
 use crate::optimize::optimize_layout_euclidean;
 use crate::spectral::{noisy_scale_coords, random_layout, spectral_layout};
+
+// ---------- UMAP stage definitions ----------
+
+/// Stage name constants for UMAP.
+pub const STAGE_NEIGHBORS: &str = "Finding nearest neighbors";
+pub const STAGE_GRAPH: &str = "Constructing fuzzy graph";
+pub const STAGE_EMBEDDING_INIT: &str = "Initializing embedding";
+pub const STAGE_OPTIMIZATION: &str = "Optimizing layout";
+
+/// Estimated time fractions for each UMAP stage.
+pub const UMAP_STAGES: &[(&str, f32)] = &[
+    (STAGE_NEIGHBORS, 0.30),
+    (STAGE_GRAPH, 0.05),
+    (STAGE_EMBEDDING_INIT, 0.10),
+    (STAGE_OPTIMIZATION, 0.55),
+];
 
 /// Error type for UMAP operations.
 #[derive(Debug)]
@@ -108,6 +129,8 @@ pub struct UmapBuilder<'a> {
     random_state: Option<u64>,
     verbose: bool,
     init: Init,
+    gpu: bool,
+    progress: Option<ProgressCallback>,
 }
 
 impl<'a> UmapBuilder<'a> {
@@ -195,13 +218,30 @@ impl<'a> UmapBuilder<'a> {
         self
     }
 
-    /// Run UMAP and return the result (embedding + KNN graph).
-    pub fn build(self) -> Result<UmapResult, UmapError> {
-        self.build_model()
+    /// Enable GPU acceleration for nearest neighbor computation. Default: false.
+    ///
+    /// Requires the `gpu` crate feature. Falls back to CPU if no suitable GPU
+    /// is available or if the metric is not supported on GPU.
+    pub fn gpu(mut self, g: bool) -> Self {
+        self.gpu = g;
+        self
     }
 
-    /// Run UMAP and return the fitted result.
-    fn build_model(self) -> Result<UmapResult, UmapError> {
+    /// Set a progress callback. Default: none.
+    pub fn progress(mut self, cb: ProgressCallback) -> Self {
+        self.progress = Some(cb);
+        self
+    }
+
+    /// Run UMAP and return the result (embedding + KNN graph).
+    pub fn build(self) -> Result<UmapResult, UmapError> {
+        pollster::block_on(self.build_async())
+    }
+
+    /// Run UMAP asynchronously (for WASM with GPU).
+    ///
+    /// On native, prefer [`build`] which handles async internally.
+    pub async fn build_async(self) -> Result<UmapResult, UmapError> {
         let data = self.data;
         let n_samples = data.nrows();
 
@@ -212,32 +252,74 @@ impl<'a> UmapBuilder<'a> {
             )));
         }
 
+        // Create logger
+        let mut logger = Logger::new(self.verbose, self.progress, UMAP_STAGES);
+
         // Compute curve parameters a, b
         let (a, b) = find_ab_params(self.spread, self.min_dist);
 
-        if self.verbose {
-            eprintln!(
-                "UMAP(n_neighbors={}, n_components={}, metric={})",
-                self.n_neighbors, self.n_components, self.metric
-            );
-            eprintln!("Fitted a={:.4}, b={:.4}", a, b);
-        }
+        logger.log(&format!(
+            "UMAP(n_neighbors={}, n_components={}, metric={})",
+            self.n_neighbors, self.n_components, self.metric
+        ));
+        logger.log(&format!("Fitted a={:.4}, b={:.4}", a, b));
 
         // Step 1: Compute nearest neighbors using NNDescent
-        if self.verbose {
-            eprintln!("Finding nearest neighbors...");
-        }
-        let nnd_builder = NNDescent::builder(data.clone(), &self.metric, self.n_neighbors);
-        let nnd = match self.random_state {
-            Some(seed) => nnd_builder.random_state(seed).build()?,
-            None => nnd_builder.build()?,
+        logger.push_stage_with_message(STAGE_NEIGHBORS, "Finding nearest neighbors...");
+
+        // Create nndescent callback that forwards to our logger's user callback.
+        // We share the user callback between the UMAP logger and the NNDescent
+        // sub-callback via Rc<RefCell<>>, avoiding unsafe pointer aliasing.
+        let nn_cb: Option<nndescent::ProgressCallback> = if logger.callback.is_some() {
+            use std::cell::RefCell;
+            use std::rc::Rc;
+
+            let user_cb = Rc::new(RefCell::new(logger.callback.take().unwrap()));
+
+            // Replace logger's callback with a delegating wrapper
+            let logger_cb = user_cb.clone();
+            logger.callback = Some(Box::new(move |progress: f32, stage: &str| {
+                (*logger_cb.borrow_mut())(progress, stage);
+            }));
+
+            // Compute the NEIGHBORS stage progress mapping from UMAP_STAGES
+            let (stage_start, stage_frac) = {
+                let mut cumulative = 0.0f32;
+                let mut found = (0.0f32, 1.0f32);
+                for &(name, frac) in UMAP_STAGES {
+                    if name == STAGE_NEIGHBORS {
+                        found = (cumulative, frac);
+                        break;
+                    }
+                    cumulative += frac;
+                }
+                found
+            };
+
+            // Create NNDescent callback that maps sub-progress to overall UMAP progress
+            let nn_cb_ref = user_cb.clone();
+            Some(Box::new(move |progress: f32, stage: &str| {
+                let label = format!("NNDescent: {}", stage);
+                let overall = (stage_start + stage_frac * progress).min(1.0);
+                (*nn_cb_ref.borrow_mut())(overall, &label);
+            }))
+        } else {
+            None
         };
+
+        let mut nnd_builder = NNDescent::builder(data.clone(), &self.metric, self.n_neighbors)
+            .verbose(self.verbose)
+            .gpu(self.gpu)
+            .progress_option(nn_cb);
+        if let Some(seed) = self.random_state {
+            nnd_builder = nnd_builder.random_state(seed);
+        }
+        let nnd = nnd_builder.build_async().await?;
         let (knn_indices, knn_dists) = nnd.neighbor_graph().ok_or(UmapError::NoNeighborGraph)?;
+        logger.pop_stage();
 
         // Step 2: Build fuzzy simplicial set
-        if self.verbose {
-            eprintln!("Constructing fuzzy simplicial set...");
-        }
+        logger.push_stage_with_message(STAGE_GRAPH, "Constructing fuzzy simplicial set...");
         let mut graph = fuzzy_simplicial_set(
             &knn_indices,
             &knn_dists,
@@ -261,11 +343,10 @@ impl<'a> UmapBuilder<'a> {
             let threshold = max_weight / n_epochs as f32;
             graph.prune(threshold);
         }
+        logger.pop_stage();
 
         // Step 5: Initialize embedding
-        if self.verbose {
-            eprintln!("Initializing embedding...");
-        }
+        logger.push_stage_with_message(STAGE_EMBEDDING_INIT, "Initializing embedding...");
         let mut rng = match self.random_state {
             Some(seed) => Xoshiro256StarStar::seed_from_u64(seed),
             None => Xoshiro256StarStar::seed_from_os(),
@@ -274,27 +355,23 @@ impl<'a> UmapBuilder<'a> {
         let mut embedding = match self.init {
             Init::Spectral => {
                 let csr = graph.to_csr();
-                if self.verbose {
-                    eprintln!("Computing spectral initialization...");
-                }
+                logger.log("Computing spectral initialization...");
                 let mut emb = spectral_layout(&csr, self.n_components, &mut rng);
                 let is_random_fallback = {
-                    // Check if spectral layout likely fell back to random
-                    // by testing if values span the [-10, 10] range (random_layout range)
                     let min_val = emb.iter().cloned().fold(f32::INFINITY, f32::min);
                     let max_val = emb.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                     max_val - min_val > 15.0
                 };
-                if self.verbose && is_random_fallback {
-                    eprintln!(
-                        "WARNING: Spectral initialization failed, fell back to random layout"
-                    );
+                if is_random_fallback {
+                    logger
+                        .log("WARNING: Spectral initialization failed, fell back to random layout");
                 }
                 noisy_scale_coords(&mut emb, &mut rng, 10.0, 0.0001);
                 emb
             }
             Init::Random => random_layout(n_samples, self.n_components, &mut rng),
         };
+        logger.pop_stage();
 
         // Step 6: Extract edges and compute sampling schedule
         let (heads, tails, weights) = graph.to_edge_list();
@@ -308,9 +385,61 @@ impl<'a> UmapBuilder<'a> {
         ];
 
         // Step 8: Optimize embedding
-        if self.verbose {
-            eprintln!("Optimizing layout for {} epochs...", n_epochs);
+        logger.push_stage_with_message(
+            STAGE_OPTIMIZATION,
+            &format!("Optimizing layout for {} epochs...", n_epochs),
+        );
+
+        #[cfg(feature = "gpu")]
+        let used_gpu = if self.gpu {
+            match crate::gpu_optimize::optimize_layout_gpu(
+                &mut embedding,
+                &heads,
+                &tails,
+                &epochs_per_sample,
+                n_epochs,
+                n_samples,
+                self.n_neighbors,
+                a,
+                b,
+                self.repulsion_strength,
+                self.learning_rate,
+                self.negative_sample_rate as f32,
+                rng_state,
+                &mut logger,
+            )
+            .await
+            {
+                Some(()) => true,
+                None => {
+                    logger.log("GPU unavailable for optimization, falling back to CPU");
+                    false
+                }
+            }
+        } else {
+            false
+        };
+
+        #[cfg(feature = "gpu")]
+        if !used_gpu {
+            optimize_layout_euclidean(
+                &mut embedding,
+                &heads,
+                &tails,
+                &epochs_per_sample,
+                n_epochs,
+                n_samples,
+                a,
+                b,
+                self.repulsion_strength,
+                self.learning_rate,
+                self.negative_sample_rate as f32,
+                rng_state,
+                &mut logger,
+            );
         }
+
+        #[cfg(not(feature = "gpu"))]
         optimize_layout_euclidean(
             &mut embedding,
             &heads,
@@ -324,8 +453,9 @@ impl<'a> UmapBuilder<'a> {
             self.learning_rate,
             self.negative_sample_rate as f32,
             rng_state,
-            self.verbose,
+            &mut logger,
         );
+        logger.pop_stage();
 
         Ok(UmapResult {
             embedding,
@@ -370,6 +500,8 @@ impl Umap {
             random_state: None,
             verbose: false,
             init: Init::Spectral,
+            gpu: false,
+            progress: None,
         }
     }
 }

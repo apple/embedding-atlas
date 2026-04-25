@@ -1,15 +1,17 @@
 //! Benchmark binary for Rust NNDescent implementation.
 //!
-//! Usage: benchmark <data_dir> <metric> [--output results.csv]
+//! Usage: benchmark <data_dir> <metric> [--gpu] [--output result.json]
 //!
 //! Reads a data directory containing meta.json, data.bin, and optionally
 //! truth_{metric}.bin. Builds the NNDescent index on ALL data, then computes
-//! recall against ground truth if available. Appends one CSV row to output.
+//! recall against ground truth if available. Writes a single JSON result file.
+//!
+//! With --gpu, enables GPU-accelerated distance computation (requires the
+//! `gpu` feature: cargo run --features gpu --bin nndescent-bench -- <args>).
 
 use std::collections::HashSet;
 use std::env;
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 
@@ -96,23 +98,26 @@ fn compute_recall(true_indices: &Array2<i32>, approx_indices: &Array2<i32>) -> f
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
-        eprintln!("Usage: benchmark <data_dir> <metric> [--output results.csv]");
+        eprintln!("Usage: benchmark <data_dir> <metric> [--gpu] [--output results.csv]");
         std::process::exit(1);
     }
 
     let data_dir = Path::new(&args[1]);
     let metric = &args[2];
-    let output_path = if args.len() > 4 && args[3] == "--output" {
-        args[4].clone()
-    } else {
-        "bench/results.csv".to_string()
-    };
+
+    // Parse optional flags
+    let use_gpu = args.iter().any(|a| a == "--gpu");
+    let output_path = args
+        .windows(2)
+        .find(|w| w[0] == "--output")
+        .map(|w| w[1].clone())
+        .unwrap_or_else(|| "result.json".to_string());
 
     // Read metadata and data
     let (n, dim, k) = read_meta(data_dir);
     eprintln!(
-        "Rust benchmark: n={}, dim={}, k={}, metric={}",
-        n, dim, k, metric
+        "Rust benchmark: n={}, dim={}, k={}, metric={}, gpu={}",
+        n, dim, k, metric, use_gpu
     );
 
     eprintln!("  Loading data...");
@@ -123,10 +128,15 @@ fn main() {
     let truth = read_i32_bin(&truth_path, n, k);
 
     // Build index on ALL data
-    eprintln!("  Building index on {} points...", n);
+    eprintln!(
+        "  Building index on {} points{}...",
+        n,
+        if use_gpu { " (GPU)" } else { "" }
+    );
     let build_start = Instant::now();
     let nnd = nndescent::NNDescent::builder(data, metric, k)
         .random_state(42)
+        .gpu(use_gpu)
         .build()
         .expect("NNDescent build failed");
     let build_time = build_start.elapsed().as_secs_f64();
@@ -143,30 +153,22 @@ fn main() {
         "N/A".to_string()
     };
 
-    // Write CSV row
-    let output = Path::new(&output_path);
-    let write_header =
-        !output.exists() || fs::metadata(output).map(|m| m.len() == 0).unwrap_or(true);
+    // Write JSON result
+    let json = format!(
+        concat!(
+            "{{\n",
+            "  \"implementation\": \"rust\",\n",
+            "  \"n_points\": {},\n",
+            "  \"dim\": {},\n",
+            "  \"metric\": \"{}\",\n",
+            "  \"gpu\": {},\n",
+            "  \"build_time_s\": {:.3},\n",
+            "  \"recall\": \"{}\"\n",
+            "}}\n"
+        ),
+        n, dim, metric, use_gpu, build_time, recall_str
+    );
+    fs::write(&output_path, &json).unwrap_or_else(|_| panic!("Failed to write {}", output_path));
 
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(output)
-        .expect("Failed to open output CSV");
-
-    if write_header {
-        writeln!(
-            file,
-            "implementation,n_points,dim,metric,build_time_s,recall"
-        )
-        .unwrap();
-    }
-    writeln!(
-        file,
-        "rust,{},{},{},{:.3},{}",
-        n, dim, metric, build_time, recall_str
-    )
-    .unwrap();
-
-    eprintln!("  Result appended to {}", output_path);
+    eprintln!("  Result written to {}", output_path);
 }

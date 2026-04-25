@@ -5,11 +5,18 @@ edition = "2021"
 description = "Rust port of PyNNDescent - fast approximate nearest neighbor search"
 license = "MIT"
 
+[features]
+default = []
+gpu = ["wgpu", "bytemuck"]
+
 [dependencies]
 ndarray = { version = "0.17", features = ["rayon"] }
 rayon = "1.11"
 ordered-float = "5.2"
 getrandom = "0.4"
 wide = "1.2.0"
+pollster = "0.4"
+wgpu = { version = "24", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }
 
 [dev-dependencies]

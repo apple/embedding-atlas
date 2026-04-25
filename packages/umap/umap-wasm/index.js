@@ -26,6 +26,8 @@ export async function createUMAP(count, inputDim, outputDim, data, options = {})
   if (options.mixRatio != null) builder = builder.mixRatio(options.mixRatio);
   if (options.initializeMethod != null) builder = builder.initMethod(options.initializeMethod);
   if (options.seed != null) builder = builder.randomState(BigInt(options.seed));
+  if (options.progress != null) builder = builder.progress(options.progress);
+  if (options.gpu) builder = builder.gpu(true);
 
   let result = null;
 
@@ -45,10 +47,9 @@ export async function createUMAP(count, inputDim, outputDim, data, options = {})
     get knnDistances() {
       return result?.knnDistances ?? new Float32Array(0);
     },
-    run() {
+    async run() {
       if (result) return;
-
-      result = builder.build();
+      result = await builder.build();
     },
     destroy() {
       if (result) {
@@ -80,7 +81,10 @@ export async function createNNDescent(count, inputDim, data, options = {}) {
   if (options.delta != null) builder = builder.delta(options.delta);
   if (options.treeInit != null) builder = builder.treeInit(options.treeInit);
   if (options.seed != null) builder = builder.randomState(BigInt(options.seed));
-  const index = builder.build();
+  if (options.progress != null) builder = builder.progress(options.progress);
+  if (options.gpu) builder = builder.gpu(true);
+
+  let index = await builder.build();
 
   // Extract the pre-computed neighbor graph for fast queryByIndex lookups.
   const graph = index.neighborGraph();

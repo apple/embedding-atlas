@@ -5,7 +5,14 @@ edition = "2021"
 description = "UMAP - Uniform Manifold Approximation and Projection for Dimension Reduction"
 license = "MIT"
 
+[features]
+default = []
+gpu = ["nndescent/gpu", "wgpu", "bytemuck"]
+
 [dependencies]
 nndescent = { path = "../nndescent" }
 ndarray = { version = "0.17", features = ["rayon"] }
 rayon = "1.11"
+pollster = "0.4"
+wgpu = { version = "24", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }

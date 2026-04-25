@@ -12,8 +12,7 @@ packages/docs/.vitepress/cache/
 packages/docs/public/
 packages/docs/demo-data/
 
-packages/umap/nndescent/bench/
-packages/umap/umap/bench/
+packages/umap/benchmark/
 packages/umap/umap-wasm/pkg
 
 packages/density-clustering/density_clustering_wasm/pkg/

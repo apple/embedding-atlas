@@ -1,5 +1,6 @@
 use ndarray::Array2;
 use nndescent::rng::TauRng;
+use nndescent::Logger;
 use rayon::prelude::*;
 
 /// Clamp gradient to [-4.0, 4.0] to prevent instability.
@@ -43,7 +44,7 @@ pub fn optimize_layout_euclidean(
     initial_alpha: f32,
     negative_sample_rate: f32,
     rng_state: [i64; 3],
-    verbose: bool,
+    logger: &mut Logger,
 ) {
     let dim = embedding.ncols();
     let n_edges = head.len();
@@ -177,8 +178,9 @@ pub fn optimize_layout_euclidean(
             },
         );
 
-        if verbose && n_epochs >= 10 && epoch % (n_epochs / 10) == 0 {
-            eprintln!("\tcompleted {} / {} epochs", epoch, n_epochs);
+        if n_epochs >= 10 && epoch % (n_epochs / 10) == 0 {
+            logger.log(&format!("completed {} / {} epochs", epoch, n_epochs));
         }
+        logger.stage_progress((epoch + 1) as f64 / n_epochs as f64, None);
     }
 }

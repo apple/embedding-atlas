@@ -31,6 +31,18 @@ fn parse_seed(random_state: i64) -> Option<u64> {
     }
 }
 
+/// Convert a JS callback `(progress: number, stage: string) => void` into a
+/// Rust `ProgressCallback`.
+fn js_to_progress_callback(f: js_sys::Function) -> nndescent::ProgressCallback {
+    Box::new(move |progress: f32, stage: &str| {
+        let _ = f.call2(
+            &JsValue::NULL,
+            &JsValue::from_f64(progress as f64),
+            &JsValue::from_str(stage),
+        );
+    })
+}
+
 // ---------------------------------------------------------------------------
 // UMAP
 // ---------------------------------------------------------------------------
@@ -69,6 +81,8 @@ pub struct UMAPBuilder {
     init: Init,
     random_state: Option<u64>,
     verbose: bool,
+    gpu: bool,
+    progress: Option<nndescent::ProgressCallback>,
 }
 
 #[wasm_bindgen]
@@ -99,6 +113,8 @@ impl UMAPBuilder {
             init: Init::Spectral,
             random_state: None,
             verbose: false,
+            gpu: false,
+            progress: None,
         }
     }
 
@@ -193,8 +209,22 @@ impl UMAPBuilder {
         self
     }
 
+    /// Enable GPU acceleration via WebGPU. Default: false.
+    /// Requires the `gpu` feature.
+    pub fn gpu(mut self, g: bool) -> UMAPBuilder {
+        self.gpu = g;
+        self
+    }
+
+    /// Set a progress callback: `(progress: number, stage: string) => void`.
+    /// `progress` is in [0, 1], `stage` describes the current processing phase.
+    pub fn progress(mut self, callback: js_sys::Function) -> UMAPBuilder {
+        self.progress = Some(js_to_progress_callback(callback));
+        self
+    }
+
     /// Run UMAP and return the embedding result.
-    pub fn build(self) -> Result<UMAPResult, JsError> {
+    pub async fn build(self) -> Result<UMAPResult, JsError> {
         let array = parse_data(&self.data, self.n_rows, self.n_cols)?;
 
         let mut builder = Umap::builder(&array)
@@ -209,6 +239,7 @@ impl UMAPBuilder {
             .local_connectivity(self.local_connectivity)
             .set_op_mix_ratio(self.set_op_mix_ratio)
             .init_method(self.init)
+            .gpu(self.gpu)
             .verbose(self.verbose);
         if let Some(n) = self.n_epochs {
             builder = builder.n_epochs(n);
@@ -216,8 +247,14 @@ impl UMAPBuilder {
         if let Some(seed) = self.random_state {
             builder = builder.random_state(seed);
         }
+        if let Some(cb) = self.progress {
+            builder = builder.progress(cb);
+        }
 
-        let result = builder.build().map_err(|e| JsError::new(&e.to_string()))?;
+        let result = builder
+            .build_async()
+            .await
+            .map_err(|e| JsError::new(&e.to_string()))?;
         let n_rows = result.embedding.nrows();
         let n_components = result.embedding.ncols();
         let n_neighbors = result.knn_indices.ncols();
@@ -315,6 +352,8 @@ pub struct NNDescentBuilder {
     diversify_prob: f32,
     pruning_degree_multiplier: f32,
     verbose: bool,
+    gpu: bool,
+    progress: Option<nndescent::ProgressCallback>,
 }
 
 #[wasm_bindgen]
@@ -349,6 +388,8 @@ impl NNDescentBuilder {
             diversify_prob: 1.0,
             pruning_degree_multiplier: 1.5,
             verbose: false,
+            gpu: false,
+            progress: None,
         }
     }
 
@@ -413,8 +454,22 @@ impl NNDescentBuilder {
         self
     }
 
+    /// Enable GPU acceleration via WebGPU. Default: false.
+    /// Requires the `gpu` feature.
+    pub fn gpu(mut self, g: bool) -> NNDescentBuilder {
+        self.gpu = g;
+        self
+    }
+
+    /// Set a progress callback: `(progress: number, stage: string) => void`.
+    /// `progress` is in [0, 1], `stage` describes the current processing phase.
+    pub fn progress(mut self, callback: js_sys::Function) -> NNDescentBuilder {
+        self.progress = Some(js_to_progress_callback(callback));
+        self
+    }
+
     /// Build the NNDescent index.
-    pub fn build(self) -> Result<NNDescentIndex, JsError> {
+    pub async fn build(self) -> Result<NNDescentIndex, JsError> {
         let array = parse_data(&self.data, self.n_rows, self.n_cols)?;
 
         let mut builder = NNDescent::builder(array, &self.metric, self.n_neighbors)
@@ -423,6 +478,7 @@ impl NNDescentBuilder {
             .max_rptree_depth(self.max_rptree_depth)
             .diversify_prob(self.diversify_prob)
             .pruning_degree_multiplier(self.pruning_degree_multiplier)
+            .gpu(self.gpu)
             .verbose(self.verbose);
         if let Some(n) = self.n_trees {
             builder = builder.n_trees(n);
@@ -433,9 +489,15 @@ impl NNDescentBuilder {
         if let Some(seed) = self.random_state {
             builder = builder.random_state(seed);
         }
+        if let Some(cb) = self.progress {
+            builder = builder.progress(cb);
+        }
 
         Ok(NNDescentIndex {
-            inner: builder.build().map_err(|e| JsError::new(&e.to_string()))?,
+            inner: builder
+                .build_async()
+                .await
+                .map_err(|e| JsError::new(&e.to_string()))?,
         })
     }
 }
