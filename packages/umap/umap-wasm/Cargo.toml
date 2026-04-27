@@ -8,10 +8,15 @@ license = "MIT"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+gpu = ["nndescent/gpu", "umap/gpu"]
+
 [dependencies]
 nndescent = { path = "../nndescent" }
 umap = { path = "../umap" }
 wasm-bindgen = "0.2.114"
+wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 ndarray = "0.17"
 getrandom = { version = "0.4", features = ["wasm_js"] }

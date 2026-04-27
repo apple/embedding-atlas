@@ -7,6 +7,10 @@ use crate::heap::{
     checked_flagged_heap_push, checked_heap_push, deheap_sort, make_heap, NeighborHeap,
 };
 use crate::rng::TauRng;
+use crate::{Logger, STAGE_NN_DESCENT, STAGE_SORTING};
+
+#[cfg(feature = "gpu")]
+use crate::gpu::GpuContext;
 
 /// Initialize the heap from RP tree leaf co-occurrences.
 /// For each leaf, compute distances between all pairs and insert into heap.
@@ -513,7 +517,7 @@ fn process_candidates(
 }
 
 /// The internal NN-descent iteration loop.
-pub fn nn_descent_internal(
+pub async fn nn_descent_internal(
     heap: &mut NeighborHeap,
     data: &Array2<f32>,
     n_neighbors: usize,
@@ -522,26 +526,39 @@ pub fn nn_descent_internal(
     dist: DistanceFunc,
     n_iters: usize,
     delta: f32,
-    verbose: bool,
+    logger: &mut Logger,
+    #[cfg(feature = "gpu")] gpu_ctx: Option<&GpuContext>,
 ) {
     let n_vertices = data.nrows();
 
     for n in 0..n_iters {
-        if verbose {
-            println!("\t {} / {}", n + 1, n_iters);
-        }
+        logger.log(&format!("{} / {}", n + 1, n_iters));
 
         let (new_candidates, old_candidates) = new_build_candidates(heap, max_candidates, rng);
 
+        #[cfg(feature = "gpu")]
+        let c = if let Some(gpu) = gpu_ctx {
+            crate::nn_descent_gpu::process_candidates_gpu(
+                gpu,
+                heap,
+                &new_candidates,
+                &old_candidates,
+            )
+            .await
+        } else {
+            process_candidates(data, dist, heap, &new_candidates, &old_candidates)
+        };
+
+        #[cfg(not(feature = "gpu"))]
         let c = process_candidates(data, dist, heap, &new_candidates, &old_candidates);
 
+        logger.stage_progress((n + 1) as f64 / n_iters as f64, None);
+
         if c as f32 <= delta * n_neighbors as f32 * n_vertices as f32 {
-            if verbose {
-                println!(
-                    "\tStopping threshold met -- exiting after {} iterations",
-                    n + 1
-                );
-            }
+            logger.log(&format!(
+                "Stopping threshold met -- exiting after {} iterations",
+                n + 1
+            ));
             return;
         }
     }
@@ -549,7 +566,7 @@ pub fn nn_descent_internal(
 
 /// Top-level NN-descent: initialize heap, run iterations, sort result.
 /// Returns (indices, distances) sorted by ascending distance.
-pub fn nn_descent(
+pub async fn nn_descent(
     data: &Array2<f32>,
     n_neighbors: usize,
     rng: &mut TauRng,
@@ -559,18 +576,31 @@ pub fn nn_descent(
     delta: f32,
     rp_tree_init: bool,
     leaf_array: Option<&Array2<i32>>,
-    verbose: bool,
+    logger: &mut Logger,
+    #[cfg(feature = "gpu")] gpu_ctx: Option<&GpuContext>,
 ) -> (Array2<i32>, Array2<f32>) {
     let mut heap = make_heap(data.nrows(), n_neighbors);
 
     if rp_tree_init {
         if let Some(leaves) = leaf_array {
+            #[cfg(feature = "gpu")]
+            if let Some(gpu) = gpu_ctx {
+                crate::nn_descent_gpu::init_rp_tree_gpu(gpu, &mut heap, leaves).await;
+            } else {
+                init_rp_tree(data, dist, &mut heap, leaves);
+            }
+
+            #[cfg(not(feature = "gpu"))]
             init_rp_tree(data, dist, &mut heap, leaves);
         }
     }
 
     init_random(n_neighbors, data, &mut heap, dist, rng);
 
+    logger.push_stage_with_message(
+        STAGE_NN_DESCENT,
+        &format!("NN descent for {} iterations", n_iters),
+    );
     nn_descent_internal(
         &mut heap,
         data,
@@ -580,9 +610,14 @@ pub fn nn_descent(
         dist,
         n_iters,
         delta,
-        verbose,
-    );
+        logger,
+        #[cfg(feature = "gpu")]
+        gpu_ctx,
+    )
+    .await;
+    logger.pop_stage();
 
+    logger.push_stage(STAGE_SORTING);
     deheap_sort(&mut heap.indices, &mut heap.distances);
 
     // Ensure self-neighbor is always at position 0 for each point,
@@ -609,6 +644,7 @@ pub fn nn_descent(
         heap.indices[[i, 0]] = self_idx;
         heap.distances[[i, 0]] = 0.0;
     }
+    logger.pop_stage();
 
     (heap.indices, heap.distances)
 }
@@ -635,7 +671,8 @@ mod tests {
     fn test_nn_descent_runs() {
         let data = make_test_data(100, 5);
         let mut rng = TauRng::new(42);
-        let (indices, distances) = nn_descent(
+        let mut logger = Logger::new(false, None, &[]);
+        let (indices, distances) = pollster::block_on(nn_descent(
             &data,
             10,
             &mut rng,
@@ -645,8 +682,10 @@ mod tests {
             0.001,
             false,
             None,
-            false,
-        );
+            &mut logger,
+            #[cfg(feature = "gpu")]
+            None,
+        ));
 
         assert_eq!(indices.nrows(), 100);
         assert_eq!(indices.ncols(), 10);
@@ -666,7 +705,8 @@ mod tests {
         let forest = rp_trees::make_forest(&data, 10, 3, None, &rng_state, false, 200);
         let leaf_array = rp_trees::rptree_leaf_array(&forest);
 
-        let (indices, _distances) = nn_descent(
+        let mut logger = Logger::new(false, None, &[]);
+        let (indices, _distances) = pollster::block_on(nn_descent(
             &data,
             10,
             &mut rng,
@@ -676,8 +716,10 @@ mod tests {
             0.001,
             true,
             Some(&leaf_array),
-            false,
-        );
+            &mut logger,
+            #[cfg(feature = "gpu")]
+            None,
+        ));
 
         assert_eq!(indices.nrows(), 200);
         assert_eq!(indices.ncols(), 10);

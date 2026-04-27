@@ -45,7 +45,7 @@ describe("createUMAP", () => {
       nEpochs: 10,
       initializeMethod: "random",
     });
-    umap.run();
+    await umap.run();
     const emb = umap.embedding;
     expect(emb).toBeInstanceOf(Float32Array);
     expect(emb.length).toBe(COUNT * OUTPUT_DIM);
@@ -61,9 +61,9 @@ describe("createUMAP", () => {
       nEpochs: 10,
       initializeMethod: "random",
     });
-    umap.run();
+    await umap.run();
     const emb1 = new Float32Array(umap.embedding);
-    umap.run();
+    await umap.run();
     const emb2 = umap.embedding;
     expect(emb1).toEqual(emb2);
   });
@@ -75,7 +75,7 @@ describe("createUMAP", () => {
       nEpochs: 10,
       initializeMethod: "random",
     });
-    umap.run();
+    await umap.run();
     expect(umap.embedding.length).toBe(COUNT * OUTPUT_DIM);
     umap.destroy();
     expect(umap.embedding.length).toBe(0);
@@ -89,7 +89,7 @@ describe("createUMAP", () => {
       nEpochs: 10,
       initializeMethod: "random",
     });
-    umap.run();
+    await umap.run();
     umap.destroy();
     umap.destroy();
     umap = null;
@@ -100,12 +100,12 @@ describe("createUMAP", () => {
     const opts = { seed: 123, nEpochs: 10, initializeMethod: "random" };
 
     const u1 = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, opts);
-    u1.run();
+    await u1.run();
     const emb1 = new Float32Array(u1.embedding);
     u1.destroy();
 
     const u2 = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, opts);
-    u2.run();
+    await u2.run();
     const emb2 = new Float32Array(u2.embedding);
     u2.destroy();
 
@@ -120,7 +120,7 @@ describe("createUMAP", () => {
       metric: "cosine",
       initializeMethod: "random",
     });
-    umap.run();
+    await umap.run();
     expect(umap.embedding.length).toBe(COUNT * OUTPUT_DIM);
   });
 
@@ -131,7 +131,7 @@ describe("createUMAP", () => {
       nEpochs: 10,
       initializeMethod: "random",
     });
-    umap.run();
+    await umap.run();
     expect(umap.embedding.length).toBe(COUNT * 3);
   });
 
@@ -142,7 +142,7 @@ describe("createUMAP", () => {
       nEpochs: 10,
       initializeMethod: "spectral",
     });
-    umap.run();
+    await umap.run();
     expect(umap.embedding.length).toBe(COUNT * OUTPUT_DIM);
   });
 
@@ -162,7 +162,7 @@ describe("createUMAP", () => {
       nNeighbors: 10,
       seed: 42,
     });
-    umap.run();
+    await umap.run();
     expect(umap.embedding.length).toBe(COUNT * OUTPUT_DIM);
   });
 
@@ -188,7 +188,7 @@ describe("createUMAP", () => {
       nNeighbors: N_NEIGHBORS,
       initializeMethod: "random",
     });
-    umap.run();
+    await umap.run();
     expect(umap.knnIndices).toBeInstanceOf(Int32Array);
     expect(umap.knnIndices.length).toBe(COUNT * N_NEIGHBORS);
     expect(umap.knnDistances).toBeInstanceOf(Float32Array);
@@ -209,7 +209,7 @@ describe("createUMAP", () => {
       initializeMethod: "random",
       seed: 42,
     });
-    expect(() => umap.run()).toThrow(/unknown metric/i);
+    await expect(umap.run()).rejects.toThrow(/unknown metric/i);
   });
 
   it("throws when nNeighbors >= count", async () => {
@@ -220,7 +220,7 @@ describe("createUMAP", () => {
       initializeMethod: "random",
       seed: 42,
     });
-    expect(() => umap.run()).toThrow(/n_neighbors/i);
+    await expect(umap.run()).rejects.toThrow(/n_neighbors/i);
   });
 
   it("throws on data length mismatch", async () => {
@@ -231,6 +231,6 @@ describe("createUMAP", () => {
       initializeMethod: "random",
       seed: 42,
     });
-    expect(() => umap.run()).toThrow(/length/i);
+    await expect(umap.run()).rejects.toThrow(/length/i);
   });
 });

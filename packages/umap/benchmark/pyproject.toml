@@ -1,0 +1,12 @@
+[project]
+name = "umap-benchmark"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "click",
+    "numpy",
+    "scikit-learn",
+    "umap-learn",
+    "pynndescent",
+    "pandas>=2.3.3",
+]

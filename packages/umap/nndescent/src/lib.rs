@@ -2,8 +2,13 @@
 ///
 /// Based on the Python PyNNDescent library (https://github.com/lmcinnes/pynndescent).
 pub mod distance;
+#[cfg(feature = "gpu")]
+pub mod gpu;
 pub mod heap;
+pub mod logger;
 pub mod nn_descent;
+#[cfg(feature = "gpu")]
+pub mod nn_descent_gpu;
 pub mod rng;
 pub mod rp_trees;
 pub mod search;
@@ -14,12 +19,25 @@ use std::fmt;
 use ndarray::Array2;
 
 use crate::distance::{CorrectionFunc, DistanceFunc, FLOAT32_EPS};
+pub use crate::logger::{Logger, ProgressCallback};
 use crate::rng::{TauRng, Xoshiro256StarStar};
 use crate::rp_trees::FlatTree;
 use crate::search::{batch_search, CsrGraph};
 
 const INT32_MIN: i32 = i32::MIN + 1;
 const INT32_MAX: i32 = i32::MAX - 1;
+
+/// Stage name constants for NNDescent.
+pub const STAGE_RP_FOREST: &str = "Building RP forest";
+pub const STAGE_NN_DESCENT: &str = "NN descent";
+pub const STAGE_SORTING: &str = "Sorting results";
+
+/// Estimated time fractions for each NNDescent stage.
+pub const NN_STAGES: &[(&str, f32)] = &[
+    (STAGE_RP_FOREST, 0.15),
+    (STAGE_NN_DESCENT, 0.80),
+    (STAGE_SORTING, 0.05),
+];
 
 /// Error type for NNDescent operations.
 #[derive(Debug)]
@@ -67,6 +85,8 @@ pub struct NNDescentBuilder {
     max_candidates: Option<usize>,
     max_rptree_depth: usize,
     verbose: bool,
+    gpu: bool,
+    progress: Option<ProgressCallback>,
 }
 
 impl NNDescentBuilder {
@@ -136,8 +156,45 @@ impl NNDescentBuilder {
         self
     }
 
+    /// Enable GPU acceleration for distance computation. Default: false.
+    ///
+    /// Requires the `gpu` crate feature. When enabled, distance computation is
+    /// offloaded to a GPU compute shader via wgpu (Metal, Vulkan, DX12, or
+    /// WebGPU). Falls back to CPU if no suitable GPU is available or if the
+    /// distance metric is not supported on GPU.
+    ///
+    /// Most effective for high-dimensional data (n_features >= 64).
+    pub fn gpu(mut self, g: bool) -> Self {
+        self.gpu = g;
+        self
+    }
+
+    /// Set a progress callback. Default: none.
+    pub fn progress(mut self, cb: ProgressCallback) -> Self {
+        self.progress = Some(cb);
+        self
+    }
+
+    /// Set an optional progress callback. Default: none.
+    pub fn progress_option(mut self, cb: Option<ProgressCallback>) -> Self {
+        self.progress = cb;
+        self
+    }
+
     /// Build the NNDescent index.
+    ///
+    /// This is a synchronous wrapper around [`build_async`]. On native builds
+    /// (including native GPU via `pollster::block_on`), use this method.
+    /// For WASM with GPU, use [`build_async`] instead.
     pub fn build(self) -> Result<NNDescent, NNDescentError> {
+        pollster::block_on(self.build_async())
+    }
+
+    /// Build the NNDescent index (async version).
+    ///
+    /// Use this on WASM with GPU where `pollster::block_on` cannot block.
+    /// On native, prefer [`build`] which wraps this automatically.
+    pub async fn build_async(self) -> Result<NNDescent, NNDescentError> {
         let n = self.data.nrows();
 
         if self.n_neighbors >= n {
@@ -188,11 +245,56 @@ impl NNDescentBuilder {
 
         let tree_init = self.tree_init && n_trees > 0;
 
+        // Initialize GPU context if requested (before forest so we can use GPU projections)
+        #[cfg(feature = "gpu")]
+        let gpu_ctx = if self.gpu {
+            match gpu::GpuContext::new(&self.data, &self.metric).await {
+                Some(ctx) => Some(ctx),
+                None => {
+                    if self.verbose {
+                        eprintln!("Warning: GPU unavailable or metric not supported on GPU, falling back to CPU");
+                    }
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Create logger
+        let mut logger = Logger::new(self.verbose, self.progress, NN_STAGES);
+
         // Build RP forest
         let leaf_array = if tree_init {
-            if self.verbose {
-                println!("Building RP forest with {} trees", n_trees);
-            }
+            logger.push_stage_with_message(
+                STAGE_RP_FOREST,
+                &format!("Building RP forest with {} trees", n_trees),
+            );
+            #[cfg(feature = "gpu")]
+            let forest = if let Some(ref gpu) = gpu_ctx {
+                rp_trees::make_forest_gpu(
+                    &self.data,
+                    self.n_neighbors,
+                    n_trees,
+                    self.leaf_size,
+                    &rng_state,
+                    angular_trees,
+                    self.max_rptree_depth,
+                    gpu,
+                )
+                .await
+            } else {
+                rp_trees::make_forest(
+                    &self.data,
+                    self.n_neighbors,
+                    n_trees,
+                    self.leaf_size,
+                    &rng_state,
+                    angular_trees,
+                    self.max_rptree_depth,
+                )
+            };
+            #[cfg(not(feature = "gpu"))]
             let forest = rp_trees::make_forest(
                 &self.data,
                 self.n_neighbors,
@@ -203,6 +305,7 @@ impl NNDescentBuilder {
                 self.max_rptree_depth,
             );
             let leaves = rp_trees::rptree_leaf_array(&forest);
+            logger.pop_stage();
             Some(leaves)
         } else {
             None
@@ -211,10 +314,6 @@ impl NNDescentBuilder {
         let effective_max_candidates = self
             .max_candidates
             .unwrap_or_else(|| 60.min(self.n_neighbors));
-
-        if self.verbose {
-            println!("NN descent for {} iterations", n_iters);
-        }
 
         // Run NN-descent
         let mut rng = TauRng::from_state(rng_state);
@@ -228,15 +327,18 @@ impl NNDescentBuilder {
             self.delta,
             tree_init,
             leaf_array.as_ref(),
-            self.verbose,
-        );
+            &mut logger,
+            #[cfg(feature = "gpu")]
+            gpu_ctx.as_ref(),
+        )
+        .await;
 
         // Check for missing neighbors
         let any_missing = indices.iter().any(|&v| v < 0);
-        if any_missing && self.verbose {
-            eprintln!(
+        if any_missing {
+            logger.log(
                 "Warning: Failed to correctly find n_neighbors for some samples. \
-                Results may be less than ideal."
+                Results may be less than ideal.",
             );
         }
 
@@ -324,6 +426,8 @@ impl NNDescent {
             max_candidates: None,
             max_rptree_depth: 200,
             verbose: false,
+            gpu: false,
+            progress: None,
         }
     }
 
@@ -421,9 +525,59 @@ impl NNDescent {
             self.angular_trees,
             self.max_rptree_depth,
         );
-        self.search_forest = vec![search_tree];
+        // Don't store search_forest yet — we'll remap it below.
 
-        self.search_graph = Some(search_graph);
+        // Reorder data and graph by tree leaf order for cache locality during search.
+        // vertex_order[new_i] = old_i (tree DFS leaf order)
+        let vertex_order: Vec<i32> = search_tree.indices.clone();
+
+        // Build inverse mapping: inverse[old_i] = new_i
+        let mut inverse_order = vec![0i32; n];
+        for (new_i, &old_i) in vertex_order.iter().enumerate() {
+            if old_i >= 0 && (old_i as usize) < n {
+                inverse_order[old_i as usize] = new_i as i32;
+            }
+        }
+
+        // Reorder raw_data: new row new_i = old row vertex_order[new_i]
+        let dim = self.raw_data.ncols();
+        let mut new_data = Array2::zeros((n, dim));
+        for new_i in 0..n {
+            let old_i = vertex_order[new_i] as usize;
+            new_data.row_mut(new_i).assign(&self.raw_data.row(old_i));
+        }
+        self.raw_data = new_data;
+
+        // Remap search graph: rebuild COO with remapped indices
+        let mut remap_rows = Vec::new();
+        let mut remap_cols = Vec::new();
+        let mut remap_data = Vec::new();
+        for old_row in 0..n {
+            let new_row = inverse_order[old_row];
+            let start = search_graph.indptr[old_row] as usize;
+            let end = search_graph.indptr[old_row + 1] as usize;
+            for pos in start..end {
+                let old_col = search_graph.indices[pos];
+                if old_col >= 0 && (old_col as usize) < n {
+                    remap_rows.push(new_row);
+                    remap_cols.push(inverse_order[old_col as usize]);
+                    remap_data.push(1.0f32); // distance values not used after prepare
+                }
+            }
+        }
+        let (remapped_graph, _) = CsrGraph::from_coo(n, &remap_rows, &remap_cols, &remap_data);
+
+        // Remap tree indices to new numbering
+        let mut remapped_tree = search_tree;
+        for idx in remapped_tree.indices.iter_mut() {
+            if *idx >= 0 && (*idx as usize) < n {
+                *idx = inverse_order[*idx as usize];
+            }
+        }
+
+        self.search_forest = vec![remapped_tree];
+        self.search_graph = Some(remapped_graph);
+        self.vertex_order = Some(vertex_order);
         self.is_prepared = true;
     }
 
@@ -459,16 +613,16 @@ impl NNDescent {
         );
 
         // Apply distance correction if needed
-        if let Some(correction) = self.distance_correction {
-            let corrected = distances.mapv(correction);
+        let distances = if let Some(correction) = self.distance_correction {
+            distances.mapv(correction)
+        } else {
+            distances
+        };
 
-            // Map indices back through vertex order if applicable
-            if let Some(ref _order) = self.vertex_order {
-                // For now, no reordering
-                (indices, corrected)
-            } else {
-                (indices, corrected)
-            }
+        // Map indices back through vertex order to original numbering
+        if let Some(ref order) = self.vertex_order {
+            let remapped = indices.mapv(|i| if i >= 0 { order[i as usize] } else { i });
+            (remapped, distances)
         } else {
             (indices, distances)
         }

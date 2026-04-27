@@ -42,7 +42,7 @@ function makeEmbeddingComputer(runBatch: (data: any[]) => Promise<any>): Embeddi
       let umap = await createUMAP(count, inputDim, outputDim, data, {
         metric: "cosine",
       });
-      umap.run();
+      await umap.run();
       let result = new Float32Array(umap.embedding);
       umap.destroy();
       return result;

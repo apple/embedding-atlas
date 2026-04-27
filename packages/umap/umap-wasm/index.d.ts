@@ -23,6 +23,12 @@ export interface NNDescentOptions {
 
   /** Random seed for reproducibility. */
   seed?: number;
+
+  /** Progress callback: `(progress: number, stage: string) => void`. Progress is in [0, 1]. */
+  progress?: (progress: number, stage: string) => void;
+
+  /** Whether to use GPU acceleration (WebGPU). Default: false. */
+  gpu?: boolean;
 }
 
 export interface NNDescentQueryResult {
@@ -70,6 +76,12 @@ export interface UMAPOptions {
 
   /** The random seed. */
   seed?: number;
+
+  /** Progress callback: `(progress: number, stage: string) => void`. Progress is in [0, 1]. */
+  progress?: (progress: number, stage: string) => void;
+
+  /** Whether to use GPU acceleration (WebGPU). Default: false. */
+  gpu?: boolean;
 }
 
 export interface UMAP {
@@ -100,7 +112,7 @@ export interface UMAP {
   /**
    * Run the UMAP algorithm to completion.
    */
-  run(): void;
+  run(): Promise<void>;
 
   /** Destroy the instance and release resources */
   destroy(): void;
