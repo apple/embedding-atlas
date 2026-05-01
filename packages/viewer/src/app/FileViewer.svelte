@@ -122,6 +122,7 @@
           xColumn: x,
           yColumn: y,
           model: model,
+          umapOptions: spec.embedding.compute.umapOptions,
           callback: (message, progress) => {
             msg.update({ text: `Embedding: ${message}`, progress: progress });
           },

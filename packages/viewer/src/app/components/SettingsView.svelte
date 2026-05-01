@@ -1,9 +1,12 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
+  import type { UMAPOptions } from "@embedding-atlas/umap-wasm";
   import { untrack } from "svelte";
 
   import Button from "../../widgets/Button.svelte";
+  import CheckBox from "../../widgets/CheckBox.svelte";
   import ComboBox from "../../widgets/ComboBox.svelte";
+  import NumberInput from "../../widgets/NumberInput.svelte";
   import SegmentedControl from "../../widgets/SegmentedControl.svelte";
   import Select from "../../widgets/Select.svelte";
 
@@ -35,7 +38,14 @@
       | {
           precomputed: { x: string; y: string; neighbors?: string };
         }
-      | { compute: { column: string; type: "text" | "image"; model: string } };
+      | {
+          compute: {
+            column: string;
+            type: "text" | "image";
+            model: string;
+            umapOptions?: UMAPOptions;
+          };
+        };
   }
 
   interface Props {
@@ -56,6 +66,11 @@
   let embeddingTextModel: string | undefined = $state(undefined);
   let embeddingImageColumn: string | undefined = $state(undefined);
   let embeddingImageModel: string | undefined = $state(undefined);
+
+  let showUmapOptions = $state(false);
+  let umapMinDist = $state(0.1);
+  let umapNNeighbors = $state(15);
+  let umapGpu = $state(true);
 
   let numericalColumns = $derived(columns.filter((x) => jsTypeFromDBType(x.column_type) == "number"));
   let stringColumns = $derived(columns.filter((x) => jsTypeFromDBType(x.column_type) == "string"));
@@ -83,14 +98,20 @@
       if (model == undefined || model == "") {
         model = textModels[0];
       }
-      value.embedding = { compute: { column: embeddingTextColumn, type: "text", model: model } };
+      let umapOptions = showUmapOptions
+        ? { minDist: umapMinDist, nNeighbors: umapNNeighbors, gpu: umapGpu }
+        : undefined;
+      value.embedding = { compute: { column: embeddingTextColumn, type: "text", model: model, umapOptions } };
     }
     if (embeddingMode == "from-image" && embeddingImageColumn != undefined) {
       let model = embeddingImageModel?.trim() ?? "";
       if (model == undefined || model == "") {
         model = imageModels[0];
       }
-      value.embedding = { compute: { column: embeddingImageColumn, type: "image", model: model } };
+      let umapOptions = showUmapOptions
+        ? { minDist: umapMinDist, nNeighbors: umapNNeighbors, gpu: umapGpu }
+        : undefined;
+      value.embedding = { compute: { column: embeddingImageColumn, type: "image", model: model, umapOptions } };
     }
     onConfirm?.(value);
   }
@@ -234,6 +255,29 @@
         Computing the embedding and 2D projection in browser may take a while. The model will be loaded with
         Transformers.js.
       </p>
+    {/if}
+    {#if embeddingMode == "from-text" || embeddingMode == "from-image"}
+      <button
+        class="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 select-none mt-1"
+        onclick={() => (showUmapOptions = !showUmapOptions)}
+      >
+        <span class="text-[10px]">{showUmapOptions ? "\u25BC" : "\u25B6"}</span>
+        UMAP Options
+      </button>
+      {#if showUmapOptions}
+        <div class="w-full flex flex-row items-center">
+          <div class="w-[6rem] dark:text-slate-400">Min Dist</div>
+          <NumberInput className="flex-1 min-w-0" bind:value={umapMinDist} min={0} max={1} step={0.01} />
+        </div>
+        <div class="w-full flex flex-row items-center">
+          <div class="w-[6rem] dark:text-slate-400">Neighbors</div>
+          <NumberInput className="flex-1 min-w-0" bind:value={umapNNeighbors} min={2} max={200} step={1} />
+        </div>
+        <div class="w-full flex flex-row items-center">
+          <div class="w-[6rem] dark:text-slate-400">GPU</div>
+          <CheckBox bind:checked={umapGpu} label="Use WebGPU if available" />
+        </div>
+      {/if}
     {/if}
   </div>
   <div class="w-full flex flex-row items-center mt-4">

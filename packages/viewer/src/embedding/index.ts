@@ -1,17 +1,25 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import { connectWorker, type WorkerConnection, type WorkerProxy } from "@embedding-atlas/utils";
 import { type Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 
-import { WorkerRPC } from "./worker_helper.js";
+import type { Embedder } from "./embedding.worker.js";
 
-let _rpc: Promise<(name: string, ...args: any[]) => Promise<any>> | null = null;
-function connect() {
-  if (_rpc == null) {
+export type EmbedderHandle = WorkerProxy<Embedder>;
+
+let _connection: Promise<WorkerConnection> | null = null;
+function connect(): Promise<WorkerConnection> {
+  if (_connection == null) {
     let worker = new Worker(new URL("./embedding.worker.js", import.meta.url), { type: "module" });
-    _rpc = WorkerRPC.connect(worker);
+    _connection = connectWorker(worker);
   }
-  return _rpc;
+  return _connection;
+}
+
+export async function createEmbedder(options: { type: "text" | "image"; model: string }): Promise<EmbedderHandle> {
+  let conn = await connect();
+  return conn.create<Embedder>("Embedder", options);
 }
 
 async function* inputBatches(
@@ -85,6 +93,7 @@ export async function computeEmbedding(options: {
   yColumn: string;
   type: "text" | "image";
   model: string;
+  umapOptions?: { minDist?: number; nNeighbors?: number; gpu?: boolean };
   callback?: (message: string, progress?: number) => void;
 }) {
   function progress(message: string, progress?: number) {
@@ -93,9 +102,7 @@ export async function computeEmbedding(options: {
 
   progress(`Loading ${options.model}...`);
 
-  let rpc = await connect();
-
-  let instance = await rpc("embedding.new", { type: options.type, model: options.model });
+  let embedder = await createEmbedder({ type: options.type, model: options.model });
 
   let allIDs: any[][] = [];
   let idsCount = 0;
@@ -111,14 +118,19 @@ export async function computeEmbedding(options: {
 
     let ids = Array.from(data.getChild("id"));
     let values = Array.from(data.getChild("value"));
-    await rpc("embedding.batch", instance, values);
+    await embedder.batch(values);
     allIDs.push(ids);
     idsCount += ids.length;
   }
 
-  progress("UMAP Projection...");
+  progress("UMAP...");
 
-  let coordinates: Float32Array = await rpc("embedding.finalize", instance);
+  let coordinates = await embedder.umap({
+    ...options.umapOptions,
+    progress: (p: number, stage: string) => {
+      progress(`UMAP: ${stage}...`, p * 100);
+    },
+  });
 
   await setResultColumns(
     options.coordinator,
@@ -129,4 +141,6 @@ export async function computeEmbedding(options: {
     allIDs,
     coordinates,
   );
+
+  await embedder.destroy();
 }
