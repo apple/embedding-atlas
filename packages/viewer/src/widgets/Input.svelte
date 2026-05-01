@@ -6,9 +6,10 @@
     placeholder?: string;
     className?: string;
     onEnter?: () => void;
+    onBlur?: () => void;
   }
 
-  let { value = $bindable(), type = "text", placeholder = "", className = "", onEnter }: Props = $props();
+  let { value = $bindable(), type = "text", placeholder = "", className = "", onEnter, onBlur }: Props = $props();
 
   function onKeyDown(e: KeyboardEvent) {
     if (e.key == "Escape") {
@@ -24,6 +25,7 @@
   bind:value={value}
   placeholder={placeholder}
   onkeydown={onKeyDown}
+  onblur={onBlur}
   class="form-input rounded-md py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 {className ??
     ''}"
 />

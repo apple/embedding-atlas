@@ -6,3 +6,11 @@ export { deepEquals, deepMemo } from "./equals.js";
 export { interactionHandler, type CursorValue, type DragHandler } from "./interaction_handler.js";
 export { audioToDataUrl, imageToDataUrl } from "./media.js";
 export { applyUpdatesForKeyIfNeeded, applyUpdatesIfNeeded, mergeUpdates } from "./merge_updates.js";
+export {
+  connectWorker,
+  createWorkerRuntime,
+  transfer,
+  type WorkerConnection,
+  type WorkerProxy,
+  type WorkerRuntime,
+} from "./worker_helper.js";

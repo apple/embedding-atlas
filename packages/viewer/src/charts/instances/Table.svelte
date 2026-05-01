@@ -56,10 +56,6 @@
     return "text-left";
   }
 
-  function isCellClamped(content: any): boolean {
-    return String(content).length > 100;
-  }
-
   function toggleRowExpansion(rowIndex: number) {
     expandedRows = new Set(
       expandedRows.has(rowIndex) ? [...expandedRows].filter((i) => i !== rowIndex) : [...expandedRows, rowIndex],
@@ -185,13 +181,10 @@
             onmouseenter={() => (hoveredCell = { row: index, col: column })}
             onmouseleave={() => (hoveredCell = null)}
           >
-            <div
-              class="overflow-wrap-anywhere"
-              class:line-clamp-3={!expandedRows.has(index) && isCellClamped(row[column])}
-            >
+            <div class="wrap-anywhere" class:line-clamp-3={!expandedRows.has(index)}>
               <ContentRenderer value={row[column]} style={columnStyles[column]} formatter={columnFormatters[column]} />
             </div>
-            {#if !expandedRows.has(index) && isCellClamped(row[column]) && hoveredCell?.row === index && hoveredCell?.col === column}
+            {#if !expandedRows.has(index) && hoveredCell?.row === index && hoveredCell?.col === column}
               <button
                 class="absolute bottom-0.5 right-0.5 text-xs px-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
                 onclick={(e) => {

@@ -7,6 +7,8 @@ export { default as IconSortUpDown } from "~icons/fluent/arrow-sort-20-filled";
 export { default as IconSortDown } from "~icons/fluent/arrow-sort-down-20-filled";
 export { default as IconSortUp } from "~icons/fluent/arrow-sort-up-20-filled";
 export { default as IconBraces } from "~icons/fluent/braces-20-filled";
+export { default as IconCheckboxChecked } from "~icons/fluent/checkbox-checked-20-filled";
+export { default as IconCheckboxUnchecked } from "~icons/fluent/checkbox-unchecked-20-filled";
 export { default as IconCheck } from "~icons/fluent/checkmark-16-filled";
 export { default as IconChevronDown, default as IconDown } from "~icons/fluent/chevron-down-16-filled";
 export { default as IconLeft } from "~icons/fluent/chevron-left-16-filled";

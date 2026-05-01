@@ -65,6 +65,7 @@
   let tableHeight = $state(300);
   let panelWidth = $state(400);
   let panelContainerWidth = $state(400);
+  let panelContainerFixedWidth = $state<number | undefined>(undefined);
 
   let sections = $derived.by(deepMemo(() => getSections(charts, layoutState)));
 
@@ -170,8 +171,16 @@
         class="h-full overflow-x-hidden overflow-y-scroll"
         style:width="{hasEmbedding || hasTable ? panelWidth : containerWidth}px"
         transition:slide={{ axis: "x" }}
+        onintrostart={() => (panelContainerFixedWidth = panelContainerWidth)}
+        onoutrostart={() => (panelContainerFixedWidth = panelContainerWidth)}
+        onintroend={() => (panelContainerFixedWidth = undefined)}
+        onoutroend={() => (panelContainerFixedWidth = undefined)}
       >
-        <div class="flex flex-row flex-wrap gap-2" bind:clientWidth={panelContainerWidth}>
+        <div
+          class="flex flex-row flex-wrap gap-2"
+          bind:clientWidth={panelContainerWidth}
+          style:width={panelContainerFixedWidth ? panelContainerFixedWidth + "px" : undefined}
+        >
           <button
             class="bg-white dark:bg-black rounded-md flex flex-col justify-center items-center gap-2 p-2 w-full text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 select-none"
             onclick={() => {

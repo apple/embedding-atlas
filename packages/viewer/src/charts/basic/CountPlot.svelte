@@ -395,7 +395,7 @@
   <div class="flex flex-col relative text-sm w-full select-none" bind:clientWidth={chartWidth}>
     {#if chartData}
       {@const firstSpecialIndex = chartData.items.findIndex((x) => x.special != undefined)}
-      {#each chartData.items as bar, i}
+      {#each chartData.items as bar, i (bar.value)}
         {@const selected =
           selection == undefined || selection.length == 0 || selection.findIndex((x) => x == bar.value) >= 0}
         {@const hasSelection = !chartData.items.every((x) => x.count == x.countSelected)}
@@ -404,12 +404,17 @@
           <hr class="mt-1 mb-1 border-slate-300 dark:border-slate-500 border-dashed" />
         {/if}
         <button
-          class="text-left items-center flex py-0.5"
+          class="text-left items-center flex py-0.5 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors duration-150"
           onclick={(e) => toggleSelection(bar.value, e.shiftKey)}
           title={bar.value}
         >
-          <div class="flex-none overflow-hidden whitespace-nowrap text-ellipsis pr-1" style:width="{categoryWidth}px">
-            <span class:text-gray-400={!selected} class:dark:text-gray-400={!selected}>{bar.value}</span>
+          <div
+            class="flex-none overflow-hidden whitespace-nowrap text-ellipsis pr-1"
+            style:width="{categoryWidth}px"
+            class:text-gray-400={!selected}
+            class:dark:text-gray-400={!selected}
+          >
+            {bar.value}
           </div>
           <CountPlotBar
             selected={selected}
