@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import patch
 
 import pytest
 from embedding_atlas.async_map import async_map
@@ -229,7 +230,10 @@ class TestAsyncMap:
         assert results == [2, -1, 6, -1, 10]
 
     @pytest.mark.asyncio
-    async def test_backoff_slows_down_after_errors(self):
+    @patch(
+        "embedding_atlas.async_map.random.uniform", side_effect=lambda a, b: (a + b) / 2
+    )
+    async def test_backoff_slows_down_after_errors(self, mock_uniform):
         """Test that errors cause subsequent calls to be delayed via shared backoff."""
         call_times: list[float] = []
         attempt_counts: dict[int, int] = {}
@@ -256,11 +260,14 @@ class TestAsyncMap:
 
         elapsed = asyncio.get_event_loop().time() - start
         assert results == [0, 0, 0]
-        # Two failures with base_delay=0.05 means delays of up to 0.05s and 0.1s.
+        # Two failures with base_delay=0.05: delays of 0.025s and 0.05s (midpoints).
         assert elapsed > 0.02, "Expected some backoff delay"
 
     @pytest.mark.asyncio
-    async def test_backoff_resets_on_success(self):
+    @patch(
+        "embedding_atlas.async_map.random.uniform", side_effect=lambda a, b: (a + b) / 2
+    )
+    async def test_backoff_resets_on_success(self, mock_uniform):
         """Test that a successful call resets the shared backoff so later calls aren't delayed."""
         attempt_counts: dict[int, int] = {}
 
@@ -290,7 +297,10 @@ class TestAsyncMap:
         assert elapsed < 0.5, "Backoff should have reset after success"
 
     @pytest.mark.asyncio
-    async def test_backoff_affects_concurrent_tasks(self):
+    @patch(
+        "embedding_atlas.async_map.random.uniform", side_effect=lambda a, b: (a + b) / 2
+    )
+    async def test_backoff_affects_concurrent_tasks(self, mock_uniform):
         """Test that backoff from one task's failure delays other concurrent tasks."""
         call_times: dict[int, list[float]] = {}
 
