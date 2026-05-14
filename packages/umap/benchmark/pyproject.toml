@@ -8,5 +8,5 @@ dependencies = [
     "scikit-learn",
     "umap-learn",
     "pynndescent",
-    "pandas>=2.3.3",
+    "pandas >= 3.0.0",
 ]
