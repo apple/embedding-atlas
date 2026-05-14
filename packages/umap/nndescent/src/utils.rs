@@ -1,4 +1,4 @@
-/// Utility functions: visited bitmap, norm, etc.
+//! Utility functions: visited bitmap, norm, etc.
 
 /// Bit-level visited table for tracking which nodes have been explored.
 pub struct VisitedTable {

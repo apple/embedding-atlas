@@ -38,3 +38,5 @@ WebAssembly bindings via `wasm-bindgen`, exposing both UMAP and NNDescent to Jav
 ### `benchmark/`
 
 Native benchmark binaries (`umap-bench`, `nndescent-bench`) for performance testing.
+
+Run the benchmarks with `uv run python -m benchmark umap`.

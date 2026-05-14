@@ -33,7 +33,7 @@ impl TauRng {
             let s = self.state[0];
             let a = ((s & 0xFFFFFFFE_i64) << 12) & 0xFFFFFFFF;
             let b = (((s << 13) & 0xFFFFFFFF) ^ s) >> 19;
-            (a ^ b) as i64
+            a ^ b
         };
 
         // State 1: mask=0xFFFFFFF8, shift_left=4, shift_right=25, shift2=2
@@ -41,7 +41,7 @@ impl TauRng {
             let s = self.state[1];
             let a = ((s & 0xFFFFFFF8_i64) << 4) & 0xFFFFFFFF;
             let b = (((s << 2) & 0xFFFFFFFF) ^ s) >> 25;
-            (a ^ b) as i64
+            a ^ b
         };
 
         // State 2: mask=0xFFFFFFF0, shift_left=17, shift_right=11, shift2=3
@@ -49,7 +49,7 @@ impl TauRng {
             let s = self.state[2];
             let a = ((s & 0xFFFFFFF0_i64) << 17) & 0xFFFFFFFF;
             let b = (((s << 3) & 0xFFFFFFFF) ^ s) >> 11;
-            (a ^ b) as i64
+            a ^ b
         };
 
         (self.state[0] ^ self.state[1] ^ self.state[2]) as i32
@@ -65,17 +65,10 @@ impl TauRng {
     /// integer is selected twice. Uses rejection sampling.
     pub fn rejection_sample(&mut self, n_samples: usize, pool_size: usize) -> Vec<i64> {
         let mut result = Vec::with_capacity(n_samples);
-        for i in 0..n_samples {
+        for _ in 0..n_samples {
             loop {
                 let j = (self.tau_rand_int() % pool_size as i32).abs() as i64;
-                let mut duplicate = false;
-                for k in 0..i {
-                    if j == result[k] {
-                        duplicate = true;
-                        break;
-                    }
-                }
-                if !duplicate {
+                if !result.contains(&j) {
                     result.push(j);
                     break;
                 }

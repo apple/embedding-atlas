@@ -66,22 +66,12 @@ impl DensityMap {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 #[serde(default)]
 pub struct FindClustersOptions {
     clustering_options: density_clustering::FindClustersOptions,
     smooth_boundaries: bool,
     return_boundary_rects: bool,
-}
-
-impl Default for FindClustersOptions {
-    fn default() -> Self {
-        FindClustersOptions {
-            clustering_options: density_clustering::FindClustersOptions::default(),
-            smooth_boundaries: false,
-            return_boundary_rects: false,
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -109,7 +99,8 @@ pub fn find_clusters(input: &DensityMap, options: IFindClustersOptions) -> IFind
         let polygons_f: Vec<Vec<(f64, f64)>> = polygons
             .iter()
             .map(|polygon| {
-                let mut polygon_f = polygon.iter().map(|&(x, y)| (x as f64, y as f64)).collect();
+                let mut polygon_f: Vec<(f64, f64)> =
+                    polygon.iter().map(|&(x, y)| (x as f64, y as f64)).collect();
                 if options.smooth_boundaries {
                     polygon_f = smooth_polygon(&polygon_f);
                 }
@@ -120,16 +111,16 @@ pub fn find_clusters(input: &DensityMap, options: IFindClustersOptions) -> IFind
     });
     let boundary_rects = if options.return_boundary_rects {
         Some(map_values(&boundaries, |polygons| {
-            density_clustering::fit_rects_from_polygons(&polygons)
+            density_clustering::fit_rects_from_polygons(polygons.as_slice())
         }))
     } else {
         None
     };
 
     serde_wasm_bindgen::to_value(&FindClustersResult {
-        summaries: summaries,
-        boundaries: boundaries,
-        boundary_rects: boundary_rects,
+        summaries,
+        boundaries,
+        boundary_rects,
     })
     .unwrap()
     .into()

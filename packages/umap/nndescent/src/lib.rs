@@ -475,8 +475,8 @@ impl NNDescent {
 
         // Forward edges (from diversified neighbor graph)
         let diversified = diversify(
-            &indices,
-            &distances,
+            indices,
+            distances,
             &self.raw_data,
             self.distance_func,
             self.diversify_prob,
