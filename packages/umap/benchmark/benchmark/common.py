@@ -7,37 +7,37 @@ import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 
-# Path constants
-PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))  # benchmark/benchmark/
-BENCHMARK_DIR = os.path.dirname(PACKAGE_DIR)  # benchmark/
-PROJECT_DIR = os.path.dirname(BENCHMARK_DIR)  # packages/umap/
-RESULTS_BASE = os.path.join(BENCHMARK_DIR, "results")
+PACKAGE_DIR = Path(__file__).parent        # benchmark/benchmark/
+BENCHMARK_DIR = PACKAGE_DIR.parent         # benchmark/
+PROJECT_ROOT = BENCHMARK_DIR.parent.parent.parent  # repo root
+RESULTS_BASE = BENCHMARK_DIR / "results"
 
 
-def results_dir(suite):
+def results_dir(suite) -> Path:
     """Return the results directory for a benchmark suite (umap or nndescent)."""
-    return os.path.join(RESULTS_BASE, suite)
+    return RESULTS_BASE / suite
 
 
-def datasets_dir(suite):
+def datasets_dir(suite) -> Path:
     """Return the datasets directory for a benchmark suite."""
-    return os.path.join(RESULTS_BASE, suite, "datasets")
+    return RESULTS_BASE / suite / "datasets"
 
 
-def results_csv(suite):
+def results_csv(suite) -> Path:
     """Return the results CSV path for a benchmark suite."""
-    return os.path.join(RESULTS_BASE, suite, "results.csv")
+    return RESULTS_BASE / suite / "results.csv"
 
 
-def report_html(suite):
+def report_html(suite) -> Path:
     """Return the report HTML path for a benchmark suite."""
-    return os.path.join(RESULTS_BASE, suite, "report.html")
+    return RESULTS_BASE / suite / "report.html"
 
 
-def rust_binary_path(binary_name):
+def rust_binary_path(binary_name) -> Path:
     """Return path to a compiled Rust benchmark binary."""
-    return os.path.join(PROJECT_DIR, "target", "release", binary_name)
+    return PROJECT_ROOT / "target" / "release" / binary_name
 
 
 def bench_env(threads="multi"):
@@ -54,7 +54,7 @@ def run_cmd(cmd, desc="", timeout=None, threads="multi"):
     """Run a command, print it, return (success, duration)."""
     print(f"\n{'=' * 60}")
     print(f"  {desc}")
-    print(f"  $ {' '.join(cmd)}")
+    print(f"  $ {' '.join(str(c) for c in cmd)}")
     if threads == "single":
         print("  (single-thread mode)")
     print(f"{'=' * 60}")
@@ -79,26 +79,25 @@ def run_bench_and_collect(cmd, desc, threads, timeout):
     Returns the parsed result dict with 'threads' added, or None on failure.
     """
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-        json_path = f.name
+        json_path = Path(f.name)
     try:
-        full_cmd = cmd + ["--output", json_path]
+        full_cmd = cmd + ["--output", str(json_path)]
         ok, _ = run_cmd(full_cmd, desc, timeout=timeout, threads=threads)
         if not ok:
             return None
-        with open(json_path) as f:
-            result = json.load(f)
+        result = json.loads(json_path.read_text())
         result["threads"] = threads
         return result
     finally:
-        if os.path.exists(json_path):
-            os.remove(json_path)
+        if json_path.exists():
+            json_path.unlink()
 
 
 class ResultsCSV:
     """Progressive CSV writer that appends each result as it arrives."""
 
     def __init__(self, path, columns):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.columns = columns
         self._file = open(path, "w", newline="")
