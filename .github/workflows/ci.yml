@@ -81,7 +81,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: python-dist
-          path: packages/backend/dist/
+          path: dist/
 
       - name: Upload docs artifact
         uses: actions/upload-pages-artifact@v4
