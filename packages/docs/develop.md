@@ -99,8 +99,7 @@ cd packages/backend
 uv run pytest
 
 # Rust tests
-cd packages/density-clustering
-cargo test
+cargo test --workspace
 ```
 
 To run all JavaScript, Python, and Rust tests at once:

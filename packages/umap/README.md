@@ -9,7 +9,7 @@ This implementation is based on the original Python libraries:
 
 ## Structure
 
-This workspace contains three crates:
+This directory contains four crates that are members of the top-level Cargo workspace:
 
 ### `nndescent/`
 
@@ -34,3 +34,7 @@ UMAP dimensionality reduction, ported from umap-learn.
 ### `umap-wasm/`
 
 WebAssembly bindings via `wasm-bindgen`, exposing both UMAP and NNDescent to JavaScript/TypeScript.
+
+### `benchmark/`
+
+Native benchmark binaries (`umap-bench`, `nndescent-bench`) for performance testing.

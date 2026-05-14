@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = [
+    "packages/density-clustering/density_clustering",
+    "packages/density-clustering/density_clustering_bin",
+    "packages/density-clustering/density_clustering_wasm",
+    "packages/umap/nndescent",
+    "packages/umap/umap",
+    "packages/umap/umap-wasm",
+    "packages/umap/benchmark",
+]
