@@ -114,11 +114,11 @@ def make_server(
         command = query["type"]
         with duckdb_connection.cursor() as cursor:
             try:
-                result = cursor.execute(sql)
+                result = cursor.sql(sql)
                 if command == "exec":
                     return JSONResponse({})
                 elif command == "arrow":
-                    buf = arrow_to_bytes(result.arrow())
+                    buf = arrow_to_bytes(result.fetch_arrow_reader())
                     return Response(
                         buf, headers={"Content-Type": "application/octet-stream"}
                     )

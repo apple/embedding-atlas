@@ -1,13 +1,15 @@
 # Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import logging
-from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 import inquirer
+import narwhals as nw
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
+from narwhals.typing import IntoDataFrame
 
 logger = logging.getLogger("embedding-atlas")
 
@@ -63,34 +65,19 @@ def load_huggingface_data(filename: str, splits: list[str] | None) -> pd.DataFra
     return df
 
 
-def arrow_to_bytes(arrow: pa.Table | pa.RecordBatchReader):
-    if isinstance(arrow, pa.Table):
-        # DuckDB version < 1.4.0 returns a pa.Table
-        sink = pa.BufferOutputStream()
-        with pa.ipc.new_stream(sink, arrow.schema) as writer:
-            writer.write(arrow)
-        return sink.getvalue().to_pybytes()
-    else:
-        sink = pa.BufferOutputStream()
-        with pa.ipc.new_stream(sink, arrow.schema) as writer:
-            for batch in arrow:
-                writer.write_batch(batch)
-        return sink.getvalue().to_pybytes()
+def arrow_to_bytes(arrow: pa.RecordBatchReader):
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, arrow.schema) as writer:
+        for batch in arrow:
+            writer.write_batch(batch)
+    return sink.getvalue().to_pybytes()
 
 
-def to_parquet_bytes(df: pd.DataFrame) -> bytes:
-    class NoCloseBytesIO(BytesIO):
-        def close(self):
-            pass
-
-        def actually_close(self):
-            super().close()
-
-    bytes_io = NoCloseBytesIO()
-    df.to_parquet(bytes_io)
-    result = bytes_io.getvalue()
-    bytes_io.actually_close()
-    return result
+def to_parquet_bytes(df: IntoDataFrame) -> bytes:
+    arrow_table = nw.from_native(df, eager_only=True).to_arrow()
+    sink = pa.BufferOutputStream()
+    pq.write_table(arrow_table, sink)
+    return sink.getvalue().to_pybytes()
 
 
 def apply_logging_config():

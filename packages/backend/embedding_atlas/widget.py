@@ -6,13 +6,15 @@ import pathlib
 from typing import Any, Unpack
 
 import duckdb
+import narwhals as nw
+from narwhals.typing import IntoDataFrame
 
 from .options import EmbeddingAtlasOptions, make_embedding_atlas_props
 from .utils import arrow_to_bytes
 
 try:
     import anywidget
-    import traitlets
+    from traitlets import traitlets
 except ImportError:
     print(
         "⚠️ The widget depends on anywidget. Please run `pip install anywidget`, then try again."
@@ -34,7 +36,7 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
 
     def __init__(
         self,
-        data_frame: Any,
+        data_frame: IntoDataFrame,
         *,
         connection: duckdb.DuckDBPyConnection | None = None,
         **options: Unpack[EmbeddingAtlasOptions],
@@ -108,13 +110,13 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
         if connection is None:
             connection = duckdb.connect()
 
-        connection.sql(
+        connection.execute(
             f"CREATE TEMPORARY TABLE {table_name} AS SELECT * FROM data_frame"
         )
 
         if options.get("row_id") is None:
             # Create the row_id_column if it does not exist.
-            connection.sql(
+            connection.execute(
                 f"""
                 CREATE TEMPORARY SEQUENCE row_id_sequence MINVALUE 0 START 0;
                 ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {row_id_column} INTEGER DEFAULT nextval('row_id_sequence');
@@ -127,6 +129,7 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
 
         self._connection: duckdb.DuckDBPyConnection = connection
         self._table_name = table_name
+        self._native_namespace = nw.get_native_namespace(data_frame)
         self.on_msg(self._handle_custom_msg)
 
     def selection(self, format: str = "dataframe") -> Any:
@@ -137,15 +140,16 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
             format: the format of the returned selection, 'dataframe', 'arrow', or 'predicate'
         """
         if self._predicate is not None:
-            self._connection.execute(
+            result = self._connection.sql(
                 f"SELECT * FROM {self._table_name} WHERE {self._predicate}"
             )
         else:
-            self._connection.execute(f"SELECT * FROM {self._table_name}")
+            result = self._connection.sql(f"SELECT * FROM {self._table_name}")
         if format == "dataframe":
-            return self._connection.fetch_df()
+            reader = result.fetch_arrow_reader()
+            return nw.to_native(nw.from_arrow(reader, backend=self._native_namespace))
         elif format == "arrow":
-            return self._connection.fetch_arrow_table()
+            return result.fetch_arrow_reader()
         else:
             raise ValueError(
                 "invalid format, supported options are 'dataframe', 'arrow', and 'predicate'"
@@ -158,14 +162,14 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
 
         try:
             if command == "arrow":
-                result = self._connection.query(sql).arrow()
+                result = self._connection.sql(sql).fetch_arrow_reader()
                 buf = arrow_to_bytes(result)
                 self.send({"type": "arrow", "uuid": uuid}, buffers=[buf])
             elif command == "exec":
                 self._connection.execute(sql)
                 self.send({"type": "exec", "uuid": uuid})
             elif command == "json":
-                result = self._connection.query(sql).df()
+                result = self._connection.sql(sql).to_df()
                 json = result.to_dict(orient="records")
                 self.send({"type": "json", "uuid": uuid, "result": json})
             else:
