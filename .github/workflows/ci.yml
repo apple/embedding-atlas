@@ -71,6 +71,10 @@ jobs:
       - name: Run code format check
         run: npm run check-format
 
+      # Add -- -D warnings to treat warnings as errors once existing warnings are resolved
+      - name: Run Clippy
+        run: cargo clippy --workspace
+
       - name: Upload node package artifact
         uses: actions/upload-artifact@v6
         with:
