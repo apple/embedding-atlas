@@ -16,16 +16,6 @@ fn polygon_bounding_rect(polygons: &[Vec<(f64, f64)>]) -> (f64, f64, f64, f64) {
     (min_x, min_y, max_x, max_y)
 }
 
-fn polygon_area(polygon: &[(f64, f64)]) -> f64 {
-    let mut sum: f64 = 0.0;
-    for i in 0..polygon.len() {
-        let (x1, y1) = polygon[i];
-        let (x2, y2) = polygon[(i + 1) % polygon.len()];
-        sum += x1 * y2 - x2 * y1;
-    }
-    sum.abs() / 2.0
-}
-
 fn polygon_rect_overlapping_area(polygon: &[(f64, f64)], rect: &(f64, f64, f64, f64)) -> f64 {
     let mut sum: f64 = 0.0;
     for i in 0..polygon.len() {
@@ -42,7 +32,6 @@ fn polygon_rect_overlapping_area(polygon: &[(f64, f64)], rect: &(f64, f64, f64, 
 
 fn rects_from_multi_polygon_recursion2(
     shape: &[Vec<(f64, f64)>],
-    _total_area: f64,
     rect: (f64, f64, f64, f64),
     level: u8,
     output: &mut Vec<(f64, f64, f64, f64)>,
@@ -66,8 +55,8 @@ fn rects_from_multi_polygon_recursion2(
             [(rect.0, rect.1, rect.2, mid), (rect.0, mid, rect.2, rect.3)]
         };
         let cnt = output.len();
-        let r1 = rects_from_multi_polygon_recursion2(shape, _total_area, r1, level + 1, output);
-        let r2 = rects_from_multi_polygon_recursion2(shape, _total_area, r2, level + 1, output);
+        let r1 = rects_from_multi_polygon_recursion2(shape, r1, level + 1, output);
+        let r2 = rects_from_multi_polygon_recursion2(shape, r2, level + 1, output);
         if r1 && r2 {
             output.truncate(cnt);
             output.push(rect);
@@ -105,8 +94,7 @@ fn rects_from_multi_polygon2(shape: &[Vec<(f64, f64)>]) -> Vec<(f64, f64, f64, f
 
     let rect = polygon_bounding_rect(shape);
 
-    let total_area: f64 = shape.iter().map(|s| polygon_area(s)).sum();
-    rects_from_multi_polygon_recursion2(shape, total_area, rect, 0, &mut rects);
+    rects_from_multi_polygon_recursion2(shape, rect, 0, &mut rects);
 
     // Attempt to union adjacent rects.
     loop {
