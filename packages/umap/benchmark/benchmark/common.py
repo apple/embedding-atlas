@@ -9,8 +9,8 @@ import tempfile
 import time
 from pathlib import Path
 
-PACKAGE_DIR = Path(__file__).parent        # benchmark/benchmark/
-BENCHMARK_DIR = PACKAGE_DIR.parent         # benchmark/
+PACKAGE_DIR = Path(__file__).parent  # benchmark/benchmark/
+BENCHMARK_DIR = PACKAGE_DIR.parent  # benchmark/
 PROJECT_ROOT = BENCHMARK_DIR.parent.parent.parent  # repo root
 RESULTS_BASE = BENCHMARK_DIR / "results"
 
