@@ -23,7 +23,7 @@ rayon = "1.11"
 pollster = "0.4"
 wgpu = "24"
 bytemuck = { version = "1", features = ["derive"] }
-wasm-bindgen = "0.2.114"
+wasm-bindgen = "=0.2.121"
 js-sys = "0.3.69"
 serde = "1.0.197"
 num-traits = "0.2.18"
