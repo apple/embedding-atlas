@@ -1,22 +1,25 @@
 [package]
 name = "nndescent"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
 description = "Rust port of PyNNDescent - fast approximate nearest neighbor search"
-license = "MIT"
 
 [features]
 default = []
 gpu = ["wgpu", "bytemuck"]
 
 [dependencies]
-ndarray = { version = "0.17", features = ["rayon"] }
-rayon = "1.11"
+ndarray = { workspace = true, features = ["rayon"] }
+rayon = { workspace = true }
 ordered-float = "5.2"
-getrandom = "0.4"
+getrandom = { workspace = true }
 wide = "1.2.0"
-pollster = "0.4"
-wgpu = { version = "24", optional = true }
-bytemuck = { version = "1", features = ["derive"], optional = true }
+pollster = { workspace = true }
+wgpu = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
 
-[dev-dependencies]
+[lints]
+workspace = true

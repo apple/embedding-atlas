@@ -38,14 +38,6 @@ pub fn read_f32_array(path: &str, width: i32, height: i32) -> Result<Array2D<f32
     unsafe { unsafe_read_array::<f32>(path, width, height) }
 }
 
-pub fn write_f32_array(path: &str, array: &Array2D<f32>) -> Result<(), std::io::Error> {
-    unsafe { unsafe_write_array::<f32>(path, array) }
-}
-
-pub fn read_i32_array(path: &str, width: i32, height: i32) -> Result<Array2D<i32>, std::io::Error> {
-    unsafe { unsafe_read_array::<i32>(path, width, height) }
-}
-
 pub fn write_i32_array(path: &str, array: &Array2D<i32>) -> Result<(), std::io::Error> {
     unsafe { unsafe_write_array::<i32>(path, array) }
 }

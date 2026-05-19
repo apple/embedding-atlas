@@ -1,9 +1,11 @@
 [package]
 name = "umap"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
 description = "UMAP - Uniform Manifold Approximation and Projection for Dimension Reduction"
-license = "MIT"
 
 [features]
 default = []
@@ -11,8 +13,11 @@ gpu = ["nndescent/gpu", "wgpu", "bytemuck"]
 
 [dependencies]
 nndescent = { path = "../nndescent" }
-ndarray = { version = "0.17", features = ["rayon"] }
-rayon = "1.11"
-pollster = "0.4"
-wgpu = { version = "24", optional = true }
-bytemuck = { version = "1", features = ["derive"], optional = true }
+ndarray = { workspace = true, features = ["rayon"] }
+rayon = { workspace = true }
+pollster = { workspace = true }
+wgpu = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
+
+[lints]
+workspace = true

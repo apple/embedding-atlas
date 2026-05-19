@@ -27,9 +27,9 @@ impl Ord for QueueItem {
             return Ordering::Equal;
         }
         if self.density > other.density {
-            return Ordering::Greater;
+            Ordering::Greater
         } else {
-            return Ordering::Less;
+            Ordering::Less
         }
     }
 }
@@ -123,7 +123,7 @@ fn find_initial_clusters(density_map: &Array2D<f32>) -> (Array2D<i32>, Vec<Clust
     let mut cluster_map = Array2D::<i32>::new_with_constant(width, height, -1);
 
     // Find all local maxima.
-    let local_maxima = find_local_maxima(&density_map);
+    let local_maxima = find_local_maxima(density_map);
 
     // Initialize BFS seeds and clusters with the local maxima.
     let mut heap = BinaryHeap::<QueueItem>::new();
@@ -133,9 +133,9 @@ fn find_initial_clusters(density_map: &Array2D<f32>) -> (Array2D<i32>, Vec<Clust
         let cluster = clusters.len() as i32;
         clusters.push(ClusterSummary::zero());
         heap.push(QueueItem {
-            location: location,
+            location,
             density: density_map[location],
-            cluster: cluster,
+            cluster,
         });
         cluster_map[location] = cluster;
     }
@@ -166,8 +166,8 @@ fn find_initial_clusters(density_map: &Array2D<f32>) -> (Array2D<i32>, Vec<Clust
             cluster_map[(px, py)] = cluster;
             heap.push(QueueItem {
                 location: (px, py),
-                density: density,
-                cluster: cluster,
+                density,
+                cluster,
             });
         }
         // Update cluster info.
@@ -175,7 +175,7 @@ fn find_initial_clusters(density_map: &Array2D<f32>) -> (Array2D<i32>, Vec<Clust
         max_heap_size = max_heap_size.max(heap.len());
     }
 
-    return (cluster_map, clusters);
+    (cluster_map, clusters)
 }
 
 fn find_unlabeled_clusters(
@@ -314,7 +314,7 @@ impl ClusterGraph {
     fn new_with_cluster_map(
         density_map: &Array2D<f32>,
         cluster_map: &Array2D<i32>,
-        summaries: &Vec<ClusterSummary>,
+        summaries: &[ClusterSummary],
     ) -> ClusterGraph {
         let width = density_map.width();
         let height = density_map.height();
@@ -353,22 +353,22 @@ impl ClusterGraph {
         for id in 0..summaries.len() as i32 {
             cluster_ids.insert(id, vec![id]);
             summary_map.insert(id, summaries[id as usize]);
-            neighbor_map.entry(id).or_insert_with(|| HashMap::new());
+            neighbor_map.entry(id).or_default();
         }
 
         ClusterGraph {
-            neighbor_map: neighbor_map,
-            cluster_ids: cluster_ids,
-            summary_map: summary_map,
+            neighbor_map,
+            cluster_ids,
+            summary_map,
             min_edge_distance_cache: HashMap::new(),
         }
     }
 
-    fn node_ids<'a>(&'a self) -> impl Iterator<Item = i32> + 'a {
+    fn node_ids(&self) -> impl Iterator<Item = i32> + '_ {
         self.neighbor_map.keys().copied()
     }
 
-    fn neighbors<'a>(&'a self, node: i32) -> impl Iterator<Item = i32> + 'a {
+    fn neighbors(&self, node: i32) -> impl Iterator<Item = i32> + '_ {
         self.neighbor_map[&node].keys().copied()
     }
 
@@ -380,7 +380,7 @@ impl ClusterGraph {
         self.neighbor_map[&node]
             .values()
             .map(|s| s.max_density)
-            .max_by(|a, b| f32::total_cmp(a, b))
+            .max_by(f32::total_cmp)
             .unwrap_or(0.0)
     }
 
@@ -397,7 +397,7 @@ impl ClusterGraph {
                     None
                 }
             })
-            .max_by(|a, b| f32::total_cmp(a, b))
+            .max_by(f32::total_cmp)
             .unwrap_or(0.0)
     }
 
@@ -453,11 +453,11 @@ impl ClusterGraph {
 
     fn min_distance_to_edge(&mut self, node: i32) -> Option<(i32, f32)> {
         if self.min_edge_distance_cache.contains_key(&node) {
-            return self.min_edge_distance_cache[&node];
+            self.min_edge_distance_cache[&node]
         } else {
             let r = self.compute_min_distance_to_edge(node);
             self.min_edge_distance_cache.insert(node, r);
-            return r;
+            r
         }
     }
 }
@@ -558,19 +558,19 @@ pub fn find_clusters(
 
     // Find initial clusters from local maxima.
     let (mut cluster_map, clusters) = if use_disjoint_set {
-        find_initial_clusters_disjoint_set(&density_map)
+        find_initial_clusters_disjoint_set(density_map)
     } else {
-        let (mut cluster_map, mut clusters) = find_initial_clusters(&density_map);
+        let (mut cluster_map, mut clusters) = find_initial_clusters(density_map);
 
         // Then treat left-over pieces as clusters as well.
         if add_unlabeled {
-            find_unlabeled_clusters(&density_map, &mut cluster_map, &mut clusters);
+            find_unlabeled_clusters(density_map, &mut cluster_map, &mut clusters);
         }
         (cluster_map, clusters)
     };
 
     // Construct cluster graph and do neighbor grouping.
-    let mut graph = ClusterGraph::new_with_cluster_map(&density_map, &cluster_map, &clusters);
+    let mut graph = ClusterGraph::new_with_cluster_map(density_map, &cluster_map, &clusters);
 
     if union_threshold > 0.0 {
         cluster_neighbor_map_union(&mut graph, union_threshold);

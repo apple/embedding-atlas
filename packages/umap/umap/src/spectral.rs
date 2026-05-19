@@ -430,8 +430,8 @@ fn lobpcg_solve(
                 .zip(constraint.iter())
                 .map(|(a, b)| a * b)
                 .sum();
-            for i in 0..block.nrows() {
-                block.cols[j][i] -= dot * constraint[i];
+            for (i, &c) in constraint.iter().enumerate().take(block.nrows()) {
+                block.cols[j][i] -= dot * c;
             }
         }
     };

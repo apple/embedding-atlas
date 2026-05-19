@@ -27,7 +27,7 @@ pub fn init_rp_tree(
     let n_vertices = heap.indices.nrows();
     let n_neighbors = heap.indices.ncols();
     let n_threads = rayon::current_num_threads();
-    let block_size = (n_vertices + n_threads - 1) / n_threads;
+    let block_size = n_vertices.div_ceil(n_threads);
 
     // SAFETY: Raw pointers cast to usize to cross the Send boundary into par_iter.
     // Soundness relies on the bucketed parallel scheme: in Phase 1, each thread only
@@ -155,7 +155,7 @@ pub fn new_build_candidates(
     let mut old_candidate_priority = Array2::from_elem((n_vertices, max_candidates), f32::INFINITY);
 
     let n_threads = rayon::current_num_threads();
-    let block_size = (n_vertices + n_threads - 1) / n_threads;
+    let block_size = n_vertices.div_ceil(n_threads);
 
     // Capture base RNG state; each thread derives its own RNG from base_state + thread_id
     let base_state = rng.state;
@@ -290,8 +290,8 @@ pub fn new_build_candidates(
     // Phase 2: Each thread applies cross-block updates from all source threads' buckets for its block
     (0..n_threads).into_par_iter().for_each(|t| {
         // Gather all updates targeting thread t's block from all source threads
-        for source_thread in 0..n_threads {
-            for &(target, candidate, d, is_new) in &cross_buckets[source_thread][t] {
+        for bucket in cross_buckets.iter().take(n_threads) {
+            for &(target, candidate, d, is_new) in &bucket[t] {
                 let tu = target as usize;
                 let row_off = tu * max_candidates;
                 if is_new {
@@ -367,7 +367,7 @@ fn process_candidates(
     let max_new = new_candidates.ncols();
     let max_old = old_candidates.ncols();
     let n_threads = rayon::current_num_threads();
-    let block_size = (n_vertices + n_threads - 1) / n_threads;
+    let block_size = n_vertices.div_ceil(n_threads);
 
     // SAFETY: Raw pointers cast to usize for the bucketed parallel scheme.
     // Phase 1: each thread writes only to heap rows in its own block; cross-block
@@ -491,8 +491,8 @@ fn process_candidates(
         .into_par_iter()
         .map(|t| {
             let mut local_changes = 0usize;
-            for source in 0..n_threads {
-                for &(target, source_idx, d) in &results[source].1[t] {
+            for result in results.iter().take(n_threads) {
+                for &(target, source_idx, d) in &result.1[t] {
                     let tu = target as usize;
                     let off = tu * n_neighbors;
                     let dists = unsafe {

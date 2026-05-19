@@ -120,12 +120,12 @@ fn angular_random_projection_split(
 
     // Normalize hyperplane
     let mut hp_norm = 0.0f32;
-    for d in 0..dim {
-        hp_norm += hyperplane[d] * hyperplane[d];
+    for &h in hyperplane.iter().take(dim) {
+        hp_norm += h * h;
     }
     let inv_hp_norm = 1.0 / hp_norm.sqrt().max(EPS);
-    for d in 0..dim {
-        hyperplane[d] *= inv_hp_norm;
+    for h in hyperplane.iter_mut().take(dim) {
+        *h *= inv_hp_norm;
     }
 
     // Split points by margin (dot product with hyperplane)
@@ -138,7 +138,7 @@ fn angular_random_projection_split(
         let margin = dot_product(&hyperplane, row);
 
         if margin.abs() < EPS {
-            if rng.tau_rand_int().unsigned_abs() % 2 == 0 {
+            if rng.tau_rand_int().unsigned_abs().is_multiple_of(2) {
                 left_indices.push(idx);
             } else {
                 right_indices.push(idx);
@@ -155,7 +155,7 @@ fn angular_random_projection_split(
         left_indices.clear();
         right_indices.clear();
         for &idx in indices {
-            if rng.tau_rand_int().unsigned_abs() % 2 == 0 {
+            if rng.tau_rand_int().unsigned_abs().is_multiple_of(2) {
                 left_indices.push(idx);
             } else {
                 right_indices.push(idx);
@@ -214,7 +214,7 @@ fn euclidean_random_projection_split(
         let margin = dot_product(&hyperplane, row) + offset;
 
         if margin.abs() < EPS {
-            if rng.tau_rand_int().unsigned_abs() % 2 == 0 {
+            if rng.tau_rand_int().unsigned_abs().is_multiple_of(2) {
                 left_indices.push(idx);
             } else {
                 right_indices.push(idx);
@@ -231,7 +231,7 @@ fn euclidean_random_projection_split(
         left_indices.clear();
         right_indices.clear();
         for &idx in indices {
-            if rng.tau_rand_int().unsigned_abs() % 2 == 0 {
+            if rng.tau_rand_int().unsigned_abs().is_multiple_of(2) {
                 left_indices.push(idx);
             } else {
                 right_indices.push(idx);
@@ -439,7 +439,7 @@ pub fn make_forest(
     angular: bool,
     max_depth: usize,
 ) -> Vec<FlatTree> {
-    let leaf_size = leaf_size.unwrap_or_else(|| (5 * n_neighbors).max(60).min(256));
+    let leaf_size = leaf_size.unwrap_or_else(|| (5 * n_neighbors).clamp(60, 256));
 
     // Generate independent RNG states for each tree
     let mut master_rng = TauRng::from_state(*rng_state);
@@ -851,7 +851,7 @@ pub async fn make_forest_gpu(
     max_depth: usize,
     gpu: &crate::gpu::GpuContext,
 ) -> Vec<FlatTree> {
-    let leaf_size = leaf_size.unwrap_or_else(|| (5 * n_neighbors).max(60).min(256));
+    let leaf_size = leaf_size.unwrap_or_else(|| (5 * n_neighbors).clamp(60, 256));
 
     let mut master_rng = TauRng::from_state(*rng_state);
     let rng_states: Vec<[i64; 3]> = (0..n_trees)
@@ -1030,9 +1030,9 @@ fn euclidean_hub_split(
     if best_n_left == 0 || best_n_right == 0 {
         best_n_left = 0;
         best_n_right = 0;
-        for i in 0..n_points {
-            best_side[i] = (rng.tau_rand_int().unsigned_abs() % 2) as i8;
-            if best_side[i] == 0 {
+        for side in best_side.iter_mut().take(n_points) {
+            *side = (rng.tau_rand_int().unsigned_abs() % 2) as i8;
+            if *side == 0 {
                 best_n_left += 1;
             } else {
                 best_n_right += 1;
@@ -1109,12 +1109,12 @@ fn angular_hub_split(
 
             // Normalize hyperplane vector
             let mut hp_norm = 0.0f32;
-            for d in 0..dim {
-                hp_norm += hyperplane[d] * hyperplane[d];
+            for &h in hyperplane.iter().take(dim) {
+                hp_norm += h * h;
             }
             let inv_hp_norm = 1.0 / hp_norm.sqrt().max(EPS);
-            for d in 0..dim {
-                hyperplane[d] *= inv_hp_norm;
+            for h in hyperplane.iter_mut().take(dim) {
+                *h *= inv_hp_norm;
             }
 
             // Project all points
@@ -1160,9 +1160,9 @@ fn angular_hub_split(
     if best_n_left == 0 || best_n_right == 0 {
         best_n_left = 0;
         best_n_right = 0;
-        for i in 0..n_points {
-            best_side[i] = (rng.tau_rand_int().unsigned_abs() % 2) as i8;
-            if best_side[i] == 0 {
+        for side in best_side.iter_mut().take(n_points) {
+            *side = (rng.tau_rand_int().unsigned_abs() % 2) as i8;
+            if *side == 0 {
                 best_n_left += 1;
             } else {
                 best_n_right += 1;

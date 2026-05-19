@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = [
+    "packages/density-clustering/density_clustering",
+    "packages/density-clustering/density_clustering_bin",
+    "packages/density-clustering/density_clustering_wasm",
+    "packages/umap/nndescent",
+    "packages/umap/umap",
+    "packages/umap/umap-wasm",
+    "packages/umap/benchmark",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/apple/embedding-atlas"
+authors = ["Apple Inc."]
+
+[workspace.dependencies]
+ndarray = "0.17"
+rayon = "1.11"
+pollster = "0.4"
+wgpu = "24"
+bytemuck = { version = "1", features = ["derive"] }
+wasm-bindgen = "=0.2.121"
+js-sys = "0.3.69"
+serde = "1.0.197"
+num-traits = "0.2.18"
+getrandom = "0.4"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
