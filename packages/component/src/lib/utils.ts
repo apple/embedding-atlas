@@ -48,8 +48,9 @@ export function throttleTooltip<T, U>(func: (input: T) => Promise<U>, isVisible:
       await func(input);
     } catch (e) {
       console.error(e);
+    } finally {
+      running = false;
     }
-    running = false;
     if (next !== undefined) {
       let v = next;
       next = undefined;
