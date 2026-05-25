@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "uv run python scripts/download_duckdb_extensions.py && vite build && vite build --config vite.config.lib.js",
     "check": "svelte-check",
+    "test": "vitest run",
     "package": "npm run build && publint",
     "preview": "vite preview"
   },
@@ -73,6 +74,7 @@
     "unplugin-icons": "^23.0.1",
     "vite": "^8.0.1",
     "vite-plugin-dts": "^4.5.4",
-    "vite-plugin-wasm": "^3.6.0"
+    "vite-plugin-wasm": "^3.6.0",
+    "vitest": "^4.1.0"
   }
 }
