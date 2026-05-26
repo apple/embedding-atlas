@@ -243,7 +243,7 @@
   let pointSize = $derived(viewingParams.pointSize);
 
   let needsUpdateLabels = true;
-  let previousLabels: Label[] | null = $state(null);
+  let previousLabels: Label[] | null = null;
 
   $effect.pre(() => {
     if (labels !== previousLabels) {
