@@ -243,8 +243,14 @@
   let pointSize = $derived(viewingParams.pointSize);
 
   let needsUpdateLabels = true;
+  let previousLabels: Label[] | null = null;
 
   $effect.pre(() => {
+    if (labels !== previousLabels) {
+      previousLabels = labels;
+      needsUpdateLabels = true;
+    }
+
     let needsRender = renderer?.setProps({
       mode: mode,
       colorScheme: colorScheme,
@@ -265,17 +271,18 @@
 
     if (needsRender) {
       setNeedsRender();
-      if (
-        (autoLabelEnabled !== false || labels != null) &&
-        needsUpdateLabels &&
-        renderer != null &&
-        data.x != null &&
-        data.x.length > 0 &&
-        defaultViewportState != null
-      ) {
-        needsUpdateLabels = false;
-        updateLabels(defaultViewportState);
-      }
+    }
+
+    if (
+      (autoLabelEnabled !== false || labels != null) &&
+      needsUpdateLabels &&
+      renderer != null &&
+      data.x != null &&
+      data.x.length > 0 &&
+      defaultViewportState != null
+    ) {
+      needsUpdateLabels = false;
+      updateLabels(defaultViewportState);
     }
   });
 
