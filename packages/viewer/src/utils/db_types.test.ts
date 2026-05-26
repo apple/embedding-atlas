@@ -31,6 +31,13 @@ describe("isFloatingPointDBType", () => {
       expect(isFloatingPointDBType(t), t).toBe(false);
     }
   });
+
+  test("returns false for arrays of decimals", () => {
+    // DECIMAL(18,3)[] is an array column, not a plain numeric scalar, so it must
+    // not be treated as a continuous floating-point type.
+    expect(isFloatingPointDBType("DECIMAL(18,3)[]")).toBe(false);
+    expect(isFloatingPointDBType("NUMERIC(5,2)[]")).toBe(false);
+  });
 });
 
 describe("jsTypeFromDBType", () => {
@@ -39,6 +46,8 @@ describe("jsTypeFromDBType", () => {
     expect(jsTypeFromDBType("FLOAT")).toBe("number");
     expect(jsTypeFromDBType("INTEGER")).toBe("number");
     expect(jsTypeFromDBType("BIGINT")).toBe("number");
+    expect(jsTypeFromDBType("DECIMAL(18,3)")).toBe("number");
+    expect(jsTypeFromDBType("NUMERIC(5,2)")).toBe("number");
   });
 
   test("classifies string, list, and date types", () => {
@@ -51,5 +60,7 @@ describe("jsTypeFromDBType", () => {
 
   test("returns null for unknown types", () => {
     expect(jsTypeFromDBType("BLOB")).toBe(null);
+    // Arrays of decimals are not plain numeric scalars and have no JS array type here.
+    expect(jsTypeFromDBType("DECIMAL(18,3)[]")).toBe(null);
   });
 });

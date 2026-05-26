@@ -13,7 +13,7 @@ export interface ColumnDesc {
 export type JSType = "string" | "number" | "string[]" | "Date";
 
 export function jsTypeFromDBType(dbType: string): JSType | null {
-  if (numberTypes.has(dbType)) {
+  if (numberTypes.has(dbType) || decimalTypeRegex.test(dbType)) {
     return "number";
   } else if (stringTypes.has(dbType)) {
     return "string";
@@ -33,8 +33,13 @@ export function jsTypeFromDBType(dbType: string): JSType | null {
  * DECIMAL types with precision and scale, e.g. `DECIMAL(18,3)`.
  */
 export function isFloatingPointDBType(dbType: string): boolean {
-  return floatTypes.has(dbType) || /^(DECIMAL|NUMERIC)\(/.test(dbType);
+  return floatTypes.has(dbType) || decimalTypeRegex.test(dbType);
 }
+
+// DuckDB reports decimals as DECIMAL(p) or DECIMAL(p,s), with NUMERIC as an alias.
+// Anchored at both ends so array types such as DECIMAL(18,3)[] are not matched: we
+// only classify plain numeric scalars here, not arrays of them.
+const decimalTypeRegex = /^(DECIMAL|NUMERIC)\(\d+(\s*,\s*\d+)?\)$/;
 
 const floatTypes = new Set(["REAL", "FLOAT4", "FLOAT8", "FLOAT", "DOUBLE"]);
 
