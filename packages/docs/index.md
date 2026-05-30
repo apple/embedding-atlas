@@ -29,23 +29,23 @@ features:
     title: Automatic data clustering & labeling
     details: Interactively visualize and navigate overall data structure.
 
-  - icon: 🫧
-    title: Kernel density estimation & density contours
-    details: Easily explore and distinguish between dense regions of data and outliers.
-
-  - icon: 🧊
-    title: Order-independent transparency
-    details: Ensure clear, accurate rendering of overlapping points.
-
   - icon: 🔍
     title: Real-time search & nearest neighbors
     details: Find similar data to a given query or existing data point.
 
   - icon: 🚀
-    title: WebGPU implementation (with WebGL 2 fallback)
-    details: Fast, smooth performance (up to few million points) with modern rendering stack.
+    title: Smooth rendering at scale
+    details: Render up to a few million points with density contours, powered by WebGPU.
 
   - icon: 📊
-    title: Multi-coordinated views for metadata exploration
-    details: Interactively link and filter data across metadata columns.
+    title: Linked dashboards & cross-filtering
+    details: Arrange charts and configure cross-filtering between them. Compose custom charts via a chart spec.
+
+  - icon: 🧩
+    title: Multimodal data support
+    details: Built-in viewers for text, image, audio, numeric, categorical, and time columns.
+
+  - icon: 🤖
+    title: AI agent access via MCP
+    details: AI agents can query, chart, and explore your data via Model Context Protocol.
 ---

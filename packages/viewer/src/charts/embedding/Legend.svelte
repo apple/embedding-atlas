@@ -34,7 +34,9 @@
 
   class Client extends MosaicClient {
     reset() {
-      onStateChange({ selection: undefined });
+      onStateChange((draft) => {
+        delete draft.selection;
+      });
     }
   }
 
@@ -48,12 +50,18 @@
       } else {
         newSelection.add(item.label);
       }
-      onStateChange({ selection: Array.from(newSelection) });
+      onStateChange((draft) => {
+        draft.selection = Array.from(newSelection);
+      });
     } else {
       if (newSelection.has(item.label) && newSelection.size == 1) {
-        onStateChange({ selection: undefined });
+        onStateChange((draft) => {
+          delete draft.selection;
+        });
       } else {
-        onStateChange({ selection: [item.label] });
+        onStateChange((draft) => {
+          draft.selection = [item.label];
+        });
       }
     }
   }

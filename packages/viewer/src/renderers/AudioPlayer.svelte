@@ -75,13 +75,13 @@
   <!-- Play / Pause button -->
   <button
     onclick={togglePlay}
-    class="flex-none flex items-center justify-center w-7 h-7 rounded-full bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-800 hover:bg-slate-600 dark:hover:bg-slate-300 transition-colors"
+    class="flex-none flex items-center justify-center p-1.5 rounded-full bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-800 hover:bg-slate-600 dark:hover:bg-slate-300 transition-colors"
     aria-label={paused ? "Play" : "Pause"}
   >
     {#if paused}
-      <IconPlay class="w-3.5 h-3.5" />
+      <IconPlay class="w-4 h-4" />
     {:else}
-      <IconPause class="w-3.5 h-3.5" />
+      <IconPause class="w-4 h-4" />
     {/if}
   </button>
 

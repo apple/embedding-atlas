@@ -40,7 +40,7 @@
 
   // svelte-ignore state_referenced_locally
   let runtime = new ChartRuntime(context, () => {
-    onStateChange({}, "replace");
+    onStateChange({});
   });
   let { outputs, selections } = runtime;
 
@@ -49,11 +49,7 @@
   });
 
   $effect.pre(() => {
-    runtime.setSpec(spec);
-  });
-
-  $effect.pre(() => {
-    runtime.state.set(chartState);
+    runtime.update(spec, chartState);
   });
 
   // Non-position scales
@@ -118,19 +114,19 @@
                   onChange={(v) => {
                     switch (selection.type) {
                       case "x":
-                        onStateChange({
-                          [selection.key]: v?.x != undefined ? { x: v.x } : undefined,
+                        onStateChange((draft) => {
+                          draft[selection.key] = v?.x != undefined ? { x: v.x } : undefined;
                         });
                         break;
                       case "y":
-                        onStateChange({
-                          [selection.key]: v?.y != undefined ? { y: v.y } : undefined,
+                        onStateChange((draft) => {
+                          draft[selection.key] = v?.y != undefined ? { y: v.y } : undefined;
                         });
                         break;
                       case "xy":
-                        onStateChange({
-                          [selection.key]:
-                            v != undefined && v.x != undefined && v.y != undefined ? { x: v.x, y: v.y } : undefined,
+                        onStateChange((draft) => {
+                          draft[selection.key] =
+                            v != undefined && v.x != undefined && v.y != undefined ? { x: v.x, y: v.y } : undefined;
                         });
                         break;
                     }
@@ -157,7 +153,7 @@
     <div class="flex-none flex items-start gap-4 justify-end">
       {#if hasLegend}
         <div class="flex-1">
-          <div class="min-w-32 max-w-72">
+          <div class="min-w-32" class:max-w-72={colorScale.type != "band"}>
             <ColorLegend scale={colorScale} outputs={$outputs} theme={theme} />
           </div>
         </div>

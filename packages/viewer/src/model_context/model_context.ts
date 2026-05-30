@@ -1,398 +1,428 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import { validate } from "json-schema";
+import { get } from "svelte/store";
+import * as z from "zod";
+
+import { delay } from "@embedding-atlas/utils";
 import type { MCPTool, ModelContextAPI, ToolResponse } from "../app/mcp_server.js";
-import type { ChartContext, ChartDelegate } from "../charts/chart.js";
 import { renderersList } from "../renderers/renderer_types.js";
-import type { ColumnStyle } from "../renderers/types.js";
 import {
   schemaBuiltinChartSpec,
   schemaBuiltinChartState,
+  schemaBuiltinLayoutSpec,
   schemaColumnStyle,
-  schemaDashboardLayoutState,
-  schemaListLayoutState,
 } from "../schemas.js";
-import { findUnusedId } from "../utils/identifier.js";
+import type { EmbeddingAtlasStore } from "../stores/embedding_atlas_store.js";
 import { screenshot, type ScreenshotOptions } from "../utils/screenshot.js";
 
 export interface ModelContextDelegate {
-  context: ChartContext;
-  charts: Record<string, any>;
-  chartStates: Record<string, any>;
-  layout: string;
-  layoutStates: Record<string, any>;
-  chartDelegates: Map<string, Set<ChartDelegate>>;
   container: HTMLDivElement;
-  columnStyles: Record<string, ColumnStyle>;
 }
 
-export function provideModelContext(api: ModelContextAPI, delegate: ModelContextDelegate) {
-  let screenshotOptions: ScreenshotOptions = { maxWidth: 1568, maxHeight: 1568, pixelRatio: 2 };
+interface ToolDef<S extends z.core.$ZodShape = {}> {
+  args?: S;
+  description: string;
+  handler: (args: z.core.infer<z.ZodObject<S>>) => Promise<unknown>;
+}
 
-  let tools: MCPTool[] = [
-    {
-      name: "get_data_schema",
-      description: "Get the table name and columns",
-      inputSchema: { type: "object", additionalProperties: false },
-      execute: async () => {
-        return jsonResponse({
-          table: delegate.context.table,
-          columns: delegate.context.columns,
-        });
+export class EmbeddingAtlasControl {
+  private store: EmbeddingAtlasStore;
+  private delegate: ModelContextDelegate;
+  private tools: MCPTool[] = [];
+  private screenshotOptions: ScreenshotOptions = { maxWidth: 1568, maxHeight: 1568, pixelRatio: 2 };
+
+  constructor(store: EmbeddingAtlasStore, delegate: ModelContextDelegate) {
+    this.store = store;
+    this.delegate = delegate;
+    this.defineTools();
+  }
+
+  mcpTools(): MCPTool[] {
+    return this.tools;
+  }
+
+  private register<S extends z.core.$ZodShape>(name: string, def: ToolDef<S>): void {
+    let argsSchema = z.object(def.args ?? ({} as S));
+    this.tools.push({
+      name,
+      description: def.description,
+      inputSchema: z.toJSONSchema(argsSchema) as any,
+      execute: async (input) => {
+        input = argsSchema.parse(input);
+        let result = await def.handler(input);
+        return resultToToolResponse(result);
       },
-    },
-    {
-      name: "run_sql_query",
-      description: "Run a readonly SQL query in DuckDB.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          query: {
-            type: "string",
-            description: `The SQL query to run, must be readonly.`,
-          },
-        },
-        additionalProperties: false,
+    });
+  }
+
+  private defineTools() {
+    let store = this.store;
+
+    // Data
+
+    this.register("data_schema", {
+      description: "Get data schema including name of the primary table and columns",
+      handler: async () => ({
+        table: store.props.data.table,
+        columns: get(store.columns),
+      }),
+    });
+
+    this.register("data_query", {
+      args: {
+        query: z.string().describe("The SQL query to run. Must keep this readonly - the server does not enforce it."),
       },
-      execute: async (params: { query: string }) => {
-        let result = await delegate.context.coordinator.query(params.query);
-        return jsonResponse(result.toArray());
+      description: "Run a readonly SQL query in DuckDB",
+      handler: async ({ query }) => {
+        // TODO: enforce readonly query.
+        let result = await store.coordinator.query(query);
+        return result.toArray();
       },
-    },
-    {
-      name: "list_renderers",
-      description:
-        "Get a list of value renderers to display values in the table, cards, or tooltip. Renderers can be set in ColumnStyle",
-      inputSchema: { type: "object", additionalProperties: false },
-      execute: async () => {
-        return jsonResponse(renderersList);
+    });
+
+    // Get the full app state
+
+    this.register("app_state_get", {
+      description: "Get the full app state, including all charts, layouts, and column styles",
+      handler: async () => get(store.state),
+    });
+
+    // Column Style
+
+    this.register("column_style_list", {
+      description: unindent(`
+        Get a list of supported column styles (aka., renderers) for values in the table, instance cards, or tooltip.
+        Note that column styles only affect the default instance view card.
+        To customize cards further, you need to use a custom cardTemplate in the instance view.
+      `),
+      handler: async () => renderersList,
+    });
+
+    this.register("column_style_get", {
+      description: "Get column styles for all columns",
+      handler: async () => get(store.columnStyles),
+    });
+
+    this.register("column_style_schema", {
+      description: "Get the column style schema in JSON schema format",
+      handler: async () => schemaColumnStyle,
+    });
+
+    this.register("column_style_set", {
+      args: {
+        column: z.string(),
+        style: z
+          .any()
+          .describe(
+            "the column style, use column_style_schema to understand the schema; set to {} to reset to default style",
+          ),
       },
-    },
-    {
-      name: "get_column_styles",
-      description: "Get column styles for all columns.",
-      inputSchema: { type: "object", additionalProperties: false },
-      execute: async () => {
-        return jsonResponse(delegate.columnStyles);
+      description: "Set column style for a given column",
+      handler: async ({ column, style }) => {
+        store.setColumnStyle(column, style);
+        return { column, style };
       },
-    },
-    {
-      name: "set_column_style",
-      description: `Set column style for a given column`,
-      inputSchema: {
-        type: "object",
-        properties: {
-          column: { type: "string" },
-          style: {
-            type: "object",
-            description: `The column style. Schema: ${JSON.stringify(schemaColumnStyle)}. Use the list_renderers tool to get the list of renderers.`,
-          },
-        },
-        additionalProperties: false,
+    });
+
+    // Chart and Layout Tabs
+
+    this.register("chart_spec_schema", {
+      description: "Get the chart spec schema in JSON schema format",
+      handler: async () => schemaBuiltinChartSpec,
+    });
+
+    this.register("chart_state_schema", {
+      description: "Get the chart state schema in JSON schema format",
+      handler: async () => schemaBuiltinChartState,
+    });
+
+    this.register("chart_list", {
+      args: {
+        includeSpecs: z.boolean().default(false).describe("include the full specs, default false"),
       },
-      execute: async (params: { column: string; style: any }) => {
-        delegate.columnStyles = {
-          ...delegate.columnStyles,
-          [params.column]: params.style,
-        };
-        return textResponse("success");
-      },
-    },
-    {
-      name: "list_charts",
-      description: "List all charts in Embedding Atlas.",
-      inputSchema: { type: "object", additionalProperties: false },
-      execute: async () => {
-        return jsonResponse(delegate.charts);
-      },
-    },
-    {
-      name: "add_chart",
-      description: "Create a new chart with the specification, returns the id of the new chart.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          spec: {
-            type: "object",
-            description: `
-                The chart specification. Schema: ${JSON.stringify(schemaBuiltinChartSpec)}.
-                Notes:
-                - The data might be very large (>100k) points. Try not to create a chart that has no aggregation.
-                - Add "filter": "$filter" to appropriate layers to make the chart respond to filters from other charts. The filter is a cross-filter.
-                - When creating a chart, consider adding interactivity to it.
-                - The plot size is determined by the chart container by default. Refrain from setting it directly.
-                - Before adding a new chart, please list existing charts with list_charts at least once to ensure no duplication.
-              `,
-          },
-        },
-        additionalProperties: false,
-      },
-      execute: async (params: { spec: any }) => {
-        // Validate schema.
-        let validateResult = validate(params.spec, schemaBuiltinChartSpec);
-        if (validateResult.valid) {
-          let id = findUnusedId(delegate.charts);
-          delegate.charts = { ...delegate.charts, [id]: params.spec };
-          return jsonResponse({ id: id });
+      description: "List all charts in all layout tabs",
+      handler: async ({ includeSpecs }) => {
+        if (includeSpecs) {
+          return get(store.charts);
         } else {
-          return jsonResponse({ error: "Spec is invalid", details: validateResult.errors });
+          return Object.fromEntries(
+            Object.entries(get(store.charts)).map(([key, spec]) => [
+              key,
+              {
+                title: spec.title,
+                type: spec.type,
+              },
+            ]),
+          );
         }
       },
-    },
-    {
-      name: "get_chart_spec",
-      description: "Get the specification of a chart",
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-        },
-        additionalProperties: false,
-      },
-      execute: async (params: { id: string; spec: any }) => {
-        return jsonResponse(delegate.charts[params.id]);
-      },
-    },
-    {
-      name: "set_chart_spec",
-      description: "Update the specification of a chart",
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          spec: { type: "object", description: "The new chart specification, replacing the existing one." },
-        },
-        additionalProperties: false,
-      },
-      execute: async (params: { id: string; spec: any }) => {
-        let validateResult = validate(params.spec, schemaBuiltinChartSpec);
-        if (validateResult.valid) {
-          delegate.charts = { ...delegate.charts, [params.id]: params.spec };
-          return textResponse("success");
-        } else {
-          return jsonResponse({ error: "Spec is invalid", details: validateResult.errors });
-        }
-      },
-    },
-    {
-      name: "get_chart_state",
+    });
+
+    this.register("chart_get_spec", {
+      args: { id: z.string() },
+      description: "Get the spec of a chart",
+      handler: async (args) => get(store.charts)[args.id],
+    });
+
+    this.register("chart_get_state", {
+      args: { id: z.string() },
       description: "Get the state of a chart",
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-        },
-        additionalProperties: false,
+      handler: async (args) => get(store.chartStates)[args.id] ?? {},
+    });
+
+    this.register("chart_set_spec", {
+      args: { id: z.string(), spec: z.any() },
+      description: "Set the spec of a chart",
+      handler: async ({ id, spec }) => {
+        let validateResult = validate(spec, schemaBuiltinChartSpec);
+        if (validateResult.valid) {
+          store.updateChart(id, spec);
+          return { id, spec };
+        } else {
+          return { error: "invalid chart spec", details: validateResult.errors };
+        }
       },
-      execute: async (params: { id: string }) => {
-        return jsonResponse(delegate.chartStates[params.id] ?? {});
+    });
+
+    this.register("chart_set_state", {
+      args: { id: z.string(), state: z.any() },
+      description: "Set the state of a chart",
+      handler: async ({ id, state }) => {
+        store.updateChartState(id, state ?? {});
+        return { id, state };
       },
-    },
-    {
-      name: "set_chart_state",
-      description: `
-          Update the state of a chart. Schema: ${JSON.stringify(schemaBuiltinChartState)}.
-        `,
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          state: { type: "object", description: "The new chart state, replacing the existing one." },
-        },
-        additionalProperties: false,
+    });
+
+    this.register("chart_clear_state", {
+      args: { id: z.string() },
+      description: "Clear the state of a chart (aka., reset to default)",
+      handler: async ({ id }) => {
+        store.updateChartState(id, {});
+        return { id, state: {} };
       },
-      execute: async (params: { id: string; state: any }) => {
-        delegate.chartStates = { ...delegate.chartStates, [params.id]: params.state };
-        return textResponse("success");
+    });
+
+    this.register("chart_create", {
+      args: {
+        layoutId: z.string().describe("The layout id to add the chart to"),
+        spec: z.any().describe("The chart spec, use chart_spec_schema to understand the schema"),
       },
-    },
-    {
-      name: "clear_chart_state",
-      description: "Clear the state of a chart",
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-        },
-        additionalProperties: false,
+      description: "Create a new chart in the specified layout",
+      handler: async ({ layoutId, spec }) => {
+        let validateResult = validate(spec, schemaBuiltinChartSpec);
+        if (validateResult.valid) {
+          let id = store.addChartToLayout(layoutId, spec);
+          return { id, spec };
+        } else {
+          return { error: "invalid chart spec", details: validateResult.errors };
+        }
       },
-      execute: async (params: { id: string; state: any }) => {
-        delegate.chartStates = { ...delegate.chartStates, [params.id]: {} };
-        return textResponse("success");
+    });
+
+    this.register("chart_remove", {
+      args: {
+        layoutId: z.string().describe("The layout id to remove the chart from"),
+        chartId: z.string().describe("The chart id to remove"),
       },
-    },
-    {
-      name: "delete_chart",
-      description: "Delete a chart",
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-        },
-        additionalProperties: false,
+      description: "Remove a chart from the specified layout",
+      handler: async ({ layoutId, chartId }) => {
+        store.removeChartFromLayout(layoutId, chartId);
+        return { chartId, layoutId };
       },
-      execute: async (params: { id: string; spec: any }) => {
-        delegate.charts = Object.fromEntries(Object.entries(delegate.charts).filter((x) => x[0] != params.id));
-        delegate.chartStates = Object.fromEntries(
-          Object.entries(delegate.chartStates).filter((x) => x[0] != params.id),
-        );
-        return textResponse("success");
+    });
+
+    this.register("layout_spec_schema", {
+      description: "Get the layout spec schema in JSON schema format",
+      handler: async () => schemaBuiltinLayoutSpec,
+    });
+
+    this.register("layout_list", {
+      description: "List all layouts (aka., tabs)",
+      handler: async () => get(store.layouts),
+    });
+
+    this.register("layout_get_current", {
+      description: "Get the id of the current layout",
+      handler: async () => get(store.currentLayout),
+    });
+
+    this.register("layout_set_current", {
+      args: { id: z.string() },
+      description: "Set the id of the current layout",
+      handler: async ({ id }) => {
+        store.setCurrentLayout(id);
+        return { currentLayout: get(store.currentLayout) };
       },
-    },
-    {
-      name: "get_chart_screenshot",
+    });
+
+    this.register("layout_get", {
+      args: { id: z.string() },
+      description: "Get the spec of a layout",
+      handler: async ({ id }) => get(store.layouts)[id],
+    });
+
+    this.register("layout_set", {
+      args: { id: z.string(), spec: z.any() },
+      description: "Set the spec of a layout",
+      handler: async ({ id, spec }) => {
+        let validateResult = validate(spec, schemaBuiltinLayoutSpec);
+        if (validateResult.valid) {
+          store.updateLayout(id, spec);
+          return { id, spec };
+        } else {
+          return { error: "invalid layout spec", details: validateResult.errors };
+        }
+      },
+    });
+
+    this.register("layout_set_order", {
+      args: { order: z.array(z.string()).describe("The ordered list of layout ids") },
+      description: "Set the order of layouts (tabs)",
+      handler: async ({ order }) => {
+        store.setLayoutOrder(order);
+        return { layoutOrder: get(store.layoutOrder) };
+      },
+    });
+
+    this.register("layout_create", {
+      args: { type: z.literal(["list", "dashboard"]) },
+      description: "Create a new empty layout",
+      handler: async ({ type }) => {
+        let id = store.addLayout(type);
+        return { id };
+      },
+    });
+
+    this.register("layout_remove", {
+      args: { id: z.string().describe("The layout id to remove") },
+      description: "Remove a layout (aka., tab)",
+      handler: async ({ id }) => {
+        store.removeLayout(id);
+        return { id };
+      },
+    });
+
+    this.register("chart_screenshot_get", {
+      args: { id: z.string() },
       description: "Get a screenshot of a chart",
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-        },
-        additionalProperties: false,
-      },
-      execute: async (params: { id: string }) => {
-        let items = delegate.chartDelegates.get(params.id);
+      handler: async (args) => {
+        await delay(200);
+        let items = this.store.chartDelegates.get(args.id);
         if (items != null) {
           for (let chart of items) {
             if (chart.screenshot) {
-              let image = await chart.screenshot(screenshotOptions);
-              return imageResponse(image);
+              return new ImageResponse(await chart.screenshot(this.screenshotOptions));
             }
           }
         }
-        return textResponse("chart does not support taking screenshot");
+        return "chart does not support taking screenshot";
       },
-    },
-    {
-      name: "get_layout_type",
-      description: "Get the type of the current layout ('list' or 'dashboard')",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-      },
-      execute: async () => {
-        return textResponse(delegate.layout);
-      },
-    },
-    {
-      name: "set_layout_type",
-      description: "Set the type of the current layout ('list' or 'dashboard')",
-      inputSchema: {
-        type: "object",
-        properties: {
-          type: { type: "string" },
-        },
-        additionalProperties: false,
-      },
-      execute: async (params: { type: string }) => {
-        delegate.layout = params.type;
-        return textResponse("success");
-      },
-    },
-    {
-      name: "get_layout_state",
-      description: "Get the state of the current layout",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-      },
-      execute: async () => {
-        return jsonResponse(delegate.layoutStates[delegate.layout] ?? {});
-      },
-    },
-    {
-      name: "set_layout_state",
-      description: "Set the state of the current layout",
-      inputSchema: {
-        type: "object",
-        properties: {
-          state: {
-            type: "object",
-            description: `
-                The new chart state, replacing the existing one.
-                Schema:
-                - dashboard layout state: ${JSON.stringify(schemaDashboardLayoutState)}
-                - list layout state: ${JSON.stringify(schemaListLayoutState)}
-              `,
-          },
-        },
-        additionalProperties: false,
-      },
-      execute: async (params: { state: any }) => {
-        delegate.layoutStates = { ...delegate.layoutStates, [delegate.layout]: params.state };
-        return textResponse("success");
-      },
-    },
-    {
-      name: "get_full_screenshot",
+    });
+
+    this.register("app_screenshot_get", {
       description: "Get a full screenshot of the application",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
+      handler: async () => {
+        await delay(200);
+        return new ImageResponse(await screenshot(this.delegate.container, this.screenshotOptions));
       },
-      execute: async () => {
-        let image = await screenshot(delegate.container, screenshotOptions);
-        return imageResponse(image);
+    });
+
+    this.register("best_practices", {
+      description: "Get best practices on how to use tools from Embedding Atlas. Read this before making changes.",
+      handler: async () => {
+        return unindent(`
+          ## Charts and Dashboard
+
+          - Ideally charts should respond to the global cross filter, use "$filter" to refer to the cross filter.
+            When applicable, it'd be nice if charts can show unfiltered as a backdrop.
+
+          - If applicable, try adding selections to charts so user can brush the data.
+
+          - The system have a nice scale inference logic that automatically picks scale domain, range, and also scale type
+            based on data distribution. If not strong reason leave the scales to default.
+
+          - There might be a very large amount of data, do not make charts that show every individual point,
+            unless specifically required, or if we know the number of points is small.
+
+          - When building a dashboard, try to fit all content into a single 24x18 view.
+            Having to scroll makes it hard to use the dashboard.
+
+          - It's often useful to have an instance view to see what's being selected.
+            If you decide to show cards, it's often useful to make a nice card template.
+
+          - For the markdown widget, use the "title" field in the spec for the title. Start with a lower-level heading, like h2.
+
+          - Do not share charts between layouts.
+
+          - After making big changes, it's useful to take a screenshot of the app and review it.
+        `);
       },
-    },
-  ];
-
-  api.provideContext({ tools: tools });
-}
-
-function textResponse(text: string): ToolResponse {
-  return { content: [{ type: "text", text: text.toString() }] };
-}
-
-function jsonResponse(content: any): ToolResponse {
-  return textResponse(JSON.stringify(content));
-}
-
-function imageResponse(dataUrl: string): ToolResponse {
-  let parsed = parseImageDataUrl(dataUrl);
-  if (parsed) {
-    return { content: [{ type: "image", data: parsed.data, mimeType: parsed.mimeType }] };
+    });
   }
-  return textResponse("failed to take screenshot");
+}
+
+function unindent(str: string): string {
+  let lines = str.split("\n");
+  while (lines.length > 0 && lines[0].trim() === "") lines.shift();
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+  let minIndent = Math.min(...lines.filter((l) => l.trim() !== "").map((l) => l.match(/^ */)![0].length));
+  return lines.map((l) => l.slice(minIndent)).join("\n");
+}
+
+export function provideModelContext(api: ModelContextAPI, store: EmbeddingAtlasStore, delegate: ModelContextDelegate) {
+  let control = new EmbeddingAtlasControl(store, delegate);
+  api.provideContext({ tools: control.mcpTools() });
+}
+
+class ImageResponse {
+  constructor(public dataUrl: string) {}
+}
+
+function resultToToolResponse(result: unknown): ToolResponse {
+  if (result instanceof ImageResponse) {
+    let parsed = parseImageDataUrl(result.dataUrl);
+    if (parsed) {
+      return { content: [{ type: "image", data: parsed.data, mimeType: parsed.mimeType }] };
+    }
+    return { content: [{ type: "text", text: "failed to take screenshot" }] };
+  }
+  if (result === undefined) {
+    return { content: [{ type: "text", text: "undefined" }] };
+  }
+  if (typeof result === "string") {
+    return { content: [{ type: "text", text: result }] };
+  }
+  return { content: [{ type: "text", text: JSON.stringify(result) }] };
 }
 
 function parseImageDataUrl(dataUrl: string): { mimeType: string; data: string } | null {
-  // Check if it's a valid data URL
   if (!dataUrl.startsWith("data:")) {
     return null;
   }
 
-  // Find the comma that separates metadata from content
   const commaIndex = dataUrl.indexOf(",");
   if (commaIndex === -1) {
     return null;
   }
 
-  // Extract the metadata part (everything before the comma)
-  const metadata = dataUrl.substring(5, commaIndex); // Skip "data:"
-
-  // Extract the base64 content (everything after the comma)
+  const metadata = dataUrl.substring(5, commaIndex);
   const base64Content = dataUrl.substring(commaIndex + 1);
 
-  // Parse the metadata to extract MIME type
   let mimeType: string;
 
   if (metadata.includes(";base64")) {
-    // Format: "image/png;base64" or "image/jpeg;base64"
     mimeType = metadata.replace(";base64", "");
   } else if (metadata.includes(";")) {
-    // Handle other parameters (though base64 is most common)
     mimeType = metadata.split(";")[0];
   } else {
-    // Just the MIME type without parameters
     mimeType = metadata;
   }
 
-  // Validate that it's an image MIME type
   if (!mimeType.startsWith("image/")) {
     return null;
   }
 
-  // Specifically check for PNG and JPEG
   if (mimeType !== "image/png" && mimeType !== "image/jpeg") {
     return null;
   }

@@ -2,18 +2,18 @@
 <script lang="ts">
   import Button from "../../widgets/Button.svelte";
 
-  import { IconPlus } from "../../assets/icons.js";
+  import { IconAddChart } from "../../assets/icons.js";
 
-  import { findUnusedId } from "../../utils/identifier.js";
+  import { getStoreContext } from "../../stores/embedding_atlas_store.js";
   import type { LayoutOptionsProps } from "../layout.js";
-  import { type DashboardLayoutState } from "./types.js";
 
-  let { charts, onChartsChange }: LayoutOptionsProps<DashboardLayoutState> = $props();
+  let { layout }: LayoutOptionsProps = $props();
+
+  const store = getStoreContext();
 
   function newChart() {
-    let id = findUnusedId(charts);
-    onChartsChange({ [id]: { type: "builder", title: "New" } });
+    store.addChartToLayout(layout);
   }
 </script>
 
-<Button icon={IconPlus} onClick={newChart} title="Add" />
+<Button icon={IconAddChart} onClick={newChart} title="Add widget to dashboard" />

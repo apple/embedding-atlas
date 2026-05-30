@@ -1,3 +1,5 @@
+# Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 from collections.abc import Sequence
 
 import numpy as np

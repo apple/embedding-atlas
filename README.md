@@ -6,9 +6,9 @@
 ![Build](https://github.com/apple/embedding-atlas/actions/workflows/ci.yml/badge.svg)
 [![GitHub License](https://img.shields.io/github/license/apple/embedding-atlas)](./LICENSE)
 
-Embedding Atlas is a tool that provides interactive visualizations for large embeddings. It allows you to visualize, cross-filter, and search embeddings and metadata.
+Embedding Atlas is a tool that provides interactive visualizations for large embeddings and their metadata. You can visualize, cross-filter, and search across your data.
 
-**Features**
+**For embeddings**
 
 - 🏷️ **Automatic data clustering & labeling:**
   Interactively visualize and navigate overall data structure.
@@ -22,11 +22,19 @@ Embedding Atlas is a tool that provides interactive visualizations for large emb
 - 🔍 **Real-time search & nearest neighbors:**
   Find similar data to a given query or existing data point.
 
-- 🚀 **WebGPU implementation (with WebGL 2 fallback):**
-  Fast, smooth performance (up to few million points) with modern rendering stack.
+- 🚀 **Smooth performance at scale:**
+  Up to a few million points, powered by WebGPU.
 
-- 📊 **Multi-coordinated views for metadata exploration:**
-  Interactively link and filter data across metadata columns.
+**For any tabular data**
+
+- 📊 **Linked dashboards & cross-filtering:**
+  Standard chart types (bar, line, bubble, count plot, eCDF) plus a composable chart spec for building custom charts like heatmaps and average-line overlays. Charts can be configured to cross-filter.
+
+- 🧩 **Multimodal data support:**
+  Built-in viewers for text, image, audio, numeric, categorical, and time columns.
+
+- 🤖 **AI agent access via MCP:**
+  AI agents can query the schema, run SQL, create charts, and capture screenshots via Model Context Protocol.
 
 Please visit <https://apple.github.io/embedding-atlas> for a demo and documentation.
 
@@ -42,10 +50,10 @@ To use Embedding Atlas with Python:
 ```bash
 pip install embedding-atlas
 
-embedding-atlas <your-dataset.parquet>
+embedding-atlas <your-dataset>
 ```
 
-In addition to the command line tool, Embedding Atlas is also available as a Python Notebook (e.g., Jupyter) widget:
+In addition to the command line tool, Embedding Atlas is available as a Python Notebook (e.g., Jupyter) widget:
 
 ```python
 from embedding_atlas.widget import EmbeddingAtlasWidget

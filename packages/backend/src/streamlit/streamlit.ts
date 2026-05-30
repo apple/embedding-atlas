@@ -57,10 +57,8 @@ async function createView(data_frame: ArrowTable, props: Partial<EmbeddingAtlasP
       table: "dataframe",
       id: row_id_column,
     },
-    onStateChange: (state) => {
-      debouncedSetValue({
-        predicate: state.predicate,
-      });
+    onPredicateChange: (predicate) => {
+      debouncedSetValue({ predicate });
     },
   });
 }

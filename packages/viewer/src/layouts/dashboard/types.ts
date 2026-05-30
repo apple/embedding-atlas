@@ -1,5 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import type { LayoutSpec } from "../layout.js";
+
 export interface Placement {
   /** Start x location (in grid index) of the chart */
   x: number;
@@ -11,15 +13,24 @@ export interface Placement {
   height: number;
 }
 
-export interface DashboardLayoutState {
+export interface DashboardLayoutSpec extends LayoutSpec {
+  /** Layout type */
+  type: "dashboard";
+
+  /** Layout name */
+  name: string;
+
+  /** IDs of charts in this layout */
+  chartIds: string[];
+
   /** The number of columns in the dashboard grid, default is 24 */
   numColumns?: number;
 
-  /** The number of rows in the dashboard grid, default is 16 */
+  /** The number of rows in the dashboard grid, default is 18 */
   numRows?: number;
 
   /**
-   * The grid, keyed by `${numColumns}x${numRows}`, e.g., "24x16".
+   * The grid, keyed by `${numColumns}x${numRows}`, e.g., "24x18".
    * Charts can be placed in additional rows, but the user would need to scroll down to view them.
    */
   grids?: Record<

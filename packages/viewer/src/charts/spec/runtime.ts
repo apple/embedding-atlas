@@ -105,7 +105,14 @@ export class ChartRuntime {
     };
   }
 
-  async setSpec(spec: ChartSpec) {
+  async update(spec: ChartSpec, state: ChartState | undefined) {
+    if (this.spec !== spec) {
+      await this.setSpec(spec);
+    }
+    this.state.set(state);
+  }
+
+  private async setSpec(spec: ChartSpec) {
     if (deepEquals(spec, this.spec)) {
       return;
     }
@@ -159,8 +166,6 @@ export class ChartRuntime {
     });
 
     this.cleanupFn = () => {
-      // Set current state to empty to clear existing selections.
-      this.source.reset();
       this.state.set(undefined);
       unsub();
       for (let client of clients) {

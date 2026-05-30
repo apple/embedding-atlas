@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { interactionHandler, type CursorValue } from "@embedding-atlas/utils";
+  import { deepEquals, interactionHandler, type CursorValue } from "@embedding-atlas/utils";
 
   import { type ChartTheme } from "./theme.js";
   import type { ConcretePositionScale, XYFrameProxy, XYSelectionValue } from "./types.js";
@@ -89,12 +89,24 @@
         }
         return r;
       };
+
+      // Don't report the same value multiple times consecutively.
+      let lastValue: Value | null = null;
+      let isFirstReport = true;
+      let report = (value: Value | null) => {
+        if (isFirstReport || !deepEquals(lastValue, value)) {
+          lastValue = value;
+          isFirstReport = false;
+          onChange(value);
+        }
+      };
+
       return {
         move: (e2: CursorValue) => {
-          onChange(resolveXY(e2));
+          report(resolveXY(e2));
         },
         up: (e2: CursorValue) => {
-          onChange(resolveXY(e2));
+          report(resolveXY(e2));
         },
       };
     };

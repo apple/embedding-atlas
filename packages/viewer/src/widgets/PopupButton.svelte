@@ -4,20 +4,27 @@
 
   import ToggleButton from "./ToggleButton.svelte";
 
-  import { autoUpdate, computePosition, offset, shift } from "@floating-ui/dom";
+  import { autoUpdate, computePosition, offset, shift, type Placement } from "@floating-ui/dom";
 
   interface Props {
     title?: string;
     label?: string | null;
     icon?: any | null;
-    anchor?: "left" | "right";
+    placement?: Placement;
+    visible?: boolean;
     button?: Snippet<[{ visible: boolean; toggle: () => void }]>;
     children?: Snippet;
   }
 
-  let { title = "", label = null, icon = null, anchor = "right", children, button }: Props = $props();
-
-  let visible: boolean = $state(false);
+  let {
+    title = "",
+    label = null,
+    icon = null,
+    placement = "bottom",
+    visible = $bindable(false),
+    children,
+    button,
+  }: Props = $props();
 
   function toggle() {
     visible = !visible;
@@ -40,7 +47,7 @@
 
         function updatePosition() {
           computePosition(container, popoverElement, {
-            placement: "bottom",
+            placement: placement,
             middleware: [offset(3), shift()],
           }).then(({ x, y }) => {
             popoverElement.style.left = x + "px";
@@ -49,6 +56,8 @@
         }
         return autoUpdate(container, popoverElement, updatePosition);
       });
+    } else {
+      popoverElement.hidePopover();
     }
   });
 </script>
@@ -62,7 +71,7 @@
   {/if}
   <div
     bind:this={popoverElement}
-    class="absolute px-3 py-3 rounded-md z-20 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-lg"
+    class="absolute p-4 rounded-md z-20 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 shadow-lg"
     style:width="max-content"
     popover
     ontoggle={(e) => {
