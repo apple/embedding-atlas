@@ -2,7 +2,7 @@
 
 import type { Coordinator } from "@uwdata/mosaic-core";
 
-import { columnDescriptions, distinctCount } from "../utils/database.js";
+import { columnDescriptions, distinctCount, isFloatingPointDBType } from "../utils/database.js";
 import type { BuiltinChartSpec } from "./chart_types.js";
 import type { EmbeddingSpec } from "./embedding/types.js";
 import type { InstancesSpec } from "./instances/types.js";
@@ -128,7 +128,10 @@ export async function defaultCharts(options: {
       }
       case "number":
       case "Date": {
-        if (distinct <= 10) {
+        // Treat floating-point columns as continuous regardless of cardinality, so a
+        // few fractional values produce a value-ordered histogram instead of a
+        // frequency-sorted count plot. Low-cardinality integers stay categorical.
+        if (distinct <= 10 && !isFloatingPointDBType(item.type)) {
           charts.push({
             type: "count-plot",
             title: item.name,

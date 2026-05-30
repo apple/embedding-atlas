@@ -3,7 +3,12 @@
 import { Coordinator, restConnector, socketConnector, wasmConnector, type Selection } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 
+import { isFloatingPointDBType, jsTypeFromDBType, type ColumnDesc, type JSType } from "./db_types.js";
 import { createDuckDB } from "./duckdb.js";
+
+// Re-export the pure type-classification helpers so existing imports from
+// "./database.js" keep working.
+export { isFloatingPointDBType, jsTypeFromDBType, type ColumnDesc, type JSType };
 
 /** Initialize the database connector for a Mosaic coordinator */
 export async function initializeDatabase(
@@ -54,13 +59,6 @@ export function resolveSQLTemplate(template: string, vars: Record<string, string
   });
 }
 
-/** Column description */
-export interface ColumnDesc {
-  name: string;
-  type: string;
-  jsType: JSType | null;
-}
-
 export interface EmbeddingLegend {
   indexColumn: string;
   legend: {
@@ -84,57 +82,3 @@ export async function distinctCount(coordinator: Coordinator, table: string, col
   let r = await coordinator.query(`SELECT COUNT(DISTINCT ${SQL.column(column)}) AS count FROM ${table}`);
   return r.get(0).count;
 }
-
-export type JSType = "string" | "number" | "string[]" | "Date";
-
-export function jsTypeFromDBType(dbType: string): JSType | null {
-  if (numberTypes.has(dbType)) {
-    return "number";
-  } else if (stringTypes.has(dbType)) {
-    return "string";
-  } else if (dateTypes.has(dbType)) {
-    return "Date";
-  } else if (dbType.match(/^(VARCHAR|TEXT)\[\d*\]$/)) {
-    return "string[]";
-  } else {
-    return null;
-  }
-}
-
-const numberTypes = new Set([
-  "REAL",
-  "FLOAT4",
-  "FLOAT8",
-  "FLOAT",
-  "DOUBLE",
-  "INT",
-  "TINYINT",
-  "INT1",
-  "SMALLINT",
-  "INT2",
-  "SHORT",
-  "INTEGER",
-  "INT4",
-  "INT",
-  "SIGNED",
-  "INT8",
-  "LONG",
-  "BIGINT",
-  "UTINYINT",
-  "USMALLINT",
-  "UINTEGER",
-  "UBIGINT",
-  "UHUGEINT",
-]);
-
-const stringTypes = new Set(["BOOLEAN", "VARCHAR", "CHAR", "BPCHAR", "TEXT", "STRING"]);
-
-const dateTypes = new Set([
-  "DATE",
-  "TIME",
-  "DATETIME",
-  "TIMESTAMP",
-  "TIMESTAMPTZ",
-  "TIMESTAMP WITH TIME ZONE",
-  "TIMESTAMP WITHOUT TIME ZONE",
-]);
