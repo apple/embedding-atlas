@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { applyUpdatesIfNeeded } from "@embedding-atlas/utils";
+  import { produce } from "immer";
   import { untrack } from "svelte";
 
   import CodeEditor from "../../widgets/CodeEditor.svelte";
@@ -25,8 +25,8 @@
 
   let builder: ChartBuilderDescription<any, UIElement[]> = $state.raw(chartBuilders[0]);
 
-  let values: Record<string, any> = $state({});
-  let validateResult: string | boolean = $state(false);
+  let values: Record<string, any> = $state.raw({});
+  let validateResult: string | boolean = $state.raw(false);
   let localChartState = $state.raw<any>(null);
   let localChartSpec = $state.raw<any>(null);
 
@@ -69,8 +69,8 @@
 
   function confirm() {
     if (localChartSpec != null) {
-      onSpecChange(localChartSpec, "replace");
-      onStateChange(localChartState ?? {}, "replace");
+      onSpecChange(localChartSpec);
+      onStateChange(localChartState ?? {});
     }
   }
 
@@ -128,6 +128,12 @@
     }
     return columns.filter((c) => c.jsType != null && types.indexOf(c.jsType) >= 0);
   }
+
+  function valueUpdater(key: string): (v: any) => void {
+    return (v) => {
+      values = { ...values, [key]: v };
+    };
+  }
 </script>
 
 <Container width={width} height={height} scrollY={true} class="flex flex-col gap-2">
@@ -169,7 +175,7 @@
       )}
       <Select
         value={values[key]}
-        onChange={(v) => (values[key] = v)}
+        onChange={valueUpdater(key)}
         placeholder="(select field)"
         class="w-full"
         options={options}
@@ -181,7 +187,7 @@
         <CodeEditor
           class="w-full h-full"
           value={values[key]}
-          onChange={(v) => (values[key] = v)}
+          onChange={valueUpdater(key)}
           colorScheme={$colorScheme}
           language={elem.code.language ?? "plain"}
         />
@@ -193,7 +199,7 @@
         <SpecEditor
           class="w-full h-full"
           initialValue={{ title: "Chart" }}
-          onChange={(v) => (values[key] = v)}
+          onChange={valueUpdater(key)}
           colorScheme={$colorScheme}
         />
       </div>
@@ -209,11 +215,19 @@
             state={localChartState ?? {}}
             width={"container"}
             mode="view"
-            onStateChange={(update, mode = "merge") => {
-              applyUpdatesIfNeeded(localChartState ?? {}, update, mode, (r) => (localChartState = r));
+            onStateChange={(update) => {
+              if (typeof update === "function") {
+                localChartState = produce(localChartState ?? {}, update);
+              } else {
+                localChartState = update;
+              }
             }}
-            onSpecChange={(update, mode = "merge") => {
-              applyUpdatesIfNeeded(localChartSpec ?? {}, update, mode, (r) => (localChartSpec = r));
+            onSpecChange={(update) => {
+              if (typeof update === "function") {
+                localChartSpec = produce(localChartSpec ?? {}, update);
+              } else {
+                localChartSpec = update;
+              }
             }}
           />
         </div>

@@ -5,12 +5,17 @@
 
   import { IconEmbeddingView, IconMenu, IconTable } from "../../assets/icons.js";
 
+  import { getStoreContext } from "../../stores/embedding_atlas_store.js";
   import type { LayoutOptionsProps } from "../layout.js";
-  import type { ListLayoutState } from "./types.js";
+  import type { ListLayoutSpec } from "./types.js";
 
-  let { charts, state, onStateChange }: LayoutOptionsProps<ListLayoutState> = $props();
+  let { layout }: LayoutOptionsProps = $props();
 
-  let sections = $derived(getSections(charts, state));
+  const store = getStoreContext();
+  const { charts, layouts } = store;
+  let spec = $derived($layouts[layout]) as ListLayoutSpec;
+
+  let sections = $derived(getSections($charts, spec.chartIds));
 </script>
 
 <div class="flex gap-0.5 items-center">
@@ -19,9 +24,11 @@
       icon={IconEmbeddingView}
       title="Show / hide embedding"
       bind:checked={
-        () => state.showEmbedding ?? true,
+        () => spec.showEmbedding ?? true,
         (v) => {
-          onStateChange({ showEmbedding: v });
+          store.updateLayout<ListLayoutSpec>(layout, (draft) => {
+            draft.showEmbedding = v;
+          });
         }
       }
     />
@@ -31,9 +38,11 @@
       icon={IconTable}
       title="Show / hide table"
       bind:checked={
-        () => state.showTable ?? true,
+        () => spec.showTable ?? true,
         (v) => {
-          onStateChange({ showTable: v });
+          store.updateLayout<ListLayoutSpec>(layout, (draft) => {
+            draft.showTable = v;
+          });
         }
       }
     />
@@ -42,9 +51,11 @@
     icon={IconMenu}
     title="Show / hide charts"
     bind:checked={
-      () => state.showCharts ?? true,
+      () => spec.showCharts ?? true,
       (v) => {
-        onStateChange({ showCharts: v });
+        store.updateLayout<ListLayoutSpec>(layout, (draft) => {
+          draft.showCharts = v;
+        });
       }
     }
   />

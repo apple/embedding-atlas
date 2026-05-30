@@ -30,7 +30,7 @@ export async function defaultCharts(options: {
   coordinator: Coordinator;
   table: string;
   id: string;
-  projection?: { x: string; y: string; text?: string; image?: string; importance?: string };
+  projection?: { x: string; y: string; text?: string; image?: string; importance?: string; neighbors?: string };
   config?: DefaultChartsConfig;
 }): Promise<BuiltinChartSpec[]> {
   let { coordinator, table, projection } = options;
@@ -51,6 +51,7 @@ export async function defaultCharts(options: {
         text: projection.text,
         image: projection.image,
         importance: projection.importance,
+        neighbors: projection.neighbors,
       },
     };
     if (typeof config.embedding == "object") {

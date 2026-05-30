@@ -50,11 +50,13 @@
   }
 
   function setItems(newItems: Item[]) {
-    onSpecChange({
-      items: newItems,
+    onSpecChange((draft) => {
+      draft.items = newItems;
     });
-    onStateChange({
-      selection: (chartState.selection ?? []).filter((x) => newItems.find((item) => item.predicate == x) != null),
+    onStateChange((draft) => {
+      draft.selection = (chartState.selection ?? []).filter(
+        (x) => newItems.find((item) => item.predicate == x) != null,
+      );
     });
   }
 
@@ -87,7 +89,9 @@
 
     let source = {
       reset: () => {
-        onStateChange({ selection: [] });
+        onStateChange((draft) => {
+          draft.selection = [];
+        });
       },
     };
 
@@ -138,14 +142,20 @@
           class="flex-1 overflow-hidden text-left"
           onclick={(e) => {
             if (e.shiftKey) {
-              onStateChange({
-                selection: isSelected ? selection.filter((x) => x != item.predicate) : [...selection, item.predicate],
+              onStateChange((draft) => {
+                draft.selection = isSelected
+                  ? selection.filter((x) => x != item.predicate)
+                  : [...selection, item.predicate];
               });
             } else {
               if (isSelected) {
-                onStateChange({ selection: [] });
+                onStateChange((draft) => {
+                  draft.selection = [];
+                });
               } else {
-                onStateChange({ selection: [item.predicate] });
+                onStateChange((draft) => {
+                  draft.selection = [item.predicate];
+                });
               }
             }
           }}

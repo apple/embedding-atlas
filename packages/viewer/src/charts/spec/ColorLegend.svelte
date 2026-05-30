@@ -24,7 +24,7 @@
         {@const color = scale.apply(item)}
         <div class="flex gap-1 items-center" title={item}>
           <div class="w-3 h-3 block rounded-sm" style:background={color}></div>
-          <div class="whitespace-nowrap max-w-32 overflow-hidden text-ellipsis">
+          <div class="whitespace-nowrap max-w-32 overflow-hidden truncate">
             {item}
           </div>
         </div>

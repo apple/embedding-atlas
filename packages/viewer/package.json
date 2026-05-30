@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "uv run python scripts/download_duckdb_extensions.py && vite build && vite build --config vite.config.lib.js",
     "check": "svelte-check",
+    "test": "vitest run",
     "package": "npm run build && publint",
     "preview": "vite preview"
   },
@@ -41,7 +42,7 @@
     "@embedding-atlas/umap-wasm": "*",
     "@embedding-atlas/utils": "*",
     "@floating-ui/dom": "^1.7.6",
-    "@huggingface/transformers": "^3.8.1",
+    "@huggingface/transformers": "^4.2.0",
     "@iconify-json/fluent": "^1.2.41",
     "@iconify-json/svg-spinners": "^1.2.4",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
@@ -56,10 +57,11 @@
     "dompurify": "^3.3.3",
     "flexsearch": "^0.8.212",
     "html-to-image": "^1.11.13",
+    "immer": "^11.1.7",
     "json-schema": "^0.4.0",
     "liquidjs": "^10.25.0",
     "mark.js": "^8.11.1",
-    "marked": "^17.0.5",
+    "marked": "^18.0.0",
     "nanoid": "^5.1.7",
     "postcss": "^8.5.8",
     "publint": "^0.3.18",
@@ -73,6 +75,7 @@
     "unplugin-icons": "^23.0.1",
     "vite": "^8.0.1",
     "vite-plugin-dts": "^4.5.4",
-    "vite-plugin-wasm": "^3.6.0"
+    "vite-plugin-wasm": "^3.6.0",
+    "zod": "^4.4.3"
   }
 }

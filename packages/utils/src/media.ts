@@ -12,29 +12,33 @@ function mediaToDataUrl(value: any, detectType: (bytes: Uint8Array, path?: strin
   if (value == null) {
     return null;
   }
-  if (typeof value == "string") {
-    if (value.startsWith("data:") || value.startsWith("http://") || value.startsWith("https://")) {
-      return value;
+  try {
+    if (typeof value == "string") {
+      if (value.startsWith("data:") || value.startsWith("http://") || value.startsWith("https://")) {
+        return value;
+      } else {
+        let type = detectType(base64Decode(value));
+        return `data:${type};base64,` + value;
+      }
     } else {
-      let type = detectType(base64Decode(value));
-      return `data:${type};base64,` + value;
-    }
-  } else {
-    let bytes: Uint8Array<ArrayBuffer> | null = null;
-    let path: string | undefined = undefined;
-    if (value.bytes && value.bytes instanceof Uint8Array) {
-      bytes = value.bytes;
-      if (typeof value.path == "string") {
-        path = value.path;
+      let bytes: Uint8Array<ArrayBuffer> | null = null;
+      let path: string | undefined = undefined;
+      if (value.bytes && value.bytes instanceof Uint8Array) {
+        bytes = value.bytes;
+        if (typeof value.path == "string") {
+          path = value.path;
+        }
+      }
+      if (value instanceof Uint8Array) {
+        bytes = value as any;
+      }
+      if (bytes != null) {
+        let type = detectType(bytes, path);
+        return `data:${type};base64,` + base64Encode(bytes);
       }
     }
-    if (value instanceof Uint8Array) {
-      bytes = value as any;
-    }
-    if (bytes != null) {
-      let type = detectType(bytes, path);
-      return `data:${type};base64,` + base64Encode(bytes);
-    }
+  } catch (_) {
+    return null;
   }
   return null;
 }

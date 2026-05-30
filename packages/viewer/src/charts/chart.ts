@@ -2,6 +2,7 @@
 
 import type { EmbeddingViewConfig, Label } from "@embedding-atlas/component";
 import type { Coordinator, Selection } from "@uwdata/mosaic-core";
+import type { Draft } from "immer";
 import type { Readable, Writable } from "svelte/store";
 
 import type { ColumnDesc } from "../utils/database.js";
@@ -77,20 +78,23 @@ export interface ChartContext {
     set(key: string, value: any): Promise<void>;
   };
 
-  /** Tell the parent to show a search box. */
-  search?: (query: any, mode: string) => void;
-
-  /** A list of supported search modes. */
-  searchModes?: string[];
-
-  /** Current search result */
-  searchResult: Readable<{ query: any; mode: string; ids: RowID[] } | null>;
+  /**
+   * Control the search panel
+   */
+  searcher: {
+    /** Show the search panel and run a search */
+    search: (query: any, mode: string) => void;
+  };
 
   /**
-   * The current highlight point(s). When this changes, supported views will highlight the given point(s).
+   * The current highlight point(s).
+   * Supported views (e.g., Instances view, Embedding view) use this to coordinate cross-highlighting of points.
    * When a new point is added to this list, views will animate to reveal the new point.
    */
   highlight: Writable<RowID[] | null>;
+
+  /** The current overlay. When this changes, supported views will render it as overlay. */
+  overlay: Writable<Overlay | null>;
 
   /** Configuration for the embedding view. See docs for the EmbeddingView. */
   embeddingViewConfig?: EmbeddingViewConfig | null;
@@ -139,17 +143,19 @@ export interface ChartViewProps<Spec = unknown, State = unknown> {
 
   /**
    * Callback for when the state changes.
-   * The default update mode is "merge", where the new state is recursively merged into the existing state.
-   * In "replace" mode, the new state completely replaces the existing state.
+   * If a function is passed, treat it as an Immer update function
+   * (where you can freely modify the draft object and Immer will keep the original object immutable)
+   * If not a function, replace the existing state with the new state completely.
    */
-  onStateChange: (state: Partial<State>, mode?: "merge" | "replace") => void;
+  onStateChange: (update: State | undefined | ((draft: Draft<State>) => void)) => void;
 
   /**
    * Callback for when the spec changes.
-   * The default update mode is "merge", where the new spec is recursively merged into the existing spec.
-   * In "replace" mode, the new spec completely replaces the existing spec.
+   * If a function is passed, treat it as an Immer update function
+   * (where you can freely modify the draft object and Immer will keep the original object immutable)
+   * If not a function, replace the existing spec with the new spec completely.
    */
-  onSpecChange: (spec: Partial<Spec>, mode?: "merge" | "replace") => void;
+  onSpecChange: (update: Spec | ((draft: Draft<Spec>) => void)) => void;
 
   /** Register a chart delegate. */
   registerDelegate?: (delegate: ChartDelegate) => () => void;
@@ -158,6 +164,11 @@ export interface ChartViewProps<Spec = unknown, State = unknown> {
 export interface ChartDelegate {
   /** Returns a screenshot of the chart, result should be a data URL of the screenshot. */
   screenshot?: (options?: ScreenshotOptions) => Promise<string>;
+}
+
+export interface Overlay {
+  nodes?: RowID[];
+  edges?: { start: RowID; end: RowID }[];
 }
 
 export type { ChartBuilderDescription } from "./builder/builder_description.js";

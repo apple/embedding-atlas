@@ -39,7 +39,7 @@
 
   let viewMode = $derived((spec.viewMode ?? "table") as "table" | "cards");
   let offset = $derived(chartState.offset ?? 0);
-  let pageSize = $derived(spec.pageSize ?? 100);
+  let pageSize = $derived(spec.pageSize ?? 50);
 
   let contentView = $state.raw<Table | Cards | undefined>(undefined);
   let viewContainer = $state.raw<HTMLElement | undefined>(undefined);
@@ -89,7 +89,9 @@
   function resetOffset() {
     untrack(() => {
       if (offset != 0) {
-        onStateChange({ offset: 0 });
+        onStateChange((draft) => {
+          draft.offset = 0;
+        });
       }
       if (viewContainer) {
         viewContainer.scrollTop = 0;
@@ -134,7 +136,10 @@
       selection: context.filter,
       prepare: async () => {
         let desc = await context.coordinator.query(SQL.Query.describe(baseQuery()));
-        columnNames = desc.toArray().map((x) => x.column_name);
+        columnNames = desc
+          .toArray()
+          .map((x) => x.column_name)
+          .filter((x) => !x.startsWith("__"));
         if (options.columns) {
           let specifiedColumns = new Set(options.columns);
           columnNames = columnNames.filter((x) => specifiedColumns.has(x));
@@ -274,7 +279,9 @@
         // Make sure it's a multiple of page number.
         newOffset = Math.floor(newOffset / pageSize) * pageSize;
         scrollToOnLoadPage = { offset: newOffset, id: id };
-        onStateChange({ offset: newOffset });
+        onStateChange((draft) => {
+          draft.offset = newOffset;
+        });
       }
     }
   }
@@ -297,11 +304,15 @@
   });
 
   function handlePageChange(page: number) {
-    onStateChange({ offset: page * pageSize });
+    onStateChange((draft) => {
+      draft.offset = page * pageSize;
+    });
   }
 
   function handleLoadNext() {
-    onStateChange({ offset: Math.min(totalCount - 1, offset + pageSize) });
+    onStateChange((draft) => {
+      draft.offset = Math.min(totalCount - 1, offset + pageSize);
+    });
   }
 
   function handleRowClick(rowId: RowID | null | undefined, event: MouseEvent) {
@@ -333,18 +344,27 @@
   class="w-full flex flex-col overflow-hidden rounded-md bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
   style:height={`${height ?? spec.defaultHeight ?? 500}px`}
 >
-  <div class="flex items-center justify-between px-2 py-0.5 border-b border-slate-200 dark:border-slate-700 gap-4">
+  <div class="flex items-center justify-between p-2 border-b border-slate-200 dark:border-slate-700 gap-4">
     <div class="flex items-center gap-4 flex-shrink-0">
       <SegmentedControl
         value={viewMode}
-        onChange={(v) => onSpecChange({ viewMode: v as "table" | "cards" })}
+        onChange={(v) =>
+          onSpecChange((draft) => {
+            draft.viewMode = v as "table" | "cards";
+          })}
         options={[
           { value: "table", icon: IconTableView, title: "Table view" },
           { value: "cards", icon: IconCardView, title: "Card view" },
         ]}
       />
       <PaginatorControls currentPage={currentPage} pageCount={pageCount} onChange={handlePageChange} />
-      <SortOrderControl value={spec.sort} onChange={(value) => onSpecChange({ sort: value })} />
+      <SortOrderControl
+        value={spec.sort}
+        onChange={(value) =>
+          onSpecChange((draft) => {
+            draft.sort = value;
+          })}
+      />
     </div>
   </div>
 
@@ -361,7 +381,10 @@
           highlight={$highlight}
           sort={spec.sort}
           onRowClick={handleRowClick}
-          onSortChange={(value) => onSpecChange({ sort: value })}
+          onSortChange={(value) =>
+            onSpecChange((draft) => {
+              draft.sort = value;
+            })}
         />
 
         {#if offset + pageSize < totalCount}

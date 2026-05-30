@@ -1,81 +1,39 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { applyUpdatesForKeyIfNeeded, applyUpdatesIfNeeded } from "@embedding-atlas/utils";
-
   import ChartView from "../charts/ChartView.svelte";
 
-  import type { ChartContext, ChartDelegate } from "../charts/chart.js";
+  import { getStoreContext } from "../stores/embedding_atlas_store.js";
   import { findLayoutComponent } from "./layout_types.js";
+  import NewTabView from "./NewTabView.svelte";
 
-  interface Props {
-    context: ChartContext;
-    charts: Record<string, any>;
-    chartStates: Record<string, any>;
-    layout: string;
-    layoutStates: Record<string, any>;
-    onChartsChange?: (charts: Record<string, any>) => void;
-    onChartStatesChange?: (states: Record<string, any>) => void;
-    onLayoutStatesChange?: (states: Record<string, any>) => void;
-    registerChartDelegate?: (id: string, delegate: ChartDelegate) => () => void;
-  }
+  const store = getStoreContext();
+  const { charts, chartStates, layouts, currentLayout, chartContext } = store;
 
-  let {
-    context,
-    charts,
-    chartStates,
-    layout,
-    layoutStates,
-    onChartsChange,
-    onChartStatesChange,
-    onLayoutStatesChange,
-    registerChartDelegate,
-  }: Props = $props();
-
-  let LayoutClass = $derived(findLayoutComponent(layout));
-  let layoutState = $derived(layoutStates[layout] ?? {});
-
-  function updateChart(id: string, update: any, mode: "merge" | "replace" = "merge") {
-    applyUpdatesForKeyIfNeeded(charts, id, update, mode, (r) => onChartsChange?.(r));
-  }
-
-  function updateChartState(id: string, update: any, mode: "merge" | "replace" = "merge") {
-    applyUpdatesForKeyIfNeeded(chartStates, id, update, mode, (r) => onChartStatesChange?.(r));
-  }
-
-  function updateCharts(update: any, mode: "merge" | "replace" = "merge") {
-    applyUpdatesIfNeeded(charts, update, mode, (r) => onChartsChange?.(r));
-  }
-
-  function updateChartStates(update: any, mode: "merge" | "replace" = "merge") {
-    applyUpdatesIfNeeded(chartStates, update, mode, (r) => onChartStatesChange?.(r));
-  }
-
-  function onLayoutStateChange(layout: string, update: any, mode: "merge" | "replace" = "merge") {
-    applyUpdatesForKeyIfNeeded(layoutStates, layout, update, mode, (r) => onLayoutStatesChange?.(r));
-  }
+  let spec = $derived($layouts[$currentLayout] as any);
+  let type = $derived(spec?.type);
+  let LayoutClass = $derived(type != undefined ? findLayoutComponent(type) : undefined);
 </script>
 
-<LayoutClass
-  context={context}
-  charts={charts}
-  state={layoutState}
-  onStateChange={onLayoutStateChange.bind(null, layout)}
-  onChartsChange={updateCharts}
-  onChartStatesChange={updateChartStates}
->
-  {#snippet chartView({ id, width, height, mode })}
-    {@const spec = charts[id]}
-    {@const chartState = chartStates[id] ?? {}}
-    <ChartView
-      context={context}
-      width={width}
-      height={height}
-      spec={spec}
-      state={chartState}
-      mode={mode ?? "view"}
-      onSpecChange={updateChart.bind(null, id)}
-      onStateChange={updateChartState.bind(null, id)}
-      registerDelegate={registerChartDelegate ? (delegate) => registerChartDelegate?.(id, delegate) : undefined}
-    />
-  {/snippet}
-</LayoutClass>
+{#if LayoutClass != undefined}
+  <LayoutClass layout={$currentLayout}>
+    {#snippet chartView({ id, width, height, mode })}
+      {@const spec = $charts[id]}
+      {@const state = $chartStates[id]}
+      <ChartView
+        context={chartContext}
+        width={width}
+        height={height}
+        spec={spec}
+        state={state}
+        mode={mode ?? "view"}
+        onSpecChange={store.updateChart.bind(store, id)}
+        onStateChange={store.updateChartState.bind(store, id)}
+        registerDelegate={store.registerChartDelegate.bind(store, id)}
+      />
+    {/snippet}
+  </LayoutClass>
+{:else}
+  <div class="justify-center items-center flex h-full w-full bg-slate-100 dark:bg-slate-900 rounded-md">
+    <NewTabView />
+  </div>
+{/if}
