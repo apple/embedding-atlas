@@ -2,10 +2,11 @@
 
 export { base64Decode, base64Encode, compress, decompress } from "./compression.js";
 export { debounce } from "./debounce.js";
+export { delay } from "./delay.js";
 export { deepEquals, deepMemo } from "./equals.js";
 export { interactionHandler, type CursorValue, type DragHandler } from "./interaction_handler.js";
 export { audioToDataUrl, imageToDataUrl } from "./media.js";
-export { applyUpdatesForKeyIfNeeded, applyUpdatesIfNeeded, mergeUpdates } from "./merge_updates.js";
+export { mergeUpdates } from "./merge_updates.js";
 export {
   connectWorker,
   createWorkerRuntime,

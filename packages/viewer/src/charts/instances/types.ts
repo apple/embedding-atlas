@@ -34,9 +34,22 @@ export interface InstancesSpec {
   columnStyles?: Record<string, ColumnStyle>;
 
   /**
-   * Liquid template for the cards (rendered with liquidjs).
-   * Use a Liquid template instead of column styles for custom cards.
-   * If not specified, use the tooltip view as card.
+   * Liquid template for the cards (rendered with liquidjs). If not specified, uses the default card with column styles.
+   * The card will be placed in a <div> container with a border and rounded corner, but no padding — add your own padding to the root element.
+   *
+   * Each column value is available as a template variable (e.g. `{{ title }}`, `{{ price }}`).
+   *
+   * To support dark mode, use CSS custom properties defined in a <style> tag inside a wrapper element. Define light-mode values on the wrapper class, then override them under `.dark`:
+   * ```
+   * <div class="my-card" style="padding: 16px">
+   *   <style>
+   *     .my-card { --text-color: #1a1a2e; }
+   *     .my-card, .my-card:is(.dark *) { --text-color: #f1f5f9; }
+   *   </style>
+   *   <div style="color: var(--text-color)">{{ title }}</div>
+   * </div>
+   * ```
+   * The `.dark` class is applied to an ancestor element when dark mode is active. Use `:is(.dark *)` for reliable matching regardless of DOM depth.
    */
   cardTemplate?: string;
 }

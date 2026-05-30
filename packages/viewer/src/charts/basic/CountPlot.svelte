@@ -279,7 +279,9 @@
 
     let source = {
       reset: () => {
-        onStateChange({ selection: undefined });
+        onStateChange((draft) => {
+          delete draft.selection;
+        });
       },
     };
 
@@ -312,20 +314,30 @@
 
   function toggleSelection(value: string, shift: boolean) {
     if (selection == undefined || selection.length == 0) {
-      onStateChange({ selection: [value] });
+      onStateChange((draft) => {
+        draft.selection = [value];
+      });
     } else {
       let exists = selection.findIndex((x) => x == value) >= 0;
       if (shift) {
         if (exists) {
-          onStateChange({ selection: selection.filter((x) => x != value) });
+          onStateChange((draft) => {
+            draft.selection = selection!.filter((x) => x != value);
+          });
         } else {
-          onStateChange({ selection: [...selection, value] });
+          onStateChange((draft) => {
+            draft.selection = [...selection!, value];
+          });
         }
       } else {
         if (exists) {
-          onStateChange({ selection: undefined });
+          onStateChange((draft) => {
+            delete draft.selection;
+          });
         } else {
-          onStateChange({ selection: [value] });
+          onStateChange((draft) => {
+            draft.selection = [value];
+          });
         }
       }
     }
@@ -445,7 +457,9 @@
             return {
               move: (e2) => {
                 let dx = e2.clientX - e1.clientX;
-                onSpecChange({ categoryWidth: Math.max(20, Math.min(chartWidth - labelWidth, initial + dx)) });
+                onSpecChange((draft) => {
+                  draft.categoryWidth = Math.max(20, Math.min(chartWidth - labelWidth, initial + dx));
+                });
               },
             };
           },
@@ -459,9 +473,13 @@
               class="py-0.5 text-left text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 whitespace-nowrap text-ellipsis overflow-hidden"
               onclick={() => {
                 let newLimit = limit < 50 ? 100 : 10;
-                onSpecChange({ limit: newLimit });
+                onSpecChange((draft) => {
+                  draft.limit = newLimit;
+                });
                 if (newLimit < limit) {
-                  onStateChange({ selection: undefined });
+                  onStateChange((draft) => {
+                    delete draft.selection;
+                  });
                 }
               }}
             >
@@ -493,7 +511,10 @@
               ]}
               title="Sort order"
               value={order ?? "total-descending"}
-              onChange={(v) => onSpecChange({ order: v })}
+              onChange={(v) =>
+                onSpecChange((draft) => {
+                  draft.order = v;
+                })}
             />
           {/if}
           <InlineSelect
@@ -504,7 +525,10 @@
             ]}
             title={`#/#: count in selection / total count\n#: count in selection\n%: percentage in selection`}
             value={labels ?? "#/#"}
-            onChange={(v) => onSpecChange({ labels: v })}
+            onChange={(v) =>
+              onSpecChange((draft) => {
+                draft.labels = v;
+              })}
           />
         </div>
       </div>

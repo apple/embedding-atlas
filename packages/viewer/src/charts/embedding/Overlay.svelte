@@ -3,25 +3,25 @@
   import type { DataPoint, OverlayProxy } from "@embedding-atlas/component";
 
   interface Props {
-    center?: DataPoint | null;
-    points?: DataPoint[];
+    nodes?: DataPoint[];
+    edges?: { start: DataPoint; end: DataPoint }[];
     proxy: OverlayProxy;
   }
 
-  let { center, points, proxy }: Props = $props();
+  let { nodes, edges, proxy }: Props = $props();
 </script>
 
 <svg width={proxy.width} height={proxy.height}>
   <g>
-    {#if center != null}
-      {@const l1 = proxy.location(center.x, center.y)}
-      {#each points ?? [] as point}
-        {@const l2 = proxy.location(point.x, point.y)}
-        <line x1={l1.x} y1={l1.y} x2={l2.x} y2={l2.y} class="stroke-orange-500" />
-      {/each}
-    {/if}
-    {#each points ?? [] as point}
-      {@const loc = proxy.location(point.x, point.y)}
+    {#each edges ?? [] as e}
+      {@const p1 = proxy.location(e.start.x, e.start.y)}
+      {@const p2 = proxy.location(e.end.x, e.end.y)}
+      <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} class="stroke-orange-500" />
+    {/each}
+  </g>
+  <g>
+    {#each nodes ?? [] as p}
+      {@const loc = proxy.location(p.x, p.y)}
       <circle cx={loc.x} cy={loc.y} r={4} class="fill-orange-500 stroke-orange-700 stroke-2" />
     {/each}
   </g>

@@ -243,8 +243,14 @@
   let pointSize = $derived(viewingParams.pointSize);
 
   let needsUpdateLabels = true;
+  let previousLabels: Label[] | null = null;
 
   $effect.pre(() => {
+    if (labels !== previousLabels) {
+      previousLabels = labels;
+      needsUpdateLabels = true;
+    }
+
     let needsRender = renderer?.setProps({
       mode: mode,
       colorScheme: colorScheme,
@@ -265,17 +271,18 @@
 
     if (needsRender) {
       setNeedsRender();
-      if (
-        (autoLabelEnabled !== false || labels != null) &&
-        needsUpdateLabels &&
-        renderer != null &&
-        data.x != null &&
-        data.x.length > 0 &&
-        defaultViewportState != null
-      ) {
-        needsUpdateLabels = false;
-        updateLabels(defaultViewportState);
-      }
+    }
+
+    if (
+      (autoLabelEnabled !== false || labels != null) &&
+      needsUpdateLabels &&
+      renderer != null &&
+      data.x != null &&
+      data.x.length > 0 &&
+      defaultViewportState != null
+    ) {
+      needsUpdateLabels = false;
+      updateLabels(defaultViewportState);
     }
   });
 
@@ -713,9 +720,14 @@
       content.innerText = props.tooltip.text ?? JSON.stringify(props.tooltip);
     }
   }
+
+  /** Apply a workaround to fix a bug where onwheel does not fire on empty SVG areas in Safari */
+  function onWheelWorkaround(element: HTMLElement) {
+    element.addEventListener("wheel", () => {}, { passive: true });
+  }
 </script>
 
-<div style:width="{width}px" style:height="{height}px" style:position="relative">
+<div style:width="{width}px" style:height="{height}px" style:position="relative" use:onWheelWorkaround>
   <canvas bind:this={canvas} style:position="absolute" style:top="0" style:left="0"></canvas>
   <div style:width="{width}px" style:height="{height}px" style:position="absolute" style:top="0" style:left="0">
     {#if customOverlay}

@@ -3,10 +3,10 @@
 import asyncio
 import concurrent.futures
 import json
-import os
 import re
 import uuid
 from functools import lru_cache
+from io import BytesIO
 from typing import Callable
 
 import duckdb
@@ -118,6 +118,10 @@ def make_server(
                 if command == "exec":
                     return JSONResponse({})
                 elif command == "arrow":
+                    if result is None:
+                        return JSONResponse(
+                            {"error": "statement must return rows"}, status_code=500
+                        )
                     buf = arrow_to_bytes(result.fetch_arrow_reader())
                     return Response(
                         buf, headers={"Content-Type": "application/octet-stream"}
@@ -134,33 +138,35 @@ def make_server(
         assert duckdb_connection is not None
         predicate = query.get("predicate", None)
         format = query["format"]
-        formats = {
-            "json": "(FORMAT JSON, ARRAY true)",
-            "jsonl": "(FORMAT JSON)",
-            "csv": "(FORMAT CSV)",
-            "parquet": "(FORMAT parquet)",
-        }
-        with duckdb_connection.cursor() as cursor:
-            filename = ".selection-" + str(uuid.uuid4()) + ".tmp"
-            try:
-                if predicate is not None:
-                    cursor.execute(
-                        f"COPY (SELECT * FROM dataset WHERE {predicate}) TO '{filename}' {formats[format]}"
-                    )
+
+        try:
+            with duckdb_connection.cursor() as cursor:
+                statement = (
+                    f"SELECT * FROM dataset WHERE {predicate}"
+                    if predicate is not None
+                    else "SELECT * FROM dataset"
+                )
+                # Convert to DataFrame and save since we've disabled DuckDB filesystem access
+                result = cursor.sql(statement).to_df()
+
+                output = BytesIO()
+                if format == "parquet":
+                    result.to_parquet(output, index=False)
+                elif format == "json":
+                    result.to_json(output, orient="records", index=False)
+                elif format == "jsonl":
+                    result.to_json(output, orient="records", lines=True, index=False)
+                elif format == "csv":
+                    result.to_csv(output, index=False)
                 else:
-                    cursor.execute(f"COPY dataset TO '{filename}' {formats[format]}")
-                with open(filename, "rb") as f:
-                    buffer = f.read()
-                    return Response(
-                        buffer, headers={"Content-Type": "application/octet-stream"}
-                    )
-            except Exception as e:
-                return JSONResponse({"error": str(e)}, status_code=500)
-            finally:
-                try:
-                    os.unlink(filename)
-                except Exception:
-                    pass
+                    raise ValueError("invalid format")
+
+                return Response(
+                    output.getvalue(),
+                    headers={"Content-Type": "application/octet-stream"},
+                )
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
 
     executor = concurrent.futures.ThreadPoolExecutor()
 

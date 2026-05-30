@@ -6,17 +6,30 @@
     title?: string;
     order?: number | null;
     class?: string | null;
+    disabled?: boolean;
     onClick?: () => void;
   }
 
-  let { label = null, icon = null, title = "", order = null, onClick, class: className }: Props = $props();
+  let {
+    label = null,
+    icon = null,
+    title = "",
+    order = null,
+    onClick,
+    class: className,
+    disabled = false,
+  }: Props = $props();
 </script>
 
 <button
-  class="rounded-md flex select-none items-center px-1.5 py-1.5 h-[28px] border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 dark:text-slate-400 focus-visible:outline-2 outline-blue-600 -outline-offset-1 {className ??
-    ''}"
+  class="rounded-md flex select-none items-center px-1.5 py-1.5 h-[28px]
+    border bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 dark:text-slate-400
+    focus-visible:outline-2 outline-blue-600 -outline-offset-1 disabled:text-slate-400
+    dark:disabled:text-slate-500 disabled:pointer-events-none
+    {className ?? ''}"
   style:order={order}
   title={title}
+  disabled={disabled}
   onclick={() => {
     onClick?.();
   }}

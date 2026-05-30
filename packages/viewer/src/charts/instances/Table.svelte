@@ -62,6 +62,11 @@
     );
   }
 
+  $effect.pre(() => {
+    let _ = [data, sort];
+    expandedRows = new Set();
+  });
+
   // Column resizing handlers
   function handleResizeStart(column: string) {
     return (e1: CursorValue) => {

@@ -13,6 +13,7 @@ export interface EmbeddingSpec {
     image?: string | null;
     importance?: string | null;
     category?: string | null;
+    neighbors?: string | null;
   };
 
   mode?: "points" | "density";

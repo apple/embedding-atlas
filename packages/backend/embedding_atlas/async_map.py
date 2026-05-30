@@ -1,3 +1,5 @@
+# Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import asyncio
 import random
 from typing import Awaitable, Callable, TypeVar

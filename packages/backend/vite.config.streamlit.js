@@ -13,6 +13,9 @@ function forceInlineWorker() {
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+  },
   plugins: [forceInlineWorker()],
   worker: {
     format: "es",

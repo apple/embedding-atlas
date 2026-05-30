@@ -14,7 +14,7 @@
 
 {#if props.label != null}
   <label class="select-none flex items-center gap-2">
-    <span class="text-slate-500 dark:text-slate-400 whitespace-nowrap">{props.label}</span>
+    <span class="text-slate-500 dark:text-slate-400 whitespace-nowrap text-sm">{props.label}</span>
     <SelectBase {...props} class={className + " " + (props.class ?? "")} />
   </label>
 {:else}
