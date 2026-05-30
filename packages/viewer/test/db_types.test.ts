@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "vitest";
 
-import { isFloatingPointDBType, jsTypeFromDBType } from "./db_types.js";
+import { isFloatingPointDBType, jsTypeFromDBType } from "../src/utils/db_types.js";
 
 describe("isFloatingPointDBType", () => {
   test("returns true for floating-point types", () => {
