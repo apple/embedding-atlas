@@ -23,7 +23,7 @@ const examples: Record<string, Example[]> = {
         embedding: { precomputed: { x: "projection_x", y: "projection_y", neighbors: "neighbors" } },
       },
       state: {
-        version: "0.15.0",
+        version: "0.21.0",
         charts: {
           1: {
             type: "embedding",
@@ -153,7 +153,7 @@ const examples: Record<string, Example[]> = {
         embedding: { precomputed: { x: "projection_x", y: "projection_y", neighbors: "neighbors" } },
       },
       state: {
-        version: "0.15.0",
+        version: "0.21.0",
         charts: {
           1: {
             type: "embedding",
@@ -257,7 +257,7 @@ const examples: Record<string, Example[]> = {
         embedding: { precomputed: { x: "projection_x", y: "projection_y", neighbors: "neighbors" } },
       },
       state: {
-        version: "0.15.0",
+        version: "0.21.0",
         charts: {
           1: {
             type: "embedding",
@@ -300,7 +300,7 @@ const examples: Record<string, Example[]> = {
         embedding: { precomputed: { x: "projection_x", y: "projection_y", neighbors: "neighbors" } },
       },
       state: {
-        version: "0.20.0",
+        version: "0.21.0",
         charts: {
           1: {
             type: "embedding",
@@ -397,7 +397,7 @@ const examples: Record<string, Example[]> = {
       data: "example://movies",
       settings: {},
       state: {
-        version: "0.15.0",
+        version: "0.21.0",
         charts: {
           1: {
             title: "IMDB Rating vs. Rotten Tomatos Rating",
@@ -632,7 +632,7 @@ const examples: Record<string, Example[]> = {
       data: "example://ScienceQA",
       settings: {},
       state: {
-        version: "0.15.0",
+        version: "0.21.0",
         charts: {
           1: { type: "predicates", title: "SQL Predicates" },
           2: { type: "instances", title: "Table" },
@@ -694,7 +694,7 @@ const examples: Record<string, Example[]> = {
       data: "example://census-income",
       settings: {},
       state: {
-        version: "0.15.0",
+        version: "0.21.0",
         charts: {
           1: {
             title: "Age by Marital Status",
@@ -804,7 +804,7 @@ const examples: Record<string, Example[]> = {
       data: "example://california-housing",
       settings: {},
       state: {
-        version: "0.15.0",
+        version: "0.21.0",
         charts: {
           1: {
             title: "MedHouseVal",
