@@ -8,25 +8,59 @@ const options: IndexOptions = {
 };
 
 /**
- * Parse a query string for an exact-phrase request.
+ * A query parsed into exact phrases and the remaining free text.
  *
- * A query wrapped in double quotes (e.g. `"aldi"`) means the user wants an
- * exact, case-insensitive substring match instead of the default fuzzy token
- * search. The default encoder maps similar-looking words to the same token
- * (for example "aldi" and "aldea"), which is great for fuzzy recall but
- * surfaces unwanted matches when the user knows exactly what they are looking
- * for. Quoting opts out of that behavior.
- *
- * Returns the inner phrase when the query is a quoted exact phrase, otherwise
- * null. An empty quoted string (`""`) is treated as not a phrase so the caller
- * falls back to the regular path.
+ * Double-quoted runs become exact phrases, everything outside the quotes is
+ * collected as free text. For example `"aldi" store` parses to one phrase
+ * (`aldi`) plus the free text `store`.
  */
-export function parseExactPhrase(query: string): string | null {
-  if (query.length >= 2 && query.startsWith('"') && query.endsWith('"')) {
-    let inner = query.slice(1, -1);
-    return inner.length > 0 ? inner : null;
+export interface ParsedQuery {
+  phrases: string[];
+  freeText: string;
+}
+
+/**
+ * Parse a query into exact phrases and free text.
+ *
+ * A double-quoted run (e.g. `"aldi"`) means the user wants an exact,
+ * case-insensitive substring match instead of the default fuzzy token search.
+ * The default encoder maps similar-looking words to the same token (for example
+ * "aldi" and "aldea"), which is great for fuzzy recall but surfaces unwanted
+ * matches when the user knows exactly what they are looking for. Quoting opts
+ * out of that behavior for the quoted run while leaving any unquoted words on
+ * the fuzzy path, so `"aldi" store` requires the exact substring "aldi" and
+ * fuzzy-matches "store".
+ *
+ * Empty quotes (`""`) contribute no phrase. An unterminated trailing quote is
+ * treated as a literal character of the free text so a half-typed query still
+ * searches.
+ */
+export function parseQuery(query: string): ParsedQuery {
+  let phrases: string[] = [];
+  let freeText: string[] = [];
+  let rest = query;
+
+  while (true) {
+    let open = rest.indexOf('"');
+    if (open < 0) {
+      freeText.push(rest);
+      break;
+    }
+    let close = rest.indexOf('"', open + 1);
+    if (close < 0) {
+      // No closing quote, keep the remainder as free text verbatim.
+      freeText.push(rest);
+      break;
+    }
+    freeText.push(rest.slice(0, open));
+    let inner = rest.slice(open + 1, close);
+    if (inner.length > 0) {
+      phrases.push(inner);
+    }
+    rest = rest.slice(close + 1);
   }
-  return null;
+
+  return { phrases, freeText: freeText.join(" ").trim() };
 }
 
 /**
@@ -60,18 +94,32 @@ export class SearchIndex {
   }
 
   query(query: string, limit: number): (string | number)[] {
-    let phrase = parseExactPhrase(query);
-    if (phrase != null) {
-      return this.exactSearch(phrase, limit);
-    }
-    return this.index.search(query, { limit });
-  }
+    let { phrases, freeText } = parseQuery(query);
 
-  private exactSearch(phrase: string, limit: number): (string | number)[] {
-    let needle = phrase.toLowerCase();
+    // No exact phrases: keep the original fuzzy path untouched.
+    if (phrases.length === 0) {
+      return this.index.search(freeText, { limit });
+    }
+
+    // Candidate ids that contain every required phrase as a substring. When
+    // there is also free text, narrow to the fuzzy hits for that text so the
+    // phrases act as a filter on top of the normal ranking.
+    let candidates: Iterable<string | number>;
+    if (freeText.length > 0) {
+      candidates = this.index.search(freeText) as (string | number)[];
+    } else {
+      candidates = this.texts.keys();
+    }
+
+    let needles = phrases.map((p) => p.toLowerCase());
     let result: (string | number)[] = [];
-    for (let [id, text] of this.texts) {
-      if (text.toLowerCase().includes(needle)) {
+    for (let id of candidates) {
+      let text = this.texts.get(id);
+      if (text == null) {
+        continue;
+      }
+      let haystack = text.toLowerCase();
+      if (needles.every((needle) => haystack.includes(needle))) {
         result.push(id);
         if (result.length >= limit) {
           break;
