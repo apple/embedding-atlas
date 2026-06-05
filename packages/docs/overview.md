@@ -25,12 +25,12 @@ You can use Embedding Atlas directly from this website by [loading your own data
 Embedding Atlas is released as two packages:
 
 - A Python package `embedding-atlas` that provides:
-  - A [command line tool](./tool.md) for launching Embedding Atlas from command line.
+  - A [command-line tool](./tool.md) for launching Embedding Atlas from the command line.
   - A [Python Notebook widget](./widget.md) for using Embedding Atlas in interactive Python notebooks.
   - A [Streamlit component](./streamlit.md) for using Embedding Atlas in Streamlit apps.
   - All of these approaches allow you to compute embeddings (with custom models) and projections.
 
-- An npm package `embedding-atlas` that exposes the user interface components as API so you can use them in your own applications. Below are the exposed components:
+- An npm package `embedding-atlas` that exposes the user interface components as APIs so you can use them in your own applications. Below are the exposed components:
   - [EmbeddingView](./embedding-view.md)
   - [EmbeddingViewMosaic](./embedding-view-mosaic.md)
   - [EmbeddingAtlas](./embedding-atlas.md)

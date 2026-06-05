@@ -1,6 +1,6 @@
 # Embedding Atlas
 
-A Python package that provides a command line tool to visualize a dataset with embeddings. It also includes a Python Notebook (e.g., Jupyter) widget and a Streamlit widget.
+A Python package that provides a command-line tool to visualize a dataset with embeddings. It also includes a Python notebook (e.g., Jupyter) widget and a Streamlit widget.
 
 - Documentation: https://apple.github.io/embedding-atlas
 - GitHub: https://github.com/apple/embedding-atlas
@@ -39,7 +39,7 @@ embedding-atlas huggingface_org/dataset_name
 
 ## Visualizing Embedding Projections
 
-To visual embedding projections, pre-compute the X and Y coordinates, and specify the column names with `--x` and `--y`, such as:
+To visualize embedding projections, pre-compute the X and Y coordinates, and specify the column names with `--x` and `--y`, such as:
 
 ```bash
 embedding-atlas path_to_dataset.parquet --x projection_x --y projection_y
@@ -68,4 +68,4 @@ If this column is specified, you'll be able to see nearest neighbors for a selec
 
 ## Local Development
 
-Launch Embedding Altas with a wine reviews dataset with `./start.sh` and the MNIST dataset with `./start_image.sh`.
+Launch Embedding Atlas with a wine reviews dataset with `./start.sh` and the MNIST dataset with `./start_image.sh`.

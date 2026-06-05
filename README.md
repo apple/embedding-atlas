@@ -112,7 +112,7 @@ For the algorithm that automatically produces clusters and labels in the embeddi
 
 ## Development
 
-For development instructions, please visit <https://apple.github.io/embedding-atlas/develop.html>, or checkout `packages/docs/develop.md`.
+For development instructions, please visit <https://apple.github.io/embedding-atlas/develop.html>, or check out `packages/docs/develop.md`.
 
 ## License
 
