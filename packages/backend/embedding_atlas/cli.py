@@ -67,8 +67,9 @@ def determine_and_load_data(filename: str, splits: list[str] | None = None):
     if filename.startswith(hf_prefix):
         filename = filename.split(hf_prefix)[-1]
 
-    # Hugging Face data
-    if (len(filename.split("/")) <= 2) and (suffix == ""):
+    if Path(filename).is_dir():
+        df = load_huggingface_data(filename, splits)
+    elif (len(filename.split("/")) <= 2) and (suffix == ""):
         df = load_huggingface_data(filename, splits)
     else:
         df = load_pandas_data(filename)
