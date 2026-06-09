@@ -327,7 +327,13 @@
   );
 
   async function querySelection(px: number, py: number, unitDistance: number): Promise<DataPoint | null> {
-    return await pointQuery.queryClosestPoint(filter?.predicate?.(clientId), px, py, unitDistance);
+    return await pointQuery.queryClosestPoint(
+      filter?.predicate?.(clientId),
+      px,
+      py,
+      unitDistance,
+      config?.hoverRadius ?? 12
+    );
   }
 
   async function queryPoints(identifiers: DataPointID[]): Promise<DataPoint[]> {
