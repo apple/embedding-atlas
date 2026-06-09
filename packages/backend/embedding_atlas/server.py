@@ -19,6 +19,26 @@ from .data_source import DataSource
 from .utils import arrow_to_bytes, to_parquet_bytes
 
 
+def is_dangerous_query(sql: str) -> bool:
+    """Check if a SQL query contains dangerous operations that should be blocked.
+
+    The Mosaic frontend legitimately sends ALTER TABLE and UPDATE statements
+    through the REST connector for data processing (e.g., adding category index
+    columns). We therefore only block truly destructive operations.
+    """
+    clean_sql = re.sub(r"--.*$", "", sql, flags=re.MULTILINE)
+    clean_sql = re.sub(r"/\*.*?\*/", "", clean_sql, flags=re.DOTALL)
+    # Strip string literals so keywords inside strings don't trigger false positives
+    clean_sql = re.sub(r"'([^']|'')*'", "''", clean_sql)
+    clean_sql = re.sub(r'"([^"]|"")*"', '""', clean_sql)
+    clean_sql = re.sub(r"\$\$.*?\$\$", "$$$$", clean_sql, flags=re.DOTALL)
+
+    dangerous_pattern = re.compile(
+        r"\b(DROP|DELETE|TRUNCATE|INSTALL|LOAD|ATTACH|DETACH)\b", re.IGNORECASE
+    )
+    return bool(dangerous_pattern.search(clean_sql))
+
+
 def make_server(
     data_source: DataSource,
     *,
@@ -112,6 +132,8 @@ def make_server(
         assert duckdb_connection is not None
         sql = query["sql"]
         command = query["type"]
+        if is_dangerous_query(sql):
+            return JSONResponse({"error": "Dangerous SQL operations are not allowed"}, status_code=400)
         with duckdb_connection.cursor() as cursor:
             try:
                 result = cursor.sql(sql)
