@@ -60,21 +60,27 @@ def find_column_name(existing_names, candidate):
 
 
 def determine_and_load_data(filename: str, splits: list[str] | None = None):
-    suffix = Path(filename).suffix.lower()
     hf_prefix = "hf://datasets/"
-
-    # Override Hugging Face data if given full url
     if filename.startswith(hf_prefix):
-        filename = filename.split(hf_prefix)[-1]
+        return load_huggingface_data(filename[len(hf_prefix):], splits)
 
-    if Path(filename).is_dir():
-        df = load_huggingface_data(filename, splits)
-    elif (len(filename.split("/")) <= 2) and (suffix == ""):
-        df = load_huggingface_data(filename, splits)
-    else:
-        df = load_pandas_data(filename)
+    # Remote URLs (http://, s3://, ...), pandas handle these.
+    if "://" in filename:
+        return load_pandas_data(filename)
 
-    return df
+    p = Path(filename).expanduser()
+    if p.is_file():
+        return load_pandas_data(filename)
+    if p.is_dir():
+        return load_huggingface_data(filename, splits)
+
+    # Not on disk. Only fall through to HF if the input looks like a Hub
+    # name (no extension and contains at most one '/'); otherwise surface the missing-file
+    # error so typos don't quietly hit the network.
+    if Path(filename).suffix == "" and len(filename.split("/")) <= 2:
+        return load_huggingface_data(filename, splits)
+
+    raise FileNotFoundError(f"No such file or directory: {filename!r}")
 
 
 def query_dataframe(query: str, data: pd.DataFrame) -> pd.DataFrame:
