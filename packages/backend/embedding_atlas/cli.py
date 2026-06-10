@@ -523,7 +523,7 @@ def main(
     dataset = DataSource(identifier, df, metadata)
 
     if static is None:
-        static = str((pathlib.Path(__file__).parent / "static").resolve())
+        static = str((pathlib.Path() / "static").resolve())
 
     if export_application is not None:
         if export_application.endswith(".zip"):
