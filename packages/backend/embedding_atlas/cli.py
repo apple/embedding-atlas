@@ -531,7 +531,7 @@ def main(
                 f.write(dataset.make_archive(static, export_metadata))
         else:
             dataset.export_to_folder(static, export_application, export_metadata)
-        exit(0)
+        return
 
     # Parse CORS configuration
     cors_config = False
