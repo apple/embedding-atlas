@@ -332,7 +332,7 @@
       px,
       py,
       unitDistance,
-      config?.hoverRadius ?? 12
+      config?.hoverRadius ?? 12,
     );
   }
 
