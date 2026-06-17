@@ -5,7 +5,6 @@
 import importlib
 import json
 import logging
-import pathlib
 import socket
 from pathlib import Path
 
@@ -523,7 +522,7 @@ def main(
     dataset = DataSource(identifier, df, metadata)
 
     if static is None:
-        static = str((pathlib.Path(__file__).parent / "static").resolve())
+        static = (Path(__file__).parent / "static").resolve().as_posix()
 
     if export_application is not None:
         if export_application.endswith(".zip"):
