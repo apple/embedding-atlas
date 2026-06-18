@@ -62,7 +62,7 @@ def find_column_name(existing_names, candidate):
 def determine_and_load_data(filename: str, splits: list[str] | None = None):
     hf_prefix = "hf://datasets/"
     if filename.startswith(hf_prefix):
-        return load_huggingface_data(filename[len(hf_prefix):], splits)
+        return load_huggingface_data(filename[len(hf_prefix) :], splits)
 
     # Remote URLs (http://, s3://, ...), pandas handle these.
     if "://" in filename:
