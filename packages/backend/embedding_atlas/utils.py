@@ -30,14 +30,24 @@ def load_pandas_data(url: str) -> pd.DataFrame:
 
 def load_huggingface_data(filename: str, splits: list[str] | None) -> pd.DataFrame:
     try:
-        from datasets import load_dataset
+        from datasets import load_dataset, load_from_disk
     except ImportError:
         print(
             "⚠️ Loading Hugging Face datasets requires the `datasets` package to be installed. Please run `pip install datasets`, then try again."
         )
         exit(-1)
 
-    ds: Any = load_dataset(filename)
+    if Path(filename).is_dir():
+        ds: Any = load_from_disk(filename)
+    else:
+        ds: Any = load_dataset(filename)
+
+    if not hasattr(ds, "keys"):
+        if splits is not None and len(splits) > 0:
+            raise ValueError(
+                "Cannot select splits for a single Hugging Face Dataset loaded from disk."
+            )
+        return ds.to_pandas()
 
     if splits is None or len(splits) == 0:
         ds_split_options = []
