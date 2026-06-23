@@ -1,8 +1,11 @@
 use ndarray::Array2;
 use wasm_bindgen::prelude::*;
 
+use nndescent::rng::Xoshiro256StarStar;
 use nndescent::NNDescent;
-use umap::{Init, Umap};
+use umap::graph::CsrMatrix;
+use umap::spectral::{noisy_scale_coords, random_layout, spectral_layout};
+use umap::{find_ab_params, Init, Optimizer, Umap as UmapCore, UmapOptimizer};
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -79,10 +82,11 @@ pub struct UMAPBuilder {
     local_connectivity: f32,
     set_op_mix_ratio: f32,
     init: Init,
+    optimizer: Optimizer,
     random_state: Option<u64>,
     verbose: bool,
     gpu: bool,
-    progress: Option<nndescent::ProgressCallback>,
+    progress: Option<js_sys::Function>,
 }
 
 #[wasm_bindgen]
@@ -111,6 +115,7 @@ impl UMAPBuilder {
             local_connectivity: 1.0,
             set_op_mix_ratio: 1.0,
             init: Init::Spectral,
+            optimizer: Optimizer::Sgd,
             random_state: None,
             verbose: false,
             gpu: false,
@@ -187,11 +192,21 @@ impl UMAPBuilder {
     }
 
     /// Initialization method: "spectral" or "random". Default: "spectral".
+    /// (Momentum forces random init regardless; see the core builder.)
     #[wasm_bindgen(js_name = "initMethod")]
     pub fn init_method(mut self, method: &str) -> UMAPBuilder {
         self.init = match method {
             "random" => Init::Random,
             _ => Init::Spectral,
+        };
+        self
+    }
+
+    /// Optimizer: "sgd" (default) or "momentum".
+    pub fn optimizer(mut self, optimizer: &str) -> UMAPBuilder {
+        self.optimizer = match optimizer {
+            "momentum" => Optimizer::Momentum,
+            _ => Optimizer::Sgd,
         };
         self
     }
@@ -219,15 +234,19 @@ impl UMAPBuilder {
     /// Set a progress callback: `(progress: number, stage: string) => void`.
     /// `progress` is in [0, 1], `stage` describes the current processing phase.
     pub fn progress(mut self, callback: js_sys::Function) -> UMAPBuilder {
-        self.progress = Some(js_to_progress_callback(callback));
+        self.progress = Some(callback);
         self
     }
 
-    /// Run UMAP and return the embedding result.
-    pub async fn build(self) -> Result<UMAPResult, JsError> {
+    /// Build the graph + initial embedding (eager) and return a stateful [`Umap`].
+    ///
+    /// The embedding and kNN graph are valid immediately at epoch 0; call
+    /// [`Umap::run`] to anneal to completion or [`Umap::step`] to advance
+    /// interactively.
+    pub async fn build(self) -> Result<Umap, JsError> {
         let array = parse_data(&self.data, self.n_rows, self.n_cols)?;
 
-        let mut builder = Umap::builder(&array)
+        let mut builder = UmapCore::builder(&array)
             .n_components(self.n_components)
             .n_neighbors(self.n_neighbors)
             .min_dist(self.min_dist)
@@ -239,6 +258,7 @@ impl UMAPBuilder {
             .local_connectivity(self.local_connectivity)
             .set_op_mix_ratio(self.set_op_mix_ratio)
             .init_method(self.init)
+            .optimizer(self.optimizer)
             .gpu(self.gpu)
             .verbose(self.verbose);
         if let Some(n) = self.n_epochs {
@@ -247,45 +267,171 @@ impl UMAPBuilder {
         if let Some(seed) = self.random_state {
             builder = builder.random_state(seed);
         }
-        if let Some(cb) = self.progress {
-            builder = builder.progress(cb);
+        // Report progress during the (eager) setup using a clone of the callback;
+        // the original is retained for run()/step().
+        if let Some(cb) = &self.progress {
+            builder = builder.progress(js_to_progress_callback(cb.clone()));
         }
 
-        let result = builder
-            .build_async()
+        let setup = builder
+            .setup_async()
             .await
             .map_err(|e| JsError::new(&e.to_string()))?;
-        let n_rows = result.embedding.nrows();
-        let n_components = result.embedding.ncols();
-        let n_neighbors = result.knn_indices.ncols();
-        Ok(UMAPResult {
-            embedding: result.embedding.into_raw_vec_and_offset().0,
-            knn_indices: result.knn_indices.into_raw_vec_and_offset().0,
-            knn_distances: result.knn_distances.into_raw_vec_and_offset().0,
+
+        let n_rows = setup.optimizer.embedding().nrows();
+        let n_components = setup.optimizer.embedding().ncols();
+        let n_neighbors_out = setup.knn_indices.ncols();
+
+        Ok(Umap {
+            optimizer: setup.optimizer,
+            graph: setup.graph,
+            knn_indices: setup.knn_indices.into_raw_vec_and_offset().0,
+            knn_distances: setup.knn_distances.into_raw_vec_and_offset().0,
+            n_neighbors_out,
             n_rows,
             n_components,
-            n_neighbors,
+            min_dist: self.min_dist,
+            spread: self.spread,
+            seed: self.random_state,
+            n_epochs: setup.n_epochs,
+            progress: self.progress,
+            verbose: self.verbose,
         })
     }
 }
 
-/// Result of a UMAP embedding.
+/// A stateful, resumable UMAP. The embedding/kNN are valid immediately after
+/// [`UMAPBuilder::build`] (eager setup); `run`/`step` advance the layout in place.
 #[wasm_bindgen]
-pub struct UMAPResult {
-    embedding: Vec<f32>,
+pub struct Umap {
+    optimizer: UmapOptimizer,
+    /// Pruned fuzzy graph, retained for spectral re-initialization in `reset`.
+    graph: CsrMatrix,
     knn_indices: Vec<i32>,
     knn_distances: Vec<f32>,
+    n_neighbors_out: usize,
     n_rows: usize,
     n_components: usize,
-    n_neighbors: usize,
+    min_dist: f32,
+    spread: f32,
+    seed: Option<u64>,
+    n_epochs: usize,
+    progress: Option<js_sys::Function>,
+    verbose: bool,
 }
 
 #[wasm_bindgen]
-impl UMAPResult {
-    /// Embedding coordinates as a flat Float32Array (row-major, n_rows x n_components).
+impl Umap {
+    /// Anneal the layout to completion: linear learning-rate decay from the
+    /// current `learningRate` down to 0 over the default horizon, continuing from
+    /// the current epoch. Reports progress over the optimization stage.
+    pub async fn run(&mut self) -> Result<(), JsError> {
+        let progress = self.progress.clone().map(js_to_progress_callback);
+        let mut logger = umap::Logger::new(self.verbose, progress, umap::UMAP_STAGES);
+        logger.push_stage_with_message(umap::STAGE_OPTIMIZATION, "Optimizing layout...");
+        self.optimizer.run_to(self.n_epochs, &mut logger).await;
+        logger.pop_stage();
+        Ok(())
+    }
+
+    /// Advance the layout by `n_epochs` at the current learning rate (no decay) —
+    /// intended for interactive/real-time stepping.
+    pub async fn step(&mut self, n_epochs: usize) {
+        self.optimizer.step(n_epochs).await;
+    }
+
+    /// Update live parameters. `min_dist`/`spread` re-fit the a/b curve, but only
+    /// when their (clamped) values actually change — callers typically re-send the
+    /// merged parameter set on every partial update, and the fit is not cheap.
+    /// `spread` is clamped to `>= min_dist` to avoid degenerate curves. Any argument
+    /// may be `null`/`undefined` to leave it unchanged.
+    #[wasm_bindgen(js_name = "setParameters")]
+    pub fn set_parameters(
+        &mut self,
+        learning_rate: Option<f32>,
+        repulsion_strength: Option<f32>,
+        negative_sample_rate: Option<f32>,
+        min_dist: Option<f32>,
+        spread: Option<f32>,
+    ) {
+        let mut p = self.optimizer.params();
+        if let Some(lr) = learning_rate {
+            p.alpha = lr;
+        }
+        if let Some(rs) = repulsion_strength {
+            p.gamma = rs;
+        }
+        if let Some(nsr) = negative_sample_rate {
+            p.negative_sample_rate = nsr;
+        }
+        if min_dist.is_some() || spread.is_some() {
+            let (prev_min_dist, prev_spread) = (self.min_dist, self.spread);
+            if let Some(md) = min_dist {
+                self.min_dist = md;
+            }
+            if let Some(sp) = spread {
+                self.spread = sp;
+            }
+            // Clamp spread >= min_dist (low spread triggers an a≈0 explosion /
+            // a≈830 collapse in find_ab_params).
+            if self.spread < self.min_dist {
+                self.spread = self.min_dist;
+            }
+            // Re-fit the a/b curve only if the clamped values changed. `p` already
+            // carries the current a/b, so an unchanged curve is left as-is — this
+            // skips a redundant find_ab_params on every partial setParameters.
+            if self.min_dist != prev_min_dist || self.spread != prev_spread {
+                let (a, b) = find_ab_params(self.spread, self.min_dist);
+                p.a = a as f32;
+                p.b = b as f32;
+            }
+        }
+        self.optimizer.set_params(p);
+    }
+
+    /// Switch optimizer: "sgd" or "momentum". Resets the velocity buffer.
+    #[wasm_bindgen(js_name = "setOptimizer")]
+    pub fn set_optimizer(&mut self, optimizer: &str) {
+        let opt = match optimizer {
+            "momentum" => Optimizer::Momentum,
+            _ => Optimizer::Sgd,
+        };
+        self.optimizer.set_optimizer(opt);
+    }
+
+    /// Re-initialize the embedding and restart the schedule from epoch 0.
+    /// `method` is "spectral" (uses the retained graph) or "random".
+    pub fn reset(&mut self, method: &str) {
+        let mut rng = match self.seed {
+            Some(s) => Xoshiro256StarStar::seed_from_u64(s),
+            None => Xoshiro256StarStar::seed_from_os(),
+        };
+        let embedding = match method {
+            "spectral" => {
+                let mut emb = spectral_layout(&self.graph, self.n_components, &mut rng);
+                noisy_scale_coords(&mut emb, &mut rng, 10.0, 0.0001);
+                emb
+            }
+            _ => random_layout(self.n_rows, self.n_components, &mut rng),
+        };
+        self.optimizer.reinit_embedding(embedding);
+    }
+
+    /// Copy the current embedding into `out` (length n_rows * n_components). The
+    /// JS-side typed array is updated in place on return.
+    #[wasm_bindgen(js_name = "copyEmbeddingInto")]
+    pub fn copy_embedding_into(&self, out: &mut [f32]) {
+        self.optimizer.copy_embedding_into(out);
+    }
+
+    /// Embedding coordinates as a flat Float32Array (row-major).
     #[wasm_bindgen(getter)]
     pub fn embedding(&self) -> Vec<f32> {
-        self.embedding.clone()
+        self.optimizer
+            .embedding()
+            .as_slice()
+            .map(|s| s.to_vec())
+            .unwrap_or_default()
     }
 
     /// KNN indices as a flat Int32Array (row-major, n_rows x n_neighbors).
@@ -312,10 +458,276 @@ impl UMAPResult {
         self.n_components
     }
 
-    /// Number of neighbors per point.
+    /// Number of neighbors per point in the kNN graph.
     #[wasm_bindgen(getter, js_name = "nNeighbors")]
     pub fn n_neighbors(&self) -> usize {
-        self.n_neighbors
+        self.n_neighbors_out
+    }
+
+    /// The number of epochs run so far.
+    #[wasm_bindgen(getter)]
+    pub fn epoch(&self) -> f64 {
+        self.optimizer.current_epoch() as f64
+    }
+}
+
+// ---------------------------------------------------------------------------
+// UMAP from a precomputed kNN graph
+// ---------------------------------------------------------------------------
+
+/// Builder for UMAP from a precomputed kNN graph (skips NNDescent — no
+/// high-dimensional data needed).
+///
+/// Usage (JS):
+/// ```js
+/// const result = new UMAPFromKnnBuilder(knnIndices, knnDistances, 1000, 2)
+///   .minDist(0.1)
+///   .randomState(42)
+///   .build();
+/// ```
+///
+/// `knnIndices`/`knnDistances` are row-major (n_rows * k); row i lists the
+/// neighbors of point i sorted by ascending distance. The point itself may appear
+/// in column 0 (distance 0) or be omitted — detected and normalized per row.
+///
+/// The caller must supply a well-formed graph (not validated beyond an index-range
+/// check): every index in `[0, n_rows)`, at most one self-entry per row, finite
+/// distances (no `NaN`), and a uniform real-neighbor count across rows. Violations
+/// degrade silently — a `NaN` distance yields a `NaN` embedding, and one short row
+/// trims every row to its length.
+#[wasm_bindgen]
+pub struct UMAPFromKnnBuilder {
+    knn_indices: Vec<i32>,
+    knn_distances: Vec<f32>,
+    n_rows: usize,
+    n_components: usize,
+    // Optional parameters with defaults (no metric / n_neighbors: k comes from the graph)
+    min_dist: f32,
+    spread: f32,
+    n_epochs: Option<usize>,
+    learning_rate: f32,
+    negative_sample_rate: usize,
+    repulsion_strength: f32,
+    local_connectivity: f32,
+    set_op_mix_ratio: f32,
+    init: Init,
+    optimizer: Optimizer,
+    random_state: Option<u64>,
+    verbose: bool,
+    gpu: bool,
+    progress: Option<js_sys::Function>,
+}
+
+#[wasm_bindgen]
+impl UMAPFromKnnBuilder {
+    /// Create a new builder from a precomputed kNN graph.
+    ///
+    /// @param knn_indices - Flat Int32Array, row-major (n_rows * k).
+    /// @param knn_distances - Flat Float32Array, row-major (n_rows * k).
+    /// @param n_rows - Number of data points.
+    /// @param n_components - Target embedding dimensions (typically 2).
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        knn_indices: &[i32],
+        knn_distances: &[f32],
+        n_rows: usize,
+        n_components: usize,
+    ) -> UMAPFromKnnBuilder {
+        UMAPFromKnnBuilder {
+            knn_indices: knn_indices.to_vec(),
+            knn_distances: knn_distances.to_vec(),
+            n_rows,
+            n_components,
+            min_dist: 0.1,
+            spread: 1.0,
+            n_epochs: None,
+            learning_rate: 1.0,
+            negative_sample_rate: 5,
+            repulsion_strength: 1.0,
+            local_connectivity: 1.0,
+            set_op_mix_ratio: 1.0,
+            init: Init::Spectral,
+            optimizer: Optimizer::Sgd,
+            random_state: None,
+            verbose: false,
+            gpu: false,
+            progress: None,
+        }
+    }
+
+    /// Minimum distance between points in embedding. Default: 0.1.
+    #[wasm_bindgen(js_name = "minDist")]
+    pub fn min_dist(mut self, d: f32) -> UMAPFromKnnBuilder {
+        self.min_dist = d;
+        self
+    }
+
+    /// Effective scale of embedded points. Default: 1.0.
+    pub fn spread(mut self, s: f32) -> UMAPFromKnnBuilder {
+        self.spread = s;
+        self
+    }
+
+    /// Number of optimization epochs. Default: auto.
+    #[wasm_bindgen(js_name = "nEpochs")]
+    pub fn n_epochs(mut self, n: usize) -> UMAPFromKnnBuilder {
+        self.n_epochs = Some(n);
+        self
+    }
+
+    /// Initial learning rate. Default: 1.0.
+    #[wasm_bindgen(js_name = "learningRate")]
+    pub fn learning_rate(mut self, lr: f32) -> UMAPFromKnnBuilder {
+        self.learning_rate = lr;
+        self
+    }
+
+    /// Negative samples per positive sample. Default: 5.
+    #[wasm_bindgen(js_name = "negativeSampleRate")]
+    pub fn negative_sample_rate(mut self, r: usize) -> UMAPFromKnnBuilder {
+        self.negative_sample_rate = r;
+        self
+    }
+
+    /// Weight of repulsive force. Default: 1.0.
+    #[wasm_bindgen(js_name = "repulsionStrength")]
+    pub fn repulsion_strength(mut self, s: f32) -> UMAPFromKnnBuilder {
+        self.repulsion_strength = s;
+        self
+    }
+
+    /// Local connectivity constraint. Default: 1.0.
+    #[wasm_bindgen(js_name = "localConnectivity")]
+    pub fn local_connectivity(mut self, c: f32) -> UMAPFromKnnBuilder {
+        self.local_connectivity = c;
+        self
+    }
+
+    /// Interpolation between fuzzy union and intersection. Default: 1.0.
+    #[wasm_bindgen(js_name = "mixRatio")]
+    pub fn mix_ratio(mut self, r: f32) -> UMAPFromKnnBuilder {
+        self.set_op_mix_ratio = r;
+        self
+    }
+
+    /// Initialization method: "spectral" or "random". Default: "spectral".
+    #[wasm_bindgen(js_name = "initMethod")]
+    pub fn init_method(mut self, method: &str) -> UMAPFromKnnBuilder {
+        self.init = match method {
+            "random" => Init::Random,
+            _ => Init::Spectral,
+        };
+        self
+    }
+
+    /// Optimizer: "sgd" (default) or "momentum".
+    pub fn optimizer(mut self, optimizer: &str) -> UMAPFromKnnBuilder {
+        self.optimizer = match optimizer {
+            "momentum" => Optimizer::Momentum,
+            _ => Optimizer::Sgd,
+        };
+        self
+    }
+
+    /// Random seed for reproducibility. Default: None (random).
+    #[wasm_bindgen(js_name = "randomState")]
+    pub fn random_state(mut self, seed: i64) -> UMAPFromKnnBuilder {
+        self.random_state = parse_seed(seed);
+        self
+    }
+
+    /// Enable verbose output. Default: false.
+    pub fn verbose(mut self, v: bool) -> UMAPFromKnnBuilder {
+        self.verbose = v;
+        self
+    }
+
+    /// Enable GPU acceleration via WebGPU for the layout optimization. Default: false.
+    pub fn gpu(mut self, g: bool) -> UMAPFromKnnBuilder {
+        self.gpu = g;
+        self
+    }
+
+    /// Set a progress callback: `(progress: number, stage: string) => void`.
+    pub fn progress(mut self, callback: js_sys::Function) -> UMAPFromKnnBuilder {
+        self.progress = Some(callback);
+        self
+    }
+
+    /// Build the graph + initial embedding (eager) and return a stateful [`Umap`].
+    pub async fn build(self) -> Result<Umap, JsError> {
+        if self.n_rows == 0 {
+            return Err(JsError::new("nRows must be > 0"));
+        }
+        if self.knn_indices.len() != self.knn_distances.len() {
+            return Err(JsError::new(
+                "knnIndices and knnDistances must have equal length",
+            ));
+        }
+        if self.knn_indices.len() % self.n_rows != 0 {
+            return Err(JsError::new(&format!(
+                "knn length {} is not divisible by nRows {}",
+                self.knn_indices.len(),
+                self.n_rows
+            )));
+        }
+        let k = self.knn_indices.len() / self.n_rows;
+        if k < 1 {
+            return Err(JsError::new("each point must have at least one neighbor"));
+        }
+
+        let idx = Array2::from_shape_vec((self.n_rows, k), self.knn_indices)
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        let dist = Array2::from_shape_vec((self.n_rows, k), self.knn_distances)
+            .map_err(|e| JsError::new(&e.to_string()))?;
+
+        let mut builder = UmapCore::builder_from_knn(idx, dist)
+            .n_components(self.n_components)
+            .min_dist(self.min_dist)
+            .spread(self.spread)
+            .learning_rate(self.learning_rate)
+            .negative_sample_rate(self.negative_sample_rate)
+            .repulsion_strength(self.repulsion_strength)
+            .local_connectivity(self.local_connectivity)
+            .set_op_mix_ratio(self.set_op_mix_ratio)
+            .init_method(self.init)
+            .optimizer(self.optimizer)
+            .gpu(self.gpu)
+            .verbose(self.verbose);
+        if let Some(n) = self.n_epochs {
+            builder = builder.n_epochs(n);
+        }
+        if let Some(seed) = self.random_state {
+            builder = builder.random_state(seed);
+        }
+        if let Some(cb) = &self.progress {
+            builder = builder.progress(js_to_progress_callback(cb.clone()));
+        }
+
+        let setup = builder
+            .setup_async()
+            .await
+            .map_err(|e| JsError::new(&e.to_string()))?;
+
+        let n_rows = setup.optimizer.embedding().nrows();
+        let n_components = setup.optimizer.embedding().ncols();
+        let n_neighbors_out = setup.knn_indices.ncols();
+
+        Ok(Umap {
+            optimizer: setup.optimizer,
+            graph: setup.graph,
+            knn_indices: setup.knn_indices.into_raw_vec_and_offset().0,
+            knn_distances: setup.knn_distances.into_raw_vec_and_offset().0,
+            n_neighbors_out,
+            n_rows,
+            n_components,
+            min_dist: self.min_dist,
+            spread: self.spread,
+            seed: self.random_state,
+            n_epochs: setup.n_epochs,
+            progress: self.progress,
+            verbose: self.verbose,
+        })
     }
 }
 
