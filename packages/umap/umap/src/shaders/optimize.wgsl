@@ -10,8 +10,8 @@
 //      i32 buffer (avoids lost updates from GPU write conflicts). A sub-batch
 //      processes edges in [edge_offset, edge_end).
 //   2. apply_grads: one thread per embedding element. Reads + clears the
-//      accumulated gradient (clamped to ±grad_clamp). SGD applies it directly;
-//      Momentum integrates it into a velocity buffer.
+//      accumulated gradient and applies it. SGD clamps the summed delta;
+//      Momentum integrates velocity (which bounds its own step).
 //   3. rebase_schedule: subtract a baseline from both counter buffers so the f32
 //      counters stay precise over indefinitely long runs.
 
@@ -143,13 +143,10 @@ fn accumulate_grads(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 // Pass 2: apply accumulated gradients to embedding and clear the accumulator.
 //
-// `g` is the summed per-epoch position delta. Per-edge contributions are already
-// clamped to ±EDGE_CLAMP, so g is finite, but a vertex with coherent gradients can
-// exceed the ~sqrt(7K)·EDGE_CLAMP random-walk norm; grad_clamp caps those outliers.
-// SGD applies `α·g`; Momentum integrates `v = β·v + g; x += α·v`, whose recurrence
-// would otherwise amplify an unclamped outlier by ~1/(1-β) and over-scale the
-// layout — so the clamp is applied on BOTH paths. It matches SGD and, for typical
-// well-canceling gradients, rarely binds.
+// `g` is the summed SGD position delta. SGD applies `α·clamp(g, ±grad_clamp)`
+// (grad_clamp bounds the random-walk accumulation of ~7K per-edge contributions).
+// Momentum integrates `v = β·v + g; x += α·v` — velocity bounds the step, so no
+// clamp is applied on that path.
 @compute @workgroup_size(256)
 fn apply_grads(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idx = gid.x + params.apply_offset;
@@ -158,13 +155,13 @@ fn apply_grads(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
 
-    let g = clamp(from_fixed(atomicExchange(&grad_accum[idx], 0)), -params.grad_clamp, params.grad_clamp);
+    let g = from_fixed(atomicExchange(&grad_accum[idx], 0));
     if (params.optimizer == 1u) {
         let v = params.beta * velocity[idx] + g;
         velocity[idx] = v;
         embedding[idx] += params.alpha * v;
     } else {
-        embedding[idx] += params.alpha * g;
+        embedding[idx] += params.alpha * clamp(g, -params.grad_clamp, params.grad_clamp);
     }
 }
 
