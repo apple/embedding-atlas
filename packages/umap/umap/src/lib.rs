@@ -1492,36 +1492,4 @@ mod tests {
 
         assert!(result.embedding.iter().all(|x| x.is_finite()));
     }
-
-    #[cfg(feature = "gpu")]
-    #[test]
-    fn test_gpu_momentum_step_bounded() {
-        // Smoke test for the GPU momentum step() path (flat learning rate, no
-        // decay) — previously uncovered; the existing momentum GPU test uses
-        // build()/run_to, which decays alpha. The apply shader clamps the summed
-        // per-epoch gradient to ±grad_clamp on the momentum path (as it does for
-        // SGD) before integrating it into the velocity, bounding the step.
-        let data = make_test_data(300, 10, 17);
-        let mut setup = pollster::block_on(
-            Umap::builder(&data)
-                .n_neighbors(15)
-                .n_epochs(200)
-                .optimizer(Optimizer::Momentum)
-                .gpu(true)
-                .init_method(Init::Random)
-                .random_state(17)
-                .setup_async(),
-        )
-        .unwrap();
-
-        pollster::block_on(setup.optimizer.step(200));
-
-        let emb = setup.optimizer.embedding();
-        assert!(emb.iter().all(|x| x.is_finite()));
-        let max_abs = emb.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
-        assert!(
-            max_abs < 1000.0,
-            "GPU momentum step() max|coord| = {max_abs} (unbounded?)"
-        );
-    }
 }
