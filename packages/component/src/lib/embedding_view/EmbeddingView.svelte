@@ -31,6 +31,12 @@
 
   let derivedProperties = $derived(computeDerivedProperties(data));
 
+  // `categoryCount` only depends on the category array, which is effectively
+  // immutable for a given dataset. Cache it on the array reference so a streaming
+  // `data` (new object every frame, same category array) doesn't rescan it.
+  let cachedCategoryRef: Uint8Array | null = null;
+  let cachedCategoryCount = 1;
+
   function computeDerivedProperties(data: EmbeddingViewProps["data"]): {
     count: number;
     categoryCount: number;
@@ -39,7 +45,13 @@
   } {
     let categoryCount = 1;
     if (data.category != null) {
-      categoryCount = data.category.reduce((a, b) => Math.max(a, b), 0) + 1;
+      if (data.category === cachedCategoryRef) {
+        categoryCount = cachedCategoryCount;
+      } else {
+        categoryCount = data.category.reduce((a, b) => Math.max(a, b), 0) + 1;
+        cachedCategoryRef = data.category;
+        cachedCategoryCount = categoryCount;
+      }
     }
     let xCenter = median(data.x);
     let yCenter = median(data.y);

@@ -31,9 +31,13 @@ use nndescent::NNDescent;
 
 pub use nndescent::{Logger, ProgressCallback};
 
-use crate::graph::{fuzzy_simplicial_set, make_epochs_per_sample};
-use crate::optimize::optimize_layout_euclidean;
+use crate::graph::{
+    fuzzy_simplicial_set, make_epochs_per_sample, normalize_knn_self_column, CsrMatrix,
+    SparseMatrix,
+};
 use crate::spectral::{noisy_scale_coords, random_layout, spectral_layout};
+
+pub use crate::optimize::{LiveParams, Optimizer, UmapOptimizer};
 
 // ---------- UMAP stage definitions ----------
 
@@ -60,6 +64,13 @@ pub enum UmapError {
     NoNeighborGraph,
     /// Invalid parameter value.
     InvalidParameter(String),
+    /// Supplied kNN indices and distances have mismatched shapes.
+    KnnShapeMismatch {
+        indices: (usize, usize),
+        distances: (usize, usize),
+    },
+    /// A supplied kNN index is out of range `[0, n_samples)`.
+    KnnIndexOutOfRange { value: i32, n_samples: usize },
 }
 
 impl fmt::Display for UmapError {
@@ -68,6 +79,16 @@ impl fmt::Display for UmapError {
             UmapError::NNDescent(e) => write!(f, "NNDescent error: {}", e),
             UmapError::NoNeighborGraph => write!(f, "Neighbor graph was not computed"),
             UmapError::InvalidParameter(msg) => write!(f, "Invalid parameter: {}", msg),
+            UmapError::KnnShapeMismatch { indices, distances } => write!(
+                f,
+                "kNN indices shape {:?} does not match distances shape {:?}",
+                indices, distances
+            ),
+            UmapError::KnnIndexOutOfRange { value, n_samples } => write!(
+                f,
+                "kNN index {} out of range for {} samples",
+                value, n_samples
+            ),
         }
     }
 }
@@ -114,7 +135,10 @@ pub enum Init {
 ///     .unwrap();
 /// ```
 pub struct UmapBuilder<'a> {
-    data: &'a Array2<f32>,
+    data: Option<&'a Array2<f32>>,
+    /// Precomputed kNN graph (indices, distances). When set, NNDescent is skipped
+    /// and `data` is unused. See [`Umap::builder_from_knn`].
+    knn: Option<(Array2<i32>, Array2<f32>)>,
     n_neighbors: usize,
     n_components: usize,
     min_dist: f32,
@@ -130,6 +154,7 @@ pub struct UmapBuilder<'a> {
     verbose: bool,
     init: Init,
     gpu: bool,
+    optimizer: Optimizer,
     progress: Option<ProgressCallback>,
 }
 
@@ -233,97 +258,272 @@ impl<'a> UmapBuilder<'a> {
         self
     }
 
+    /// Optimizer to use for the layout SGD. Default: [`Optimizer::Sgd`].
+    pub fn optimizer(mut self, o: Optimizer) -> Self {
+        self.optimizer = o;
+        self
+    }
+
     /// Run UMAP and return the result (embedding + KNN graph).
     pub fn build(self) -> Result<UmapResult, UmapError> {
         pollster::block_on(self.build_async())
     }
 
-    /// Run UMAP asynchronously (for WASM with GPU).
+    /// Run UMAP asynchronously (for WASM with GPU): build the graph + initial
+    /// embedding, then optimize to completion. Output matches [`build`](Self::build).
     ///
-    /// On native, prefer [`build`] which handles async internally.
+    /// On native, prefer [`build`](Self::build) which handles async internally.
     pub async fn build_async(self) -> Result<UmapResult, UmapError> {
-        let data = self.data;
-        let n_samples = data.nrows();
+        let Prepared {
+            embedding,
+            graph: _,
+            knn_indices,
+            knn_distances,
+            head,
+            tail,
+            epochs_per_sample,
+            n_epochs,
+            n_neighbors,
+            rng_state,
+            params,
+            optimizer,
+            gpu,
+            mut logger,
+        } = self.prepare().await?;
 
-        if self.n_neighbors >= n_samples {
-            return Err(UmapError::InvalidParameter(format!(
-                "n_neighbors ({}) must be less than n_samples ({})",
-                self.n_neighbors, n_samples
-            )));
-        }
+        let mut engine = build_optimizer(
+            head,
+            tail,
+            epochs_per_sample,
+            embedding,
+            params,
+            optimizer,
+            rng_state,
+            gpu,
+            n_neighbors,
+        )
+        .await;
 
-        // Create logger
+        logger.push_stage_with_message(
+            STAGE_OPTIMIZATION,
+            &format!("Optimizing layout for {} epochs...", n_epochs),
+        );
+        engine.run_to(n_epochs, &mut logger).await;
+        logger.pop_stage();
+
+        Ok(UmapResult {
+            embedding: engine.into_embedding(),
+            knn_indices,
+            knn_distances,
+        })
+    }
+
+    /// Build the graph + initial embedding and return a resumable [`UmapSetup`],
+    /// **without** running the layout optimization. Use the returned
+    /// [`UmapOptimizer`] to step/run interactively.
+    pub async fn setup_async(self) -> Result<UmapSetup, UmapError> {
+        let Prepared {
+            embedding,
+            graph,
+            knn_indices,
+            knn_distances,
+            head,
+            tail,
+            epochs_per_sample,
+            n_epochs,
+            n_neighbors,
+            rng_state,
+            params,
+            optimizer,
+            gpu,
+            logger: _,
+        } = self.prepare().await?;
+
+        let optimizer = build_optimizer(
+            head,
+            tail,
+            epochs_per_sample,
+            embedding,
+            params,
+            optimizer,
+            rng_state,
+            gpu,
+            n_neighbors,
+        )
+        .await;
+
+        Ok(UmapSetup {
+            optimizer,
+            graph,
+            knn_indices,
+            knn_distances,
+            n_epochs,
+        })
+    }
+
+    /// Stages 1–7: nearest neighbors, fuzzy graph, prune, init, edge schedule.
+    /// Shared by [`build_async`](Self::build_async) and [`setup_async`](Self::setup_async).
+    async fn prepare(mut self) -> Result<Prepared, UmapError> {
+        // Take ownership of any supplied kNN graph up front, so the Step 1 branch
+        // below can move it without conflicting with the n_samples decision.
+        let knn = self.knn.take();
+
+        // n_samples comes from whichever input is present (kNN graph or data).
+        let n_samples = match &knn {
+            Some((idx, dist)) => {
+                if idx.shape() != dist.shape() {
+                    return Err(UmapError::KnnShapeMismatch {
+                        indices: idx.dim(),
+                        distances: dist.dim(),
+                    });
+                }
+                idx.nrows()
+            }
+            None => self
+                .data
+                .expect("UmapBuilder has neither data nor a kNN graph")
+                .nrows(),
+        };
+
         let mut logger = Logger::new(self.verbose, self.progress, UMAP_STAGES);
 
-        // Compute curve parameters a, b
+        // Degenerate inputs have nothing to embed: with 0 or 1 points there are no
+        // neighbor relationships to model. Return a trivial origin layout (empty
+        // graph/knn, zero epochs) rather than erroring, so callers don't have to
+        // special-case tiny datasets.
+        if n_samples <= 1 {
+            return Ok(Prepared {
+                embedding: Array2::zeros((n_samples, self.n_components)),
+                graph: SparseMatrix::from_coo(n_samples, n_samples, Vec::new()).to_csr(),
+                knn_indices: Array2::zeros((n_samples, 0)),
+                knn_distances: Array2::zeros((n_samples, 0)),
+                head: Vec::new(),
+                tail: Vec::new(),
+                epochs_per_sample: Vec::new(),
+                n_epochs: 0,
+                n_neighbors: 0,
+                rng_state: [0, 0, 0],
+                params: LiveParams {
+                    alpha: self.learning_rate,
+                    gamma: self.repulsion_strength,
+                    negative_sample_rate: self.negative_sample_rate as f32,
+                    a: 1.0,
+                    b: 1.0,
+                },
+                optimizer: self.optimizer,
+                gpu: self.gpu,
+                logger,
+            });
+        }
+
+        // Compute curve parameters a, b (independent of the neighbor count).
         let (a, b) = find_ab_params(self.spread, self.min_dist);
+
+        // Step 1: obtain the kNN graph — either supplied (skip NNDescent) or computed.
+        // We keep the STAGE_NEIGHBORS push/pop in both paths so a progress callback's
+        // stage fractions stay consistent (the supplied path reports it instantly).
+        logger.push_stage_with_message(STAGE_NEIGHBORS, "Finding nearest neighbors...");
+        let (knn_indices, knn_dists, n_neighbors) = match knn {
+            Some((idx, dist)) => {
+                // Validate indices; negatives are allowed and mean "missing".
+                for &v in idx.iter() {
+                    if v >= 0 && (v as usize) >= n_samples {
+                        return Err(UmapError::KnnIndexOutOfRange {
+                            value: v,
+                            n_samples,
+                        });
+                    }
+                }
+                // Canonicalize to self-at-column-0, sorted ascending; n_neighbors is
+                // taken from the (normalized) graph width, not self.n_neighbors.
+                let (norm_indices, norm_dists) = normalize_knn_self_column(&idx, &dist);
+                let n_neighbors = norm_indices.ncols();
+                logger.log("Using precomputed neighbors");
+                logger.pop_stage();
+                (norm_indices, norm_dists, n_neighbors)
+            }
+            None => {
+                let data = self
+                    .data
+                    .expect("UmapBuilder has neither data nor a kNN graph");
+
+                // A point can have at most `n_samples - 1` neighbors. Clamp rather
+                // than reject (mirrors umap-learn on small inputs).
+                let n_neighbors = self.n_neighbors.min(n_samples - 1);
+                if n_neighbors != self.n_neighbors {
+                    logger.log(&format!(
+                        "n_neighbors ({}) >= n_samples ({}); clamping to {}",
+                        self.n_neighbors, n_samples, n_neighbors
+                    ));
+                }
+
+                // Create nndescent callback that forwards to our logger's user callback.
+                // We share the user callback between the UMAP logger and the NNDescent
+                // sub-callback via Rc<RefCell<>>, avoiding unsafe pointer aliasing.
+                let nn_cb: Option<nndescent::ProgressCallback> = if logger.callback.is_some() {
+                    use std::cell::RefCell;
+                    use std::rc::Rc;
+
+                    let user_cb = Rc::new(RefCell::new(logger.callback.take().unwrap()));
+
+                    // Replace logger's callback with a delegating wrapper
+                    let logger_cb = user_cb.clone();
+                    logger.callback = Some(Box::new(move |progress: f32, stage: &str| {
+                        (*logger_cb.borrow_mut())(progress, stage);
+                    }));
+
+                    // Compute the NEIGHBORS stage progress mapping from UMAP_STAGES
+                    let (stage_start, stage_frac) = {
+                        let mut cumulative = 0.0f32;
+                        let mut found = (0.0f32, 1.0f32);
+                        for &(name, frac) in UMAP_STAGES {
+                            if name == STAGE_NEIGHBORS {
+                                found = (cumulative, frac);
+                                break;
+                            }
+                            cumulative += frac;
+                        }
+                        found
+                    };
+
+                    // Create NNDescent callback that maps sub-progress to overall UMAP progress
+                    let nn_cb_ref = user_cb.clone();
+                    Some(Box::new(move |progress: f32, stage: &str| {
+                        let label = format!("NNDescent: {}", stage);
+                        let overall = (stage_start + stage_frac * progress).min(1.0);
+                        (*nn_cb_ref.borrow_mut())(overall, &label);
+                    }))
+                } else {
+                    None
+                };
+
+                let mut nnd_builder = NNDescent::builder(data.clone(), &self.metric, n_neighbors)
+                    .verbose(self.verbose)
+                    .gpu(self.gpu)
+                    .progress_option(nn_cb);
+                if let Some(seed) = self.random_state {
+                    nnd_builder = nnd_builder.random_state(seed);
+                }
+                let nnd = nnd_builder.build_async().await?;
+                let (knn_indices, knn_dists) =
+                    nnd.neighbor_graph().ok_or(UmapError::NoNeighborGraph)?;
+                logger.pop_stage();
+                (knn_indices, knn_dists, n_neighbors)
+            }
+        };
 
         logger.log(&format!(
             "UMAP(n_neighbors={}, n_components={}, metric={})",
-            self.n_neighbors, self.n_components, self.metric
+            n_neighbors, self.n_components, self.metric
         ));
         logger.log(&format!("Fitted a={:.4}, b={:.4}", a, b));
-
-        // Step 1: Compute nearest neighbors using NNDescent
-        logger.push_stage_with_message(STAGE_NEIGHBORS, "Finding nearest neighbors...");
-
-        // Create nndescent callback that forwards to our logger's user callback.
-        // We share the user callback between the UMAP logger and the NNDescent
-        // sub-callback via Rc<RefCell<>>, avoiding unsafe pointer aliasing.
-        let nn_cb: Option<nndescent::ProgressCallback> = if logger.callback.is_some() {
-            use std::cell::RefCell;
-            use std::rc::Rc;
-
-            let user_cb = Rc::new(RefCell::new(logger.callback.take().unwrap()));
-
-            // Replace logger's callback with a delegating wrapper
-            let logger_cb = user_cb.clone();
-            logger.callback = Some(Box::new(move |progress: f32, stage: &str| {
-                (*logger_cb.borrow_mut())(progress, stage);
-            }));
-
-            // Compute the NEIGHBORS stage progress mapping from UMAP_STAGES
-            let (stage_start, stage_frac) = {
-                let mut cumulative = 0.0f32;
-                let mut found = (0.0f32, 1.0f32);
-                for &(name, frac) in UMAP_STAGES {
-                    if name == STAGE_NEIGHBORS {
-                        found = (cumulative, frac);
-                        break;
-                    }
-                    cumulative += frac;
-                }
-                found
-            };
-
-            // Create NNDescent callback that maps sub-progress to overall UMAP progress
-            let nn_cb_ref = user_cb.clone();
-            Some(Box::new(move |progress: f32, stage: &str| {
-                let label = format!("NNDescent: {}", stage);
-                let overall = (stage_start + stage_frac * progress).min(1.0);
-                (*nn_cb_ref.borrow_mut())(overall, &label);
-            }))
-        } else {
-            None
-        };
-
-        let mut nnd_builder = NNDescent::builder(data.clone(), &self.metric, self.n_neighbors)
-            .verbose(self.verbose)
-            .gpu(self.gpu)
-            .progress_option(nn_cb);
-        if let Some(seed) = self.random_state {
-            nnd_builder = nnd_builder.random_state(seed);
-        }
-        let nnd = nnd_builder.build_async().await?;
-        let (knn_indices, knn_dists) = nnd.neighbor_graph().ok_or(UmapError::NoNeighborGraph)?;
-        logger.pop_stage();
 
         // Step 2: Build fuzzy simplicial set
         logger.push_stage_with_message(STAGE_GRAPH, "Constructing fuzzy simplicial set...");
         let mut graph = fuzzy_simplicial_set(
             &knn_indices,
             &knn_dists,
-            self.n_neighbors,
+            n_neighbors,
             self.set_op_mix_ratio,
             self.local_connectivity,
         );
@@ -335,15 +535,14 @@ impl<'a> UmapBuilder<'a> {
 
         // Step 4: Prune weak edges
         if n_epochs > 10 {
-            let max_weight = graph
-                .entries
-                .values()
-                .cloned()
-                .fold(f32::NEG_INFINITY, f32::max);
+            let max_weight = graph.max_weight();
             let threshold = max_weight / n_epochs as f32;
             graph.prune(threshold);
         }
         logger.pop_stage();
+
+        // CSR of the pruned graph: used for spectral init and retained for reset.
+        let csr = graph.to_csr();
 
         // Step 5: Initialize embedding
         logger.push_stage_with_message(STAGE_EMBEDDING_INIT, "Initializing embedding...");
@@ -352,9 +551,16 @@ impl<'a> UmapBuilder<'a> {
             None => Xoshiro256StarStar::seed_from_os(),
         };
 
-        let mut embedding = match self.init {
+        // Spectral init hurts momentum early (and costs LOBPCG time); prefer random
+        // when momentum is selected. (Single-line guard; see plan §5.)
+        let init = if self.optimizer == Optimizer::Momentum {
+            Init::Random
+        } else {
+            self.init.clone()
+        };
+
+        let embedding = match init {
             Init::Spectral => {
-                let csr = graph.to_csr();
                 logger.log("Computing spectral initialization...");
                 let mut emb = spectral_layout(&csr, self.n_components, &mut rng);
                 let is_random_fallback = {
@@ -384,85 +590,109 @@ impl<'a> UmapBuilder<'a> {
             rng.random_i64().abs(),
         ];
 
-        // Step 8: Optimize embedding
-        logger.push_stage_with_message(
-            STAGE_OPTIMIZATION,
-            &format!("Optimizing layout for {} epochs...", n_epochs),
-        );
-
-        #[cfg(feature = "gpu")]
-        let used_gpu = if self.gpu {
-            match crate::gpu_optimize::optimize_layout_gpu(
-                &mut embedding,
-                &heads,
-                &tails,
-                &epochs_per_sample,
-                n_epochs,
-                n_samples,
-                self.n_neighbors,
-                a,
-                b,
-                self.repulsion_strength,
-                self.learning_rate,
-                self.negative_sample_rate as f32,
-                rng_state,
-                &mut logger,
-            )
-            .await
-            {
-                Some(()) => true,
-                None => {
-                    logger.log("GPU unavailable for optimization, falling back to CPU");
-                    false
-                }
-            }
-        } else {
-            false
-        };
-
-        #[cfg(feature = "gpu")]
-        if !used_gpu {
-            optimize_layout_euclidean(
-                &mut embedding,
-                &heads,
-                &tails,
-                &epochs_per_sample,
-                n_epochs,
-                n_samples,
-                a,
-                b,
-                self.repulsion_strength,
-                self.learning_rate,
-                self.negative_sample_rate as f32,
-                rng_state,
-                &mut logger,
-            );
-        }
-
-        #[cfg(not(feature = "gpu"))]
-        optimize_layout_euclidean(
-            &mut embedding,
-            &heads,
-            &tails,
-            &epochs_per_sample,
-            n_epochs,
-            n_samples,
-            a,
-            b,
-            self.repulsion_strength,
-            self.learning_rate,
-            self.negative_sample_rate as f32,
-            rng_state,
-            &mut logger,
-        );
-        logger.pop_stage();
-
-        Ok(UmapResult {
+        Ok(Prepared {
             embedding,
+            graph: csr,
             knn_indices,
             knn_distances: knn_dists,
+            head: heads,
+            tail: tails,
+            epochs_per_sample,
+            n_epochs,
+            n_neighbors,
+            rng_state,
+            params: LiveParams {
+                alpha: self.learning_rate,
+                gamma: self.repulsion_strength,
+                negative_sample_rate: self.negative_sample_rate as f32,
+                a: a as f32,
+                b: b as f32,
+            },
+            optimizer: self.optimizer,
+            gpu: self.gpu,
+            logger,
         })
     }
+}
+
+/// Construct a [`UmapOptimizer`] from prepared pieces, using the resident GPU
+/// context when `gpu` is requested and the `gpu` feature is enabled (falls back
+/// to CPU otherwise).
+#[allow(clippy::too_many_arguments)]
+async fn build_optimizer(
+    head: Vec<usize>,
+    tail: Vec<usize>,
+    epochs_per_sample: Vec<f32>,
+    embedding: Array2<f32>,
+    params: LiveParams,
+    optimizer: Optimizer,
+    rng_state: [i64; 3],
+    gpu: bool,
+    n_neighbors: usize,
+) -> UmapOptimizer {
+    #[cfg(feature = "gpu")]
+    {
+        if gpu {
+            return UmapOptimizer::new_gpu(
+                head,
+                tail,
+                &epochs_per_sample,
+                embedding,
+                params,
+                optimizer,
+                rng_state,
+                n_neighbors,
+            )
+            .await;
+        }
+    }
+    #[cfg(not(feature = "gpu"))]
+    {
+        let _ = (gpu, n_neighbors);
+    }
+    UmapOptimizer::new(
+        head,
+        tail,
+        &epochs_per_sample,
+        embedding,
+        params,
+        optimizer,
+        rng_state,
+    )
+}
+
+/// Output of [`UmapBuilder::prepare`]: everything needed to construct the
+/// optimizer plus the retained pruned graph and kNN arrays.
+struct Prepared {
+    embedding: Array2<f32>,
+    graph: CsrMatrix,
+    knn_indices: Array2<i32>,
+    knn_distances: Array2<f32>,
+    head: Vec<usize>,
+    tail: Vec<usize>,
+    epochs_per_sample: Vec<f32>,
+    n_epochs: usize,
+    n_neighbors: usize,
+    rng_state: [i64; 3],
+    params: LiveParams,
+    optimizer: Optimizer,
+    gpu: bool,
+    logger: Logger,
+}
+
+/// A prepared, not-yet-optimized UMAP: the resumable optimizer plus the retained
+/// graph and kNN arrays. Returned by [`UmapBuilder::setup_async`].
+pub struct UmapSetup {
+    /// The resumable layout optimizer (already holds the initial embedding).
+    pub optimizer: UmapOptimizer,
+    /// The pruned fuzzy graph (CSR), retained for spectral re-initialization.
+    pub graph: CsrMatrix,
+    /// KNN indices from the neighbor graph, shape (n_samples, n_neighbors).
+    pub knn_indices: Array2<i32>,
+    /// KNN distances from the neighbor graph, shape (n_samples, n_neighbors).
+    pub knn_distances: Array2<f32>,
+    /// The nominal optimization horizon (default 500/200).
+    pub n_epochs: usize,
 }
 
 /// Result of a UMAP computation.
@@ -485,7 +715,8 @@ impl Umap {
     /// * `data` - Array of shape (n_samples, n_features)
     pub fn builder(data: &Array2<f32>) -> UmapBuilder<'_> {
         UmapBuilder {
-            data,
+            data: Some(data),
+            knn: None,
             n_neighbors: 15,
             n_components: 2,
             min_dist: 0.1,
@@ -501,6 +732,54 @@ impl Umap {
             verbose: false,
             init: Init::Spectral,
             gpu: false,
+            optimizer: Optimizer::Sgd,
+            progress: None,
+        }
+    }
+
+    /// Create a builder from a precomputed kNN graph, skipping NNDescent. No
+    /// high-dimensional data is needed — once the graph exists, UMAP uses only it.
+    ///
+    /// `knn_indices` and `knn_distances` are both shape (n_samples, k), where row
+    /// `i` lists the neighbors of point `i` sorted by ascending distance. The point
+    /// itself may be included (typically column 0, distance 0) or omitted — this is
+    /// detected and normalized per row (see [`normalize_knn_self_column`]). `metric`
+    /// and `n_neighbors` are ignored in this mode (k is taken from the supplied
+    /// graph).
+    ///
+    /// The caller is responsible for supplying a well-formed graph; it is not
+    /// validated beyond an index-range check, and bad input degrades silently:
+    /// - every neighbor index must be valid (in `[0, n_samples)`);
+    /// - point `i` may list itself at most once per row;
+    /// - distances must be finite (a `NaN` propagates to a `NaN` embedding);
+    /// - the real-neighbor count should be uniform across rows — the canonical
+    ///   width is the per-row minimum, so one short row trims every row (see
+    ///   [`normalize_knn_self_column`]).
+    ///
+    /// [`normalize_knn_self_column`]: crate::graph::normalize_knn_self_column
+    pub fn builder_from_knn(
+        knn_indices: Array2<i32>,
+        knn_distances: Array2<f32>,
+    ) -> UmapBuilder<'static> {
+        UmapBuilder {
+            data: None,
+            knn: Some((knn_indices, knn_distances)),
+            n_neighbors: 15,
+            n_components: 2,
+            min_dist: 0.1,
+            spread: 1.0,
+            metric: "euclidean".to_string(),
+            n_epochs: None,
+            learning_rate: 1.0,
+            negative_sample_rate: 5,
+            repulsion_strength: 1.0,
+            local_connectivity: 1.0,
+            set_op_mix_ratio: 1.0,
+            random_state: None,
+            verbose: false,
+            init: Init::Spectral,
+            gpu: false,
+            optimizer: Optimizer::Sgd,
             progress: None,
         }
     }
@@ -514,7 +793,7 @@ impl Umap {
 ///   y = exp(-(x - min_dist) / spread)  otherwise
 ///
 /// Uses Levenberg-Marquardt optimization (damped Gauss-Newton).
-fn find_ab_params(spread: f32, min_dist: f32) -> (f64, f64) {
+pub fn find_ab_params(spread: f32, min_dist: f32) -> (f64, f64) {
     let n = 300;
     let spread = spread as f64;
     let min_dist = min_dist as f64;
@@ -638,11 +917,134 @@ fn find_ab_params(spread: f32, min_dist: f32) -> (f64, f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::Array2;
+    use ndarray::{arr2, s, Array2};
 
     fn make_test_data(n: usize, dim: usize, seed: u64) -> Array2<f32> {
         let mut rng = Xoshiro256StarStar::seed_from_u64(seed);
         Array2::from_shape_fn((n, dim), |_| rng.random_f32())
+    }
+
+    /// Exact euclidean kNN in the umap-learn layout: row i lists point i itself in
+    /// column 0 (distance 0), then its `k-1` nearest neighbors sorted ascending.
+    fn make_knn(data: &Array2<f32>, k: usize) -> (Array2<i32>, Array2<f32>) {
+        let n = data.nrows();
+        let mut indices = Array2::<i32>::zeros((n, k));
+        let mut distances = Array2::<f32>::zeros((n, k));
+        for i in 0..n {
+            let mut dists: Vec<(f32, usize)> = (0..n)
+                .map(|j| {
+                    let d2: f32 = data
+                        .row(i)
+                        .iter()
+                        .zip(data.row(j).iter())
+                        .map(|(a, b)| (a - b) * (a - b))
+                        .sum();
+                    (d2.sqrt(), j)
+                })
+                .collect();
+            dists.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.cmp(&b.1)));
+            for c in 0..k {
+                indices[[i, c]] = dists[c].1 as i32;
+                distances[[i, c]] = dists[c].0;
+            }
+        }
+        (indices, distances)
+    }
+
+    #[test]
+    fn test_umap_from_knn_shape() {
+        let data = make_test_data(200, 10, 42);
+        let (idx, dist) = make_knn(&data, 11); // self + 10 neighbors
+        let result = Umap::builder_from_knn(idx, dist)
+            .n_epochs(50)
+            .init_method(Init::Random)
+            .random_state(42)
+            .build()
+            .unwrap();
+
+        assert_eq!(result.embedding.nrows(), 200);
+        assert_eq!(result.embedding.ncols(), 2);
+        assert!(result.embedding.iter().all(|x| x.is_finite()));
+        // Self already in column 0 -> the echoed graph keeps its width.
+        assert_eq!(result.knn_indices.dim(), (200, 11));
+        assert_eq!(result.knn_distances.dim(), (200, 11));
+    }
+
+    #[test]
+    fn test_umap_from_knn_self_excluded_widens() {
+        let data = make_test_data(150, 8, 7);
+        let (idx, dist) = make_knn(&data, 11);
+        // Drop column 0 (self) from every row -> self-excluded, width 10.
+        let idx_ex = idx.slice(s![.., 1..]).to_owned();
+        let dist_ex = dist.slice(s![.., 1..]).to_owned();
+        let result = Umap::builder_from_knn(idx_ex, dist_ex)
+            .n_epochs(30)
+            .init_method(Init::Random)
+            .random_state(7)
+            .build()
+            .unwrap();
+
+        assert_eq!(result.embedding.nrows(), 150);
+        // Self was re-added -> width grows back to 11.
+        assert_eq!(result.knn_indices.ncols(), 11);
+        assert!(result.embedding.iter().all(|x| x.is_finite()));
+    }
+
+    #[test]
+    fn test_umap_from_knn_shape_mismatch() {
+        let idx = Array2::<i32>::zeros((10, 5));
+        let dist = Array2::<f32>::zeros((10, 6));
+        let err = Umap::builder_from_knn(idx, dist)
+            .build()
+            .err()
+            .expect("expected a shape-mismatch error");
+        assert!(matches!(err, UmapError::KnnShapeMismatch { .. }));
+    }
+
+    #[test]
+    fn test_umap_from_knn_index_out_of_range() {
+        // n_samples = 3, but a row references index 5.
+        let idx = arr2(&[[0, 1, 2], [1, 0, 2], [2, 5, 0]]);
+        let dist = arr2(&[[0.0, 1.0, 2.0], [0.0, 1.0, 2.0], [0.0, 1.0, 2.0]]);
+        let err = Umap::builder_from_knn(idx, dist)
+            .build()
+            .err()
+            .expect("expected an out-of-range error");
+        assert!(matches!(
+            err,
+            UmapError::KnnIndexOutOfRange {
+                value: 5,
+                n_samples: 3
+            }
+        ));
+    }
+
+    #[test]
+    fn test_umap_from_knn_negative_index_ok() {
+        // Negative indices are outside the documented contract (callers should
+        // supply only valid neighbors), but are tolerated defensively: a `-1`
+        // entry is skipped rather than crashing or being treated as vertex -1.
+        let data = make_test_data(60, 6, 11);
+        let (mut idx, dist) = make_knn(&data, 8);
+        idx[[0, 7]] = -1; // out-of-contract entry; must be skipped, not crash
+        let result = Umap::builder_from_knn(idx, dist)
+            .n_epochs(20)
+            .init_method(Init::Random)
+            .random_state(11)
+            .build();
+        assert!(result.is_ok());
+        assert!(result.unwrap().embedding.iter().all(|x| x.is_finite()));
+    }
+
+    #[test]
+    fn test_umap_from_knn_single_point() {
+        // 1 row: degenerate trivial origin layout (mirrors test_umap_single_point).
+        let idx = Array2::<i32>::zeros((1, 1));
+        let dist = Array2::<f32>::zeros((1, 1));
+        let result = Umap::builder_from_knn(idx, dist).build().unwrap();
+        assert_eq!(result.embedding.nrows(), 1);
+        assert_eq!(result.embedding.ncols(), 2);
+        assert!(result.embedding.iter().all(|&x| x == 0.0));
     }
 
     #[test]
@@ -754,5 +1156,372 @@ mod tests {
 
         assert_eq!(result.embedding.nrows(), 100);
         assert!(!result.embedding.iter().any(|x| x.is_nan()));
+    }
+
+    #[test]
+    fn test_umap_small_dataset_clamps_neighbors() {
+        // Fewer rows than the default n_neighbors (15). Previously this errored;
+        // now n_neighbors is clamped to n_samples - 1 and the run succeeds.
+        let data = make_test_data(5, 8, 42);
+        let result = Umap::builder(&data)
+            .metric("cosine")
+            .random_state(42)
+            .build()
+            .unwrap();
+
+        assert_eq!(result.embedding.nrows(), 5);
+        assert_eq!(result.embedding.ncols(), 2);
+        assert!(result.embedding.iter().all(|x| x.is_finite()));
+    }
+
+    #[test]
+    fn test_umap_two_points() {
+        // Smallest non-degenerate input: n_neighbors clamps to 1.
+        let data = make_test_data(2, 4, 42);
+        let result = Umap::builder(&data).random_state(42).build().unwrap();
+
+        assert_eq!(result.embedding.nrows(), 2);
+        assert_eq!(result.embedding.ncols(), 2);
+        assert!(result.embedding.iter().all(|x| x.is_finite()));
+    }
+
+    #[test]
+    fn test_umap_single_point() {
+        // 1 row: nothing to embed, returns a trivial origin layout.
+        let data = make_test_data(1, 4, 42);
+        let result = Umap::builder(&data).build().unwrap();
+
+        assert_eq!(result.embedding.nrows(), 1);
+        assert_eq!(result.embedding.ncols(), 2);
+        assert!(result.embedding.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn test_umap_empty() {
+        // 0 rows: returns an empty embedding rather than erroring.
+        let data = make_test_data(0, 4, 42);
+        let result = Umap::builder(&data).build().unwrap();
+
+        assert_eq!(result.embedding.nrows(), 0);
+        assert_eq!(result.embedding.ncols(), 2);
+    }
+
+    #[test]
+    fn test_stepper_advances() {
+        let data = make_test_data(200, 10, 42);
+        let mut setup = pollster::block_on(
+            Umap::builder(&data)
+                .n_neighbors(10)
+                .n_epochs(50)
+                .init_method(Init::Random)
+                .random_state(42)
+                .setup_async(),
+        )
+        .unwrap();
+
+        assert_eq!(setup.optimizer.current_epoch(), 0);
+        let before = setup.optimizer.embedding().clone();
+
+        pollster::block_on(setup.optimizer.step(10));
+
+        assert_eq!(setup.optimizer.current_epoch(), 10);
+        let after = setup.optimizer.embedding();
+        assert_eq!(after.nrows(), 200);
+        assert_eq!(after.ncols(), 2);
+        assert!(!after.iter().any(|x| x.is_nan()));
+
+        let moved = before
+            .iter()
+            .zip(after.iter())
+            .any(|(a, b)| (a - b).abs() > 1e-6);
+        assert!(moved, "step did not move the embedding");
+    }
+
+    #[test]
+    fn test_set_optimizer_and_reinit_finite() {
+        let data = make_test_data(150, 8, 7);
+        let mut setup = pollster::block_on(
+            Umap::builder(&data)
+                .n_neighbors(10)
+                .n_epochs(30)
+                .init_method(Init::Random)
+                .random_state(7)
+                .setup_async(),
+        )
+        .unwrap();
+
+        setup.optimizer.set_optimizer(Optimizer::Momentum);
+        pollster::block_on(setup.optimizer.step(20));
+        assert!(setup.optimizer.embedding().iter().all(|x| x.is_finite()));
+
+        let mut rng = Xoshiro256StarStar::seed_from_u64(7);
+        let fresh = random_layout(150, 2, &mut rng);
+        setup.optimizer.reinit_embedding(fresh);
+        assert_eq!(setup.optimizer.current_epoch(), 0);
+
+        pollster::block_on(setup.optimizer.step(5));
+        assert!(setup.optimizer.embedding().iter().all(|x| x.is_finite()));
+    }
+
+    #[test]
+    fn test_live_negative_sample_rate_reenables_repulsion() {
+        // Regression: starting at negative_sample_rate = 0 and then raising it via
+        // set_params must actually turn repulsion back on. Previously the per-edge
+        // negative-sample counter was parked at +inf (CPU) / a stale baseline (GPU)
+        // and a live rate change never re-armed it, so repulsion stayed off.
+        //
+        // Two optimizers step identically with repulsion off; then one enables it
+        // live. Repulsion spreads points apart, so the enabled run must end with a
+        // visibly larger layout than the still-attract-only reference.
+        let build = || {
+            pollster::block_on(
+                Umap::builder(&make_test_data(200, 10, 99))
+                    .n_neighbors(10)
+                    .n_epochs(100)
+                    .init_method(Init::Random)
+                    .negative_sample_rate(0)
+                    .random_state(99)
+                    .setup_async(),
+            )
+            .unwrap()
+        };
+        let mut on = build();
+        let mut off = build();
+
+        // Identical attract-only warmup.
+        pollster::block_on(on.optimizer.step(30));
+        pollster::block_on(off.optimizer.step(30));
+
+        // Enable repulsion live on one of them.
+        let mut p = on.optimizer.params();
+        p.negative_sample_rate = 5.0;
+        on.optimizer.set_params(p);
+
+        pollster::block_on(on.optimizer.step(40));
+        pollster::block_on(off.optimizer.step(40)); // stays attract-only
+
+        // Total per-coordinate variance as a spread metric.
+        let spread = |setup: &UmapSetup| -> f32 {
+            let emb = setup.optimizer.embedding();
+            let n = emb.nrows() as f32;
+            (0..emb.ncols())
+                .map(|c| {
+                    let col = emb.column(c);
+                    let mean = col.sum() / n;
+                    col.iter().map(|&x| (x - mean) * (x - mean)).sum::<f32>() / n
+                })
+                .sum()
+        };
+        let s_on = spread(&on);
+        let s_off = spread(&off);
+
+        assert!(on.optimizer.embedding().iter().all(|x| x.is_finite()));
+        assert!(
+            s_on > s_off * 1.5,
+            "enabling negative_sample_rate live did not increase spread: on={s_on}, off={s_off}"
+        );
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn test_live_negative_sample_rate_reenables_repulsion_gpu() {
+        // Same regression as the CPU test, on the resident GPU path: a live
+        // negative_sample_rate change must re-seed the GPU `eonns` buffer so
+        // repulsion actually re-arms (it previously kept a stale baseline).
+        let build = || {
+            pollster::block_on(
+                Umap::builder(&make_test_data(300, 10, 21))
+                    .n_neighbors(15)
+                    .n_epochs(200)
+                    .init_method(Init::Random)
+                    .negative_sample_rate(0)
+                    .gpu(true)
+                    .random_state(21)
+                    .setup_async(),
+            )
+            .unwrap()
+        };
+        let mut on = build();
+        let mut off = build();
+
+        pollster::block_on(on.optimizer.step(60));
+        pollster::block_on(off.optimizer.step(60));
+
+        let mut p = on.optimizer.params();
+        p.negative_sample_rate = 5.0;
+        on.optimizer.set_params(p);
+
+        pollster::block_on(on.optimizer.step(80));
+        pollster::block_on(off.optimizer.step(80));
+
+        let spread = |setup: &UmapSetup| -> f32 {
+            let emb = setup.optimizer.embedding();
+            let n = emb.nrows() as f32;
+            (0..emb.ncols())
+                .map(|c| {
+                    let col = emb.column(c);
+                    let mean = col.sum() / n;
+                    col.iter().map(|&x| (x - mean) * (x - mean)).sum::<f32>() / n
+                })
+                .sum()
+        };
+        let s_on = spread(&on);
+        let s_off = spread(&off);
+
+        assert!(on.optimizer.embedding().iter().all(|x| x.is_finite()));
+        assert!(
+            s_on > s_off * 1.5,
+            "GPU: enabling negative_sample_rate live did not increase spread: on={s_on}, off={s_off}"
+        );
+    }
+
+    #[test]
+    fn test_run_to_reaches_horizon() {
+        let data = make_test_data(150, 8, 1);
+        let mut setup = pollster::block_on(
+            Umap::builder(&data)
+                .n_neighbors(10)
+                .n_epochs(50)
+                .init_method(Init::Random)
+                .random_state(1)
+                .setup_async(),
+        )
+        .unwrap();
+
+        let mut logger = Logger::new(false, None, UMAP_STAGES);
+        let n_epochs = setup.n_epochs;
+        pollster::block_on(setup.optimizer.run_to(n_epochs, &mut logger));
+
+        assert_eq!(setup.optimizer.current_epoch() as usize, n_epochs);
+        let emb = setup.optimizer.embedding();
+        assert_eq!(emb.nrows(), 150);
+        assert!(!emb.iter().any(|x| x.is_nan()));
+    }
+
+    #[test]
+    fn test_run_uses_live_learning_rate() {
+        // Regression (#4): run_to anneals from the *live* learning rate, not a
+        // frozen build-time value. With alpha set to 0 via set_params, the decay
+        // starts at 0 and must not move the layout; before the unification run_to
+        // used the frozen initial alpha and would have moved it.
+        let data = make_test_data(150, 8, 5);
+        let mut setup = pollster::block_on(
+            Umap::builder(&data)
+                .n_neighbors(10)
+                .n_epochs(50)
+                .init_method(Init::Random)
+                .random_state(5)
+                .setup_async(),
+        )
+        .unwrap();
+
+        let before = setup.optimizer.embedding().clone();
+
+        let mut p = setup.optimizer.params();
+        p.alpha = 0.0;
+        setup.optimizer.set_params(p);
+
+        let mut logger = Logger::new(false, None, UMAP_STAGES);
+        let n_epochs = setup.n_epochs;
+        pollster::block_on(setup.optimizer.run_to(n_epochs, &mut logger));
+
+        assert_eq!(setup.optimizer.current_epoch() as usize, n_epochs);
+        let after = setup.optimizer.embedding();
+        let max_delta = before
+            .iter()
+            .zip(after.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_delta < 1e-6,
+            "run_to moved the layout despite learningRate=0 (max delta {max_delta}); \
+             it is not honoring the live learning rate"
+        );
+    }
+
+    #[test]
+    fn test_momentum_build_finite() {
+        let data = make_test_data(150, 8, 3);
+        let result = Umap::builder(&data)
+            .n_neighbors(10)
+            .n_epochs(50)
+            .optimizer(Optimizer::Momentum)
+            .random_state(3)
+            .build()
+            .unwrap();
+
+        assert_eq!(result.embedding.nrows(), 150);
+        assert_eq!(result.embedding.ncols(), 2);
+        assert!(result.embedding.iter().all(|x| x.is_finite()));
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn test_gpu_sgd_bounded() {
+        let data = make_test_data(300, 10, 11);
+        let result = Umap::builder(&data)
+            .n_neighbors(15)
+            .n_epochs(200)
+            .gpu(true)
+            .init_method(Init::Random)
+            .random_state(11)
+            .build()
+            .unwrap();
+
+        assert!(result.embedding.iter().all(|x| x.is_finite()));
+        let max_abs = result.embedding.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
+        assert!(
+            max_abs < 1000.0,
+            "GPU SGD max|coord| = {} (unbounded?)",
+            max_abs
+        );
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn test_gpu_momentum_finite() {
+        let data = make_test_data(300, 10, 13);
+        let result = Umap::builder(&data)
+            .n_neighbors(15)
+            .n_epochs(200)
+            .gpu(true)
+            .optimizer(Optimizer::Momentum)
+            .random_state(13)
+            .build()
+            .unwrap();
+
+        assert!(result.embedding.iter().all(|x| x.is_finite()));
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn test_gpu_momentum_step_bounded() {
+        // Smoke test for the GPU momentum step() path (flat learning rate, no
+        // decay) — previously uncovered; the existing momentum GPU test uses
+        // build()/run_to, which decays alpha. The apply shader clamps the summed
+        // per-epoch gradient to ±grad_clamp on the momentum path (as it does for
+        // SGD) before integrating it into the velocity, bounding the step.
+        let data = make_test_data(300, 10, 17);
+        let mut setup = pollster::block_on(
+            Umap::builder(&data)
+                .n_neighbors(15)
+                .n_epochs(200)
+                .optimizer(Optimizer::Momentum)
+                .gpu(true)
+                .init_method(Init::Random)
+                .random_state(17)
+                .setup_async(),
+        )
+        .unwrap();
+
+        pollster::block_on(setup.optimizer.step(200));
+
+        let emb = setup.optimizer.embedding();
+        assert!(emb.iter().all(|x| x.is_finite()));
+        let max_abs = emb.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
+        assert!(
+            max_abs < 1000.0,
+            "GPU momentum step() max|coord| = {max_abs} (unbounded?)"
+        );
     }
 }
