@@ -14,6 +14,10 @@ class EmbeddingAtlasOptions(TypedDict, total=False):
     y:
         The column name for Y axis in the embedding.
 
+    z:
+        The column name for Z axis in the embedding. When specified (together with
+        ``x`` and ``y``), the embedding view becomes 3D-capable.
+
     text:
         The column name for the textual data.
 
@@ -66,6 +70,7 @@ class EmbeddingAtlasOptions(TypedDict, total=False):
     row_id: str | None
     x: str | None
     y: str | None
+    z: str | None
     text: str | None
     image: str | None
     importance: str | None
@@ -116,7 +121,10 @@ def make_embedding_atlas_props(**options: Unpack[EmbeddingAtlasOptions]) -> dict
     set_prop("data.table", options.get("table"))
     set_prop("data.id", options.get("row_id"))
     if options.get("x") is not None and options.get("y") is not None:
-        set_prop("data.projection", {"x": options.get("x"), "y": options.get("y")})
+        projection = {"x": options.get("x"), "y": options.get("y")}
+        if options.get("z") is not None:
+            projection["z"] = options.get("z")
+        set_prop("data.projection", projection)
     set_prop("data.text", options.get("text"))
     set_prop("data.image", options.get("image"))
     set_prop("data.importance", options.get("importance"))

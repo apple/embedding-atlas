@@ -115,6 +115,28 @@ export function webglBuffer(
   return state.buffer;
 }
 
+/** A cached ELEMENT_ARRAY_BUFFER of u32 indices (used for strided 3D downsampling). */
+export function webglElementBuffer(
+  state: { buffer?: WebGLBuffer; data?: Uint32Array; destroy?: () => void },
+  gl: WebGL2RenderingContext,
+  data: Uint32Array,
+): WebGLBuffer {
+  if (state.buffer == null) {
+    let buffer = gl.createBuffer()!;
+    state.buffer = buffer;
+    state.destroy = () => {
+      gl.deleteBuffer(buffer);
+    };
+  }
+  if (state.data !== data) {
+    state.data = data;
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, state.buffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+  }
+  return state.buffer;
+}
+
 export interface IFramebuffer {
   framebuffer: WebGLFramebuffer;
   texture: WebGLTexture;

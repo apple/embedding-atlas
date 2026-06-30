@@ -1,6 +1,11 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script module lang="ts">
-  import { maxDensityModeCategories, type DataPoint, type ViewportState } from "@embedding-atlas/component";
+  import {
+    maxDensityModeCategories,
+    type Camera3DState,
+    type DataPoint,
+    type ViewportState,
+  } from "@embedding-atlas/component";
   import { type Coordinator } from "@uwdata/mosaic-core";
   import * as SQL from "@uwdata/mosaic-sql";
 
@@ -93,7 +98,9 @@
     );
     promise.then((v) => {
       categoryLegend = v;
-      if ((categoryLegend?.legend.length ?? 0) > maxCategories) {
+      // Density mode can't handle more than maxCategories categories. Only reset
+      // out of density (leave points / points-3d alone).
+      if ((categoryLegend?.legend.length ?? 0) > maxCategories && (spec.mode ?? "points") === "density") {
         onSpecChange((draft) => {
           draft.mode = "points";
         });
@@ -142,7 +149,12 @@
       let queryResult = Array.from(
         await context.coordinator.query(
           SQL.Query.from(context.table)
-            .select({ id: SQL.column(context.id), x: SQL.column(spec.data.x), y: SQL.column(spec.data.y) })
+            .select({
+              id: SQL.column(context.id),
+              x: SQL.column(spec.data.x),
+              y: SQL.column(spec.data.y),
+              ...(spec.data.z != null ? { z: SQL.column(spec.data.z) } : {}),
+            })
             .where(
               SQL.isIn(
                 SQL.column(context.id),
@@ -151,7 +163,7 @@
             ),
         ),
       );
-      let mapper = new Map(queryResult.map((p) => [p.id, { identifier: p.id, x: p.x, y: p.y }]));
+      let mapper = new Map(queryResult.map((p) => [p.id, { identifier: p.id, x: p.x, y: p.y, z: p.z }]));
       overlayProps = {
         nodes: overlay.nodes?.map((n) => mapper.get(n)).filter((x) => x != undefined),
         edges: overlay.edges
@@ -169,6 +181,12 @@
   });
 
   async function animateToPoint(identifier: RowID): Promise<void> {
+    // In 3D mode the renderer follows camera3DState, not the 2D viewport, so focus
+    // the 3D camera on the point instead (otherwise the result stays off-screen).
+    if ((spec.mode ?? "points") === "points-3d" && spec.data.z != null) {
+      await focus3DToPoint(identifier);
+      return;
+    }
     let defaultScale = await context.cache.value(`embedding/default-viewport-scale/${spec.data.x},${spec.data.y}`, () =>
       defaultViewportScale(context.coordinator, context.table, spec.data.x, spec.data.y),
     );
@@ -185,6 +203,72 @@
     let { x, y } = result.get(0) as { x: number; y: number };
     // Start animation and show tooltip.
     startViewportAnimation({ x: x, y: y, scale: scale });
+    tooltip = identifier;
+  }
+
+  // Focus the 3D camera on a point (used by search / nearest-neighbor navigation
+  // in points-3d mode). Keeps the current orbit/zoom and moves the look-at target
+  // to the point; if the user has not interacted yet, builds a sensible camera
+  // from the data's default scale.
+  async function focus3DToPoint(identifier: RowID): Promise<void> {
+    let zColumn = spec.data.z;
+    if (zColumn == null) {
+      return;
+    }
+    let result = await context.coordinator.query(
+      SQL.Query.from(context.table)
+        .select({
+          x: SQL.column(spec.data.x),
+          y: SQL.column(spec.data.y),
+          z: SQL.column(zColumn),
+        })
+        .where(SQL.eq(SQL.column(context.id), SQL.literal(identifier))),
+    );
+    let row = result.get(0) as { x: number; y: number; z: number } | undefined;
+    if (row == null) {
+      return;
+    }
+    let target: [number, number, number] = [row.x, row.y, row.z];
+    let camera: Camera3DState;
+    if (chartState.camera3D != null) {
+      camera = { ...chartState.camera3D, target };
+    } else {
+      // No persisted 3D camera yet: derive the distance from the x/y/z bounds of the
+      // CURRENTLY RENDERED data so the fit accounts for the z extent, mirroring how
+      // the embedding view fits 3D. The bounds query is constrained to the active
+      // cross-filter and the specific table, and is NOT cached: it runs at most once
+      // per session (the first focus persists a camera, after which the branch above
+      // is taken), and caching by column names alone risked reusing another table's
+      // or an unfiltered dataset's bounds.
+      let boundsQuery = SQL.Query.from(context.table).select({
+        xmin: SQL.sql`min(${SQL.column(spec.data.x)})`,
+        xmax: SQL.sql`max(${SQL.column(spec.data.x)})`,
+        ymin: SQL.sql`min(${SQL.column(spec.data.y)})`,
+        ymax: SQL.sql`max(${SQL.column(spec.data.y)})`,
+        zmin: SQL.sql`min(${SQL.column(zColumn)})`,
+        zmax: SQL.sql`max(${SQL.column(zColumn)})`,
+      });
+      let filterPredicate = context.filter.predicate(null);
+      if (filterPredicate) {
+        boundsQuery = boundsQuery.where(filterPredicate);
+      }
+      let r = await context.coordinator.query(boundsQuery);
+      let b = r.get(0) as
+        | { xmin: number; xmax: number; ymin: number; ymax: number; zmin: number; zmax: number }
+        | undefined;
+      let bounds = b ?? { xmin: 0, xmax: 0, ymin: 0, ymax: 0, zmin: 0, zmax: 0 };
+      let fov = (50 / 180) * Math.PI;
+      // Radius of the sphere enclosing the data's 3D bounding box.
+      let radius = 0.5 * Math.hypot(bounds.xmax - bounds.xmin, bounds.ymax - bounds.ymin, bounds.zmax - bounds.zmin);
+      if (!(radius > 0)) {
+        radius = 1;
+      }
+      let distance = (radius / Math.sin(fov / 2)) * 1.1;
+      camera = { target, distance, yaw: Math.PI * 0.25, pitch: Math.PI * 0.18, fov };
+    }
+    onStateChange((draft) => {
+      draft.camera3D = camera;
+    });
     tooltip = identifier;
   }
 
@@ -255,6 +339,7 @@
     identifier={context.id}
     x={spec.data.x}
     y={spec.data.y}
+    z={spec.data.z}
     text={spec.data.text}
     image={spec.data.image}
     importance={spec.data.importance}
@@ -304,6 +389,11 @@
     onViewportState={(v) =>
       onStateChange((draft) => {
         draft.viewport = v;
+      })}
+    camera3DState={chartState.camera3D}
+    onCamera3DState={(v) =>
+      onStateChange((draft) => {
+        draft.camera3D = v;
       })}
     rangeSelectionValue={chartState.brush}
     onRangeSelection={(v) =>
@@ -376,10 +466,14 @@
                 onSpecChange((draft) => {
                   draft.mode = v;
                 })}
-              disabled={categoryLegend != null && categoryLegend.legend.length > maxCategories}
               options={[
                 { value: "points", label: "Points" },
-                { value: "density", label: "Density" },
+                // Density uses the category cap; hide it when there are too many
+                // categories, but keep Points / Points 3D selectable.
+                ...(categoryLegend == null || categoryLegend.legend.length <= maxCategories
+                  ? [{ value: "density", label: "Density" }]
+                  : []),
+                ...(spec.data.z != null ? [{ value: "points-3d", label: "Points 3D" }] : []),
               ]}
             />
             {#if (spec.mode ?? "points") == "density"}

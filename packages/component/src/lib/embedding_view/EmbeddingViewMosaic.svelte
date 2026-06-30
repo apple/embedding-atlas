@@ -7,6 +7,7 @@
 
   import EmbeddingViewImpl from "./EmbeddingViewImpl.svelte";
 
+  import { cameraFromBounds3D, pointsBounds3D, type Bounds3D, type Camera3DState } from "../camera3d.js";
   import { deepEquals, type Point, type Rectangle, type ViewportState } from "../utils.js";
   import type { EmbeddingViewMosaicProps } from "./embedding_view_mosaic_api.js";
   import { IMAGE_LABEL_SIZE } from "./labels.js";
@@ -24,11 +25,26 @@
     textSummarizerSummarize,
   } from "./worker/index.js";
 
+  /** Returns `array` as an instance of `Ctor`, wrapping (copying) only if needed. */
+  function asTypedArray<T>(array: any, Ctor: new (source: any) => T): T | null {
+    if (array == null) {
+      return null;
+    }
+    return array instanceof Ctor ? array : new Ctor(array);
+  }
+
+  // Row cap for materializing a rowid-less source's identifier column to enable exact
+  // 3D picks (see initClient). Bounds browser memory: at this many rows even ~64-byte
+  // string/UUID identifiers stay in the tens-of-MB range; larger sources use the
+  // coordinate fallback instead. Base tables are unaffected (compact rowid, any size).
+  const IDENTIFIER_MATERIALIZE_MAX_ROWS = 500_000;
+
   let {
     coordinator = defaultCoordinator(),
     table,
     x,
     y,
+    z = null,
     category = null,
     text = null,
     image = null,
@@ -47,10 +63,12 @@
     config = null,
     theme = null,
     viewportState = null,
+    camera3DState = null,
     labels = null,
     customTooltip = null,
     customOverlay = null,
     onViewportState = null,
+    onCamera3DState = null,
     onTooltip = null,
     onSelection = null,
     onRangeSelection = null,
@@ -59,7 +77,21 @@
 
   let xData: Float32Array<ArrayBuffer> = $state.raw(new Float32Array());
   let yData: Float32Array<ArrayBuffer> = $state.raw(new Float32Array());
+  let zData: Float32Array<ArrayBuffer> | null = $state.raw(null);
   let categoryData: Uint8Array<ArrayBuffer> | null = $state.raw(null);
+  // Compact stable row identity (DuckDB `rowid`, a BIGINT), row-aligned with the
+  // rendered arrays, used to resolve a 3D pick to the EXACT row regardless of the
+  // user identifier's type (string/UUID included) — without downloading per-row
+  // identifiers. Null when the source has no usable rowid (e.g. a view); those fall
+  // back to the configured identifier (below) or the coordinate lookup. See
+  // queryByIndex / the bulk query below.
+  let rowidData: BigInt64Array | null = $state.raw(null);
+  // Fallback exact identity for sources WITHOUT a rowid (views/joins) that DO have a
+  // configured identifier column: the per-row identifier values, row-aligned with the
+  // rendered arrays, so a 3D pick resolves to the exact row even when several rows
+  // share rendered coordinates. Null when rowid is available (rowid is preferred and
+  // compact) or no identifier is configured.
+  let identifierData: DataPointID[] | null = $state.raw(null);
   let categoryCount: number = $state.raw(1);
   let totalCount: number = $state.raw(1);
   let maxDensity: number = $state.raw(1);
@@ -73,7 +105,7 @@
 
   $effect(() => {
     // Let Svelte track the dependencies.
-    let deps = { coordinator: coordinator, source: { table, x, y, category } };
+    let deps = { coordinator: coordinator, source: { table, x, y, z, category, identifier } };
 
     let client: { destroy: () => void } | null = null;
     let didDestroy = false;
@@ -90,6 +122,47 @@
       maxDensity = approxDensity.maxDensity;
       categoryCount = approxDensity.categoryCount;
 
+      // Decide ONCE (per dataset) whether the source exposes a usable `rowid`
+      // pseudocolumn (true for base tables, false for most views/joins). When it does,
+      // the bulk query carries a compact rowid per point so 3D picks resolve to the
+      // exact row for ANY identifier type; otherwise picks fall back to coordinates.
+      let rowidAvailable = false;
+      if (source.z != null) {
+        try {
+          await deps.coordinator.query(
+            SQL.Query.from(source.table)
+              .select({ __probe: SQL.sql`rowid` })
+              .limit(1),
+          );
+          rowidAvailable = true;
+        } catch {
+          rowidAvailable = false;
+        }
+        // Check AFTER the probe settles either way: a rejected probe (views/joins
+        // without rowid) must honor a teardown that happened during the await too,
+        // otherwise makeClient below would build a stale client that is never
+        // destroyed and could write obsolete data into the next view.
+        if (didDestroy) {
+          return;
+        }
+      }
+
+      // Exact 3D picks for rowid-LESS sources (views/joins) need a per-row identity, so
+      // we carry the configured identifier row-aligned with the rendered points. But
+      // that materializes the WHOLE identifier column in the browser (potentially long
+      // strings/UUIDs), so only do it when the source is small enough to stay bounded;
+      // above the cap, picks use the (bounded) coordinate fallback. Base tables are
+      // unaffected — they use the compact 8-byte rowid regardless of size. Gated on the
+      // unfiltered total (known here, pre-query) so the heavy column is never even
+      // requested for large sources.
+      let identifierColumn =
+        source.z != null &&
+        !rowidAvailable &&
+        source.identifier != null &&
+        approxDensity.totalCount <= IDENTIFIER_MATERIALIZE_MAX_ROWS
+          ? source.identifier
+          : null;
+
       // A client is a thing that queries data from a selection with user-defined query
       client = makeClient({
         coordinator: deps.coordinator,
@@ -99,27 +172,41 @@
             .select({
               x: SQL.sql`${SQL.column(source.x)}::FLOAT`,
               y: SQL.sql`${SQL.column(source.y)}::FLOAT`,
+              ...(source.z != null ? { z: SQL.sql`${SQL.column(source.z)}::FLOAT` } : {}),
               ...(source.category != null ? { c: SQL.sql`${SQL.column(source.category)}::UTINYINT` } : {}),
+              // 3D pick identity: a COMPACT stable rowid per point (when the source
+              // supports it) so picks resolve to the exact row for any identifier type,
+              // without downloading per-row (string) identifiers.
+              ...(source.z != null && rowidAvailable ? { __rowid: SQL.sql`rowid` } : {}),
+              // No rowid (views/joins) but an identifier IS configured and the source is
+              // small enough (identifierColumn): carry the identifier per point so a 3D
+              // pick still resolves to the EXACT row even when several rows share
+              // rendered coordinates.
+              ...(identifierColumn != null ? { __identifier: SQL.column(identifierColumn) } : {}),
             })
             .where(predicate);
         },
         queryResult: (data: any) => {
-          let xArray = data.getChild("x").toArray();
-          let yArray = data.getChild("y").toArray();
-          let categoryArray = data.getChild("c")?.toArray() ?? null;
-          // Ensure that the arrays are typed arrays.
-          if (xArray != null && !(xArray instanceof Float32Array)) {
-            xArray = new Float32Array(xArray);
-          }
-          if (yArray != null && !(yArray instanceof Float32Array)) {
-            yArray = new Float32Array(yArray);
-          }
-          if (categoryArray != null && !(categoryArray instanceof Uint8Array)) {
-            categoryArray = new Uint8Array(categoryArray);
-          }
-          xData = xArray;
-          yData = yArray;
-          categoryData = categoryArray;
+          // Ensure each column is the typed array the renderers expect.
+          xData = asTypedArray(data.getChild("x").toArray(), Float32Array)!;
+          yData = asTypedArray(data.getChild("y").toArray(), Float32Array)!;
+          zData = asTypedArray(data.getChild("z")?.toArray() ?? null, Float32Array);
+          categoryData = asTypedArray(data.getChild("c")?.toArray() ?? null, Uint8Array);
+          // rowid is row-aligned with x/y/z; keep it only when present and complete
+          // (no nulls) so a pick maps cleanly to a row.
+          let rowidChild = data.getChild("__rowid");
+          rowidData =
+            rowidChild != null && rowidChild.length > 0 && rowidChild.nullCount === 0
+              ? (rowidChild.toArray() as BigInt64Array)
+              : null;
+          // Same for the row-aligned identifier fallback (rowid-less sources). Require
+          // no nulls so every rendered point maps to an exact row; otherwise drop to
+          // the coordinate lookup rather than resolve an ambiguous/partial identity.
+          let identifierChild = data.getChild("__identifier");
+          identifierData =
+            identifierChild != null && identifierChild.length > 0 && identifierChild.nullCount === 0
+              ? (Array.from(identifierChild.toArray()) as DataPointID[])
+              : null;
           updateTooltip(null);
           updateSelection(null);
         },
@@ -154,7 +241,7 @@
 
       $effect(() => {
         let value = effectiveTooltip;
-        let source = { x, y, category, identifier };
+        let source = { x, y, z, category, identifier };
         captured.update({
           source: client,
           clients: new Set<MosaicClient>().add(client),
@@ -219,7 +306,7 @@
 
       $effect(() => {
         let value = effectiveSelection;
-        let source = { x, y, category, identifier };
+        let source = { x, y, z, category, identifier };
         captured.update({
           source: client,
           clients: new Set<MosaicClient>().add(client),
@@ -323,7 +410,18 @@
 
   // Point query
   let pointQuery = $derived(
-    new DataPointQuery(coordinator, { table, x, y, category, text, identifier, additionalFields }),
+    new DataPointQuery(coordinator, { table, x, y, z, category, text, identifier, additionalFields }),
+  );
+
+  // 3D default camera, fitted to the downloaded points. The O(N) bounding-sphere
+  // scan is split from the camera so it runs only when the 3D point data changes,
+  // NOT on every resize: resizing recomputes just the O(1) aspect-dependent
+  // distance from the cached bounds, so large 3D views do not rescan on resize.
+  let bounds3D = $derived<Bounds3D | null>(
+    z != null && zData != null && xData.length > 0 ? pointsBounds3D(xData, yData, zData) : null,
+  );
+  let defaultCamera3DState = $derived<Camera3DState | null>(
+    bounds3D != null ? cameraFromBounds3D(bounds3D, undefined, (width ?? 800) / (height ?? 800)) : null,
   );
 
   async function querySelection(px: number, py: number, unitDistance: number): Promise<DataPoint | null> {
@@ -332,6 +430,77 @@
 
   async function queryPoints(identifiers: DataPointID[]): Promise<DataPoint[]> {
     return await pointQuery.queryPoints(identifiers);
+  }
+
+  // Resolve a point by its render instance index (3D pick).
+  //
+  // Exact-identity paths (preferred): a per-row key is row-aligned with the rendered
+  // arrays, so the picked index maps to the EXACT row even when points share x/y/z or
+  // collide after Float32 rounding. (1) the compact stable rowid (rowidData) for base
+  // tables, any identifier type, no per-row identifier download; (2) the configured
+  // identifier (identifierData) for rowid-less sources (views/joins) small enough to
+  // materialize it (see IDENTIFIER_MATERIALIZE_MAX_ROWS). Either key is AUTHORITATIVE: a
+  // null/error resolution is treated as INDETERMINATE (return null -> selection
+  // unchanged), never downgraded to coordinates — a coordinate match could pick a
+  // co-located twin and then emit an over-selecting predicate for the picked point.
+  //
+  // Last-resort fallback (no exact identity available — no rowid and either no
+  // identifier or a source too large to materialize one): a coordinate lookup matching
+  // the rendered Float32 x/y/z exactly (CAST AS FLOAT). This cannot distinguish rows
+  // that share coordinates, which is unavoidable without a per-row key.
+  async function queryByIndex(index: number): Promise<DataPoint | null> {
+    if (index < 0 || index >= xData.length) {
+      return null;
+    }
+
+    if (rowidData != null && index < rowidData.length) {
+      try {
+        // Constrain to the active cross-filter so a pick resolving by rowid cannot
+        // resurrect a row another chart has filtered out while it resolved.
+        return await pointQuery.queryByRowId(rowidData[index], filter?.predicate?.(clientId));
+      } catch (e) {
+        console.error("queryByIndex by rowid failed", e);
+        return null;
+      }
+    }
+
+    if (identifierData != null && index < identifierData.length) {
+      try {
+        return await pointQuery.queryByIdentifier(identifierData[index], filter?.predicate?.(clientId));
+      } catch (e) {
+        console.error("queryByIndex by identifier failed", e);
+        return null;
+      }
+    }
+
+    // No exact identity for this dataset: fall back to a coordinate lookup from the
+    // picked point's rendered coordinates.
+    let base: DataPoint = { x: xData[index], y: yData[index] };
+    if (zData != null) {
+      base.z = zData[index];
+    }
+    if (categoryData != null) {
+      base.category = categoryData[index];
+    }
+    let scale = defaultViewportState?.scale ?? 1;
+    let unitDistance = 2 / scale / Math.max(1, Math.min(width ?? 800, height ?? 800));
+    try {
+      let predicate = filter?.predicate?.(clientId);
+      let full =
+        base.z != null
+          ? await pointQuery.queryClosestPoint3D(predicate, base.x, base.y, base.z, unitDistance)
+          : await pointQuery.queryClosestPoint(predicate, base.x, base.y, unitDistance);
+      if (full != null) {
+        return full;
+      }
+    } catch (e) {
+      console.error("queryByIndex enrichment failed", e);
+    }
+    // Do NOT return the synthetic base point: its Float32 coordinates are rounded
+    // relative to the source DOUBLEs and it has no stable identifier, so it would
+    // build a coordinated-selection predicate that matches the wrong rows or none.
+    // A null result simply leaves selection/tooltip unchanged for this rare pick.
+    return null;
   }
 
   // Cluster Labels
@@ -473,13 +642,17 @@
   pixelRatio={pixelRatio ?? 2}
   theme={theme}
   config={config}
-  data={{ x: xData, y: yData, category: categoryData }}
+  data={{ x: xData, y: yData, z: zData, category: categoryData }}
   totalCount={totalCount}
   maxDensity={maxDensity}
   categoryCount={categoryCount}
   categoryColors={categoryColors}
   defaultViewportState={defaultViewportState}
+  defaultCamera3DState={defaultCamera3DState}
+  camera3DState={camera3DState}
+  onCamera3DState={onCamera3DState}
   querySelection={querySelection}
+  queryByIndex={queryByIndex}
   queryClusterLabels={queryClusterLabels}
   labels={labels}
   customTooltip={customTooltip}

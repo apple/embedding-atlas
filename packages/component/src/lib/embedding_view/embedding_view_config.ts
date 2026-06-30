@@ -4,16 +4,20 @@ export interface EmbeddingViewConfig {
   /** Color scheme. */
   colorScheme?: "light" | "dark" | null;
 
-  /** View mode. */
-  mode?: "points" | "density" | null;
+  /** View mode. `points-3d` renders a depth-aware 3D point cloud and requires a z column. */
+  mode?: "points" | "density" | "points-3d" | null;
 
   /** Minimum average density for density contours to show up.
    * The density is measured as number of points per square points (aka., px in CSS units). */
   minimumDensity?: number | null;
 
   /** Override the automatically calculated point size.
-   * If not specified, point size is calculated based on density. */
+   * If not specified, point size is calculated based on density.
+   * In `points-3d` mode this is the point size (CSS px) at the camera's focal distance. */
   pointSize?: number | null;
+
+  /** Distance-fog strength for `points-3d` mode (0 disables fog). Default: 0.6. */
+  fogDensity?: number | null;
 
   /** Generate labels automatically.
    * By default labels are generated automatically if the `labels` prop is not specified,

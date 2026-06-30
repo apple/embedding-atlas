@@ -7,9 +7,11 @@ import {
   matrix3_inverse,
   matrix3_matrix_mul_matrix,
   matrix3_vector_mul_matrix,
+  matrix4_identity,
   type Matrix3,
   type Vector4,
 } from "../matrix.js";
+import { draw3DCount } from "../renderer_interface.js";
 import type { DensityMap, EmbeddingRenderer, EmbeddingRendererProps, RenderMode } from "../renderer_interface.js";
 import type { ViewportState } from "../utils.js";
 import { Viewport } from "../viewport_utils.js";
@@ -21,11 +23,19 @@ import { makeBindGroups } from "./bind_groups.js";
 import { makeDownsampleCommand, makeDownsampleResources, type DownsampleConfig } from "./downsample.js";
 import { makeDrawDensityMapCommand } from "./draw_density_map.js";
 import { makeDrawPointsCommand, makeDrawPointsDownsampledCommand } from "./draw_points.js";
+import { makeDrawPoints3DCommand } from "./draw_points_3d.js";
 import { makeGammaCorrectionCommand } from "./gamma_correction.js";
 import { makeGaussianBlurCommand } from "./gaussian_blur.js";
 import { kdeConfig } from "./kde_config.js";
+import { makePick3DCommand } from "./pick_3d.js";
 
 import programCode from "./program.wgsl?raw";
+
+// Stable fallback for the z and sample-index buffers when not in 3D, so the data
+// buffer (and thus the shared group1 bind group) is always constructible without
+// per-frame churn.
+const EMPTY_Z = new Float32Array(1);
+const EMPTY_SAMPLE_INDICES = new Uint32Array(1);
 
 export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
   readonly props: EmbeddingRendererProps;
@@ -39,6 +49,21 @@ export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
   private renderInputs: RenderInputs;
   private dataBuffers: DataBuffers;
   private renderer: Node<(props: EmbeddingRendererProps, textureView: GPUTextureView) => void>;
+  private renderer3D: Node<(props: EmbeddingRendererProps, textureView: GPUTextureView) => void>;
+  private picker: Node<
+    (
+      px: number,
+      py: number,
+      drawCount: number,
+      redraw: boolean,
+      writeUniforms: (() => void) | null,
+    ) => Promise<number | null>
+  >;
+  private update3D: Node<(props: EmbeddingRendererProps) => void>;
+  private pickDirty: boolean = true;
+  // Bumped on every view-changing setProps; lets an in-flight async pick detect that
+  // the view changed before its redraw finished and avoid marking the cache clean.
+  private pickGeneration: number = 0;
 
   constructor(context: GPUCanvasContext, device: GPUDevice, format: GPUTextureFormat, width: number, height: number) {
     this.context = context;
@@ -73,6 +98,14 @@ export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
 
       downsampleMaxPoints: 4000000,
       downsampleDensityWeight: 5,
+
+      z: null,
+      viewProjection: null,
+      cameraEye: [0, 0, 0],
+      cameraDistance: 1,
+      pointSize3D: 6,
+      fogDensity: 0.6,
+      sampleIndices: null,
     };
 
     this.viewport = new Viewport({ x: 0, y: 0, scale: 1 }, width, height);
@@ -84,9 +117,11 @@ export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
       colorScheme: df.value(this.props.colorScheme),
       xData: df.value(this.props.x),
       yData: df.value(this.props.y),
+      zData: df.value(this.props.z ?? EMPTY_Z),
       categoryData: df.value(this.props.category),
       categoryCount: df.value(this.props.categoryCount),
       categoryColors: df.value(this.props.categoryColors),
+      sampleIndices: df.value(this.props.sampleIndices),
       matrix: df.value(matrix3_identity()),
       width: df.value(width),
       height: df.value(height),
@@ -99,7 +134,7 @@ export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
     this.dataBuffers = makeDataBuffers(df, this.device, this.renderInputs);
     this.module = df.derive([this.device], (device) => device.createShaderModule({ code: programCode }));
     this.uniforms = makeModuleUniforms(df, this.device);
-    this.renderer = makeRenderCommand(
+    let commands = makeRenderCommand(
       df,
       this.device,
       this.module,
@@ -108,6 +143,10 @@ export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
       this.renderInputs,
       this.dataBuffers,
     );
+    this.renderer = commands.renderer;
+    this.renderer3D = commands.renderer3D;
+    this.picker = commands.pick;
+    this.update3D = commands.update3D;
   }
 
   setProps(newProps: Partial<EmbeddingRendererProps>): boolean {
@@ -129,8 +168,10 @@ export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
     this.renderInputs.colorScheme.value = this.props.colorScheme;
     this.renderInputs.xData.value = this.props.x;
     this.renderInputs.yData.value = this.props.y;
+    this.renderInputs.zData.value = this.props.z ?? EMPTY_Z;
     this.renderInputs.categoryData.value = this.props.category;
     this.renderInputs.categoryColors.value = this.props.categoryColors;
+    this.renderInputs.sampleIndices.value = this.props.sampleIndices;
     if (this.props.category != null) {
       this.renderInputs.categoryCount.value = this.props.categoryCount;
     } else {
@@ -143,11 +184,73 @@ export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
     this.renderInputs.densityBandwidth.value = this.props.densityBandwidth;
     this.renderInputs.downsampleMaxPoints.value = this.props.downsampleMaxPoints;
     this.renderInputs.downsampleDensityWeight.value = this.props.downsampleDensityWeight;
+    if (needsRender) {
+      // The view changed; the cached 3D pick texture is stale and must be redrawn
+      // on the next pick (hovers between renders reuse it). Bump the generation so an
+      // in-flight pick does not clear pickDirty after this change.
+      this.pickDirty = true;
+      this.pickGeneration++;
+    }
     return needsRender;
   }
 
   render(): void {
-    this.renderer.value(this.props, this.context.getCurrentTexture().createView());
+    let view = this.context.getCurrentTexture().createView();
+    // Dispatch to the 3D node (which does not depend on the 2D density/downsample
+    // resources) when in 3D, so 2D-only GPU resources are never allocated for a 3D
+    // chart and vice versa.
+    if (this.props.viewProjection != null && this.props.z != null) {
+      this.renderer3D.value(this.props, view);
+    } else {
+      this.renderer.value(this.props, view);
+    }
+  }
+
+  async pick(x: number, y: number): Promise<number | null | undefined> {
+    if (this.props.viewProjection == null || this.props.z == null) {
+      return null;
+    }
+    let sampleCount = draw3DCount(this.props.sampleIndices, this.props.x.length, this.props.downsampleMaxPoints);
+    // Only re-render the pick ID texture when the view changed since the last pick;
+    // otherwise reuse it (just read back a pixel). Clear the dirty flag only when a
+    // redraw will actually happen (there is data to draw), so an early-out pick does
+    // not leave a stale cache marked clean. When redrawing, refresh the uniforms so
+    // a pick between a camera change and the next scheduled render uses the right matrix.
+    let redraw = this.pickDirty;
+    // Snapshot the props that drive the 3D uniforms NOW, and defer the actual
+    // uniform write into the serialized pick chain (see pick_3d.ts). A shared
+    // uniform buffer + queued/async picks mean an eager write here could be
+    // overwritten by a later pick's camera before this request's redraw is encoded.
+    let willRedraw = redraw && sampleCount > 0;
+    let writeUniforms: (() => void) | null = null;
+    if (willRedraw) {
+      let snapshot: EmbeddingRendererProps = { ...this.props };
+      writeUniforms = () => this.update3D.value(snapshot);
+    }
+    // Capture the view generation so the cache is only marked clean if no newer view
+    // change (setProps) happened while this async pick was in flight.
+    let gen = this.pickGeneration;
+    try {
+      let value = await this.picker.value(x, y, sampleCount, redraw, writeUniforms);
+      // If the view changed (setProps bumped the generation) while this async pick was
+      // queued, its result was computed against a stale camera / sample-index buffer.
+      // Report `undefined` (indeterminate, NOT a no-hit) so callers leave selection
+      // unchanged, and leave the cache dirty (setProps already did) so the next pick
+      // redraws — never surface a pick for a view that no longer exists.
+      if (this.pickGeneration !== gen) {
+        return undefined;
+      }
+      // Otherwise a redraw, if any, now matches the current view: mark the cache clean.
+      if (willRedraw) {
+        this.pickDirty = false;
+      }
+      return value;
+    } catch (e) {
+      // Pick failed (submission/device loss/mapAsync): keep the cache dirty so the
+      // next pick redraws, and report `undefined` (indeterminate) so a transient error
+      // does not get misread as an intentional empty-space click that clears selection.
+      return undefined;
+    }
   }
 
   destroy(): void {
@@ -191,9 +294,11 @@ export interface RenderInputs {
   colorScheme: ValueNode<"light" | "dark">;
   xData: ValueNode<Float32Array<ArrayBuffer>>;
   yData: ValueNode<Float32Array<ArrayBuffer>>;
+  zData: ValueNode<Float32Array<ArrayBuffer>>;
   categoryData: ValueNode<Uint8Array<ArrayBuffer> | null>;
   categoryCount: ValueNode<number>;
   categoryColors: ValueNode<string[] | null>;
+  sampleIndices: ValueNode<Uint32Array<ArrayBuffer> | null>;
   pointSize: ValueNode<number>;
   densityBandwidth: ValueNode<number>;
   matrix: ValueNode<Matrix3>;
@@ -206,8 +311,11 @@ export interface RenderInputs {
 export interface DataBuffers {
   x: Node<GPUBuffer>;
   y: Node<GPUBuffer>;
+  z: Node<GPUBuffer>;
   category: Node<GPUBuffer | null>;
   count: Node<number>;
+  /** u32 buffer of the 3D draw set (frustum-culled subset); 1-elem fallback when unused. */
+  sampleIndex: Node<GPUBuffer>;
 }
 
 export interface AuxiliaryResources {
@@ -232,11 +340,28 @@ function makeDataBuffers(df: Dataflow, device: Node<GPUDevice>, inputs: RenderIn
     [device, df.statefulDerive([device, xyDataSize, usage], gpuBuffer), inputs.yData],
     gpuBufferData,
   );
+  // z is sized to its own data (count elements in 3D, 1 element in 2D fallback).
+  const zDataSize = df.derive([inputs.zData], (d: ArrayLike<number>) => Math.max(1, d.length) * 4);
+  const zBuffer = df.statefulDerive(
+    [device, df.statefulDerive([device, zDataSize, usage], gpuBuffer), inputs.zData],
+    gpuBufferData,
+  );
   const categoryBuffer = df.statefulDerive(
     [device, df.statefulDerive([device, categoryDataSize, usage], gpuBuffer), inputs.categoryData],
     gpuBufferData,
   );
-  return { x: xBuffer, y: yBuffer, category: categoryBuffer, count: count };
+  // u32 sample-index buffer, sized to its own data (the frustum-culled draw set in
+  // 3D, a 1-element fallback otherwise). Bound at group1 binding 4.
+  const sampleIndexData = df.derive(
+    [inputs.sampleIndices],
+    (d: Uint32Array<ArrayBuffer> | null) => d ?? EMPTY_SAMPLE_INDICES,
+  );
+  const sampleIndexSize = df.derive([sampleIndexData], (d: ArrayLike<number>) => Math.max(1, d.length) * 4);
+  const sampleIndexBuffer = df.statefulDerive(
+    [device, df.statefulDerive([device, sampleIndexSize, usage], gpuBuffer), sampleIndexData],
+    gpuBufferData,
+  );
+  return { x: xBuffer, y: yBuffer, z: zBuffer, category: categoryBuffer, count: count, sampleIndex: sampleIndexBuffer };
 }
 
 export function makeAuxiliaryResources(
@@ -291,7 +416,20 @@ function makeRenderCommand(
   format: GPUTextureFormat,
   inputs: RenderInputs,
   dataBuffers: DataBuffers,
-): Node<(props: EmbeddingRendererProps, textureView: GPUTextureView) => void> {
+): {
+  renderer: Node<(props: EmbeddingRendererProps, textureView: GPUTextureView) => void>;
+  renderer3D: Node<(props: EmbeddingRendererProps, textureView: GPUTextureView) => void>;
+  pick: Node<
+    (
+      px: number,
+      py: number,
+      drawCount: number,
+      redraw: boolean,
+      writeUniforms: (() => void) | null,
+    ) => Promise<number | null>
+  >;
+  update3D: Node<(props: EmbeddingRendererProps) => void>;
+} {
   const densityPixelRatio = 4;
   let safeMargin = df.derive([inputs.densityBandwidth], (r: number) => Math.ceil(r * 3) + 1);
   let fbWidth = df.derive([inputs.width, safeMargin], (x: number, safeMargin: number) => x + safeMargin * 2);
@@ -327,6 +465,20 @@ function makeRenderCommand(
   let gammaCorrection = makeGammaCorrectionCommand(df, device, module, format, bindGroups);
   let gaussianBlur = makeGaussianBlurCommand(df, device, module, bindGroups, fbWidth, fbHeight, inputs.categoryCount);
 
+  // 3D point cloud rendering: a depth texture sized to the canvas (NOT the
+  // safe-margin framebuffer the 2D OIT path uses) plus the draw/pick commands.
+  // Dimensions are clamped to >= 1 so a hidden/zero-sized chart cannot request a
+  // 0x0 texture. This node is accessed LAZILY (only inside the 3D render branch), so
+  // ordinary 2D charts never allocate it — see the renderer below.
+  let depth3DWidth = df.derive([inputs.width], (w: number) => Math.max(1, w));
+  let depth3DHeight = df.derive([inputs.height], (h: number) => Math.max(1, h));
+  let depthTexture3D = df.statefulDerive(
+    [device, depth3DWidth, depth3DHeight, "depth24plus" as GPUTextureFormat, GPUTextureUsage.RENDER_ATTACHMENT],
+    gpuTexture,
+  );
+  let drawPoints3D = makeDrawPoints3DCommand(df, device, module, format, bindGroups, dataBuffers);
+  let pick3D = makePick3DCommand(df, device, module, bindGroups, inputs.width, inputs.height);
+
   // Create downsampling command
   let layoutsNode = df.derive([bindGroups.layouts], (layouts) => layouts);
   let downsample = makeDownsampleCommand(
@@ -356,7 +508,75 @@ function makeRenderCommand(
     },
   );
 
-  return df.derive(
+  // Writes the 3D uniforms (camera matrix, params, colors) for the current props.
+  // Shared by render() and pick() so picking always uses the CURRENT camera, not
+  // whatever the last scheduled render happened to write.
+  let update3DUniforms = df.derive(
+    [uniforms.update, dataBuffers.count, categoryColors, kde_coeffs],
+    (updateUniforms, count: number, categoryColors, kde_coeffs) => (props: EmbeddingRendererProps) => {
+      let backgroundColor: Vector4 = props.colorScheme == "light" ? [1, 1, 1, 1] : [0, 0, 0, 1];
+      let cameraDistance = props.cameraDistance;
+      // sample_count > 0 tells the shader to index the sample-index buffer.
+      let sampleCount = props.sampleIndices != null ? props.sampleIndices.length : 0;
+      updateUniforms({
+        count: count,
+        category_count: props.categoryCount,
+        framebuffer_width: props.width,
+        framebuffer_height: props.height,
+        density_width: 1,
+        density_height: 1,
+        gamma: props.gamma,
+        point_size: props.pointSize,
+        point_alpha: props.pointAlpha,
+        points_alpha: props.pointsAlpha,
+        density_scaler: 0,
+        quantization_step: 1,
+        density_alpha: 0,
+        contours_alpha: 0,
+        matrix: matrix3_identity(),
+        view_xy_scaler: [1, 1],
+        kde_causal: kde_coeffs.kde_causal,
+        kde_anticausal: kde_coeffs.kde_anticausal,
+        kde_a: kde_coeffs.kde_a,
+        background_color: backgroundColor,
+        matrix4: props.viewProjection ?? matrix4_identity(),
+        params0: [1, props.pointSize3D, props.fogDensity, 0],
+        params1: [props.cameraEye[0], props.cameraEye[1], props.cameraEye[2], 0],
+        params2: [cameraDistance, sampleCount, 0, 0],
+        category_colors: categoryColors,
+      });
+    },
+  );
+
+  // 3D render command, kept as a SEPARATE dataflow node from the 2D renderer so a
+  // 3D chart never evaluates (and thus never allocates) the 2D density/downsample
+  // GPU resources — those are point-count-sized and would otherwise waste, or
+  // exhaust, GPU memory on the large clouds 3D targets. render() dispatches to one
+  // node or the other; the unused node's deps stay lazy.
+  let renderer3D = df.derive(
+    [device, dataBuffers.count, drawPoints3D, update3DUniforms],
+    (device, count: number, drawPoints3D, update3DUniforms) =>
+      (props: EmbeddingRendererProps, textureView: GPUTextureView) => {
+        let backgroundColor: Vector4 = props.colorScheme == "light" ? [1, 1, 1, 1] : [0, 0, 0, 1];
+        // Shared uniform write (also used by pick) so the camera is always current.
+        update3DUniforms(props);
+        let encoder = device.createCommandEncoder();
+        let invGamma = 1 / props.gamma;
+        let clearColor: GPUColor = {
+          r: Math.pow(backgroundColor[0], invGamma),
+          g: Math.pow(backgroundColor[1], invGamma),
+          b: Math.pow(backgroundColor[2], invGamma),
+          a: 1,
+        };
+        let sampleCount = draw3DCount(props.sampleIndices, count, props.downsampleMaxPoints);
+        // Access the 3D depth texture LAZILY (only here), so 2D renders never
+        // allocate or fail on a 3D-only resource.
+        drawPoints3D(encoder, textureView, depthTexture3D.value.createView(), clearColor, sampleCount);
+        device.queue.submit([encoder.finish()]);
+      },
+  );
+
+  let renderer = df.derive(
     [
       device,
       fbWidth,
@@ -395,8 +615,9 @@ function makeRenderCommand(
       downsample,
       kde_coeffs,
     ) =>
-      (props, textureView) => {
+      (props: EmbeddingRendererProps, textureView: GPUTextureView) => {
         let backgroundColor: Vector4 = props.colorScheme == "light" ? [1, 1, 1, 1] : [0, 0, 0, 1];
+
         let scalerX = props.width / fbWidth;
         let scalerY = props.height / fbHeight;
         let safeMarginAdjustmentMatrix: Matrix3 = [scalerX, 0, 0, 0, scalerY, 0, 0, 0, 1];
@@ -422,6 +643,10 @@ function makeRenderCommand(
           kde_anticausal: kde_coeffs.kde_anticausal,
           kde_a: kde_coeffs.kde_a,
           background_color: backgroundColor,
+          matrix4: matrix4_identity(),
+          params0: [0, 0, 0, 0],
+          params1: [0, 0, 0, 0],
+          params2: [0, 0, 0, 0],
           category_colors: categoryColors,
         });
 
@@ -479,6 +704,8 @@ function makeRenderCommand(
         device.queue.submit([encoder.finish()]);
       },
   );
+
+  return { renderer: renderer, renderer3D: renderer3D, pick: pick3D, update3D: update3DUniforms };
 }
 
 function makeDensityMapCommand(
@@ -534,6 +761,10 @@ function makeDensityMapCommand(
         kde_anticausal: kde_coeffs.kde_anticausal,
         kde_a: kde_coeffs.kde_a,
         background_color: [0, 0, 0, 0],
+        matrix4: matrix4_identity(),
+        params0: [0, 0, 0, 0],
+        params1: [0, 0, 0, 0],
+        params2: [0, 0, 0, 0],
         category_colors: [],
       });
       accumulate(encoder);

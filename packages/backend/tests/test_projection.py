@@ -144,6 +144,52 @@ def test_vector_auto_modality(vector_df, cache_root):
 
 
 # ---------------------------------------------------------------------------
+# 3D projection
+# ---------------------------------------------------------------------------
+
+
+def test_vector_3d(vector_df, cache_root):
+    result = compute_projection(
+        vector_df,
+        inputs="vec",
+        modality="vector",
+        z="projection_z",
+        umap_args={"n_components": 3},
+        cache_root=cache_root,
+    )
+    assert len(result) == NUM_SAMPLES
+    for col in ("projection_x", "projection_y", "projection_z"):
+        assert col in result.columns
+
+
+def test_vector_default_2d_has_no_z(vector_df, cache_root):
+    """Default (no z requested) path produces only x/y and not projection_z."""
+    result = compute_projection(
+        vector_df,
+        inputs="vec",
+        modality="vector",
+        cache_root=cache_root,
+    )
+    assert len(result) == NUM_SAMPLES
+    assert "projection_x" in result.columns
+    assert "projection_y" in result.columns
+    assert "projection_z" not in result.columns
+
+
+def test_vector_z_auto_enables_3d(vector_df, cache_root):
+    """Passing z without n_components=3 auto-enables a 3D projection."""
+    result = compute_projection(
+        vector_df,
+        inputs="vec",
+        modality="vector",
+        z="projection_z",
+        cache_root=cache_root,
+    )
+    assert len(result) == NUM_SAMPLES
+    assert "projection_z" in result.columns
+
+
+# ---------------------------------------------------------------------------
 # Custom embedder receives correct data
 # ---------------------------------------------------------------------------
 

@@ -4,6 +4,7 @@ import { createClassComponent } from "svelte/legacy";
 
 import Component from "./EmbeddingView.svelte";
 
+import type { Camera3DState } from "../camera3d.js";
 import type { Point, Rectangle, ViewportState } from "../utils.js";
 import type { EmbeddingViewConfig } from "./embedding_view_config.js";
 import type { ThemeConfig } from "./theme.js";
@@ -16,6 +17,9 @@ export interface EmbeddingViewProps {
     x: Float32Array<ArrayBuffer>;
     /** An array of Y coordinates, must be a `Float32Array`. */
     y: Float32Array<ArrayBuffer>;
+    /** An array of Z coordinates, must be a `Float32Array`. When provided and
+     *  `config.mode` is `points-3d`, the view renders a 3D point cloud. */
+    z?: Float32Array<ArrayBuffer> | null;
     /** An array of category indices, must be a `Uint8Array`. */
     category?: Uint8Array<ArrayBuffer> | null;
   };
@@ -51,6 +55,11 @@ export interface EmbeddingViewProps {
    *  To listen to viewport state change, use `onViewportState`. */
   viewportState?: ViewportState | null;
 
+  /** The 3D camera state (used when `config.mode` is `points-3d`).
+   *  If undefined or `null`, the view fits the camera to the data.
+   *  To listen for camera changes, use `onCamera3DState`. */
+  camera3DState?: Camera3DState | null;
+
   /** The current tooltip.
    *  The tooltip is an object with the following fields: `x`, `y`, `category`, `text`, `identifier`.
    *  To listen for a tooltip change, use `onTooltip`. */
@@ -70,6 +79,9 @@ export interface EmbeddingViewProps {
   /** A callback for when `viewportState` changes. */
   onViewportState?: ((value: ViewportState) => void) | null;
 
+  /** A callback for when the 3D `camera3DState` changes. */
+  onCamera3DState?: ((value: Camera3DState) => void) | null;
+
   /** A callback for when `tooltip` changes. */
   onTooltip?: ((value: DataPoint | null) => void) | null;
 
@@ -83,6 +95,11 @@ export interface EmbeddingViewProps {
    *  The `unitDistance` parameter is the distance of a single pixel in data domain.
    *  You can use this to determine the distance threshold for selecting a point. */
   querySelection?: ((x: number, y: number, unitDistance: number) => Promise<DataPoint | null>) | null;
+
+  /** An async function that returns the data point at the given instance index.
+   *  Used for pick-based hover/click in 3D mode. If not provided, the array-backed
+   *  view builds one automatically from the data arrays. */
+  queryByIndex?: ((index: number) => Promise<DataPoint | null>) | null;
 
   /** An async function that returns labels for a list of clusters.
    *  Each cluster is given as a list of rectangles that approximately cover the region. */

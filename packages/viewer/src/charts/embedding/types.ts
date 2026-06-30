@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import type { EmbeddingViewConfig, Point, Rectangle, ViewportState } from "@embedding-atlas/component";
+import type { Camera3DState, EmbeddingViewConfig, Point, Rectangle, ViewportState } from "@embedding-atlas/component";
 
 export interface EmbeddingSpec {
   type: "embedding";
@@ -9,6 +9,7 @@ export interface EmbeddingSpec {
   data: {
     x: string;
     y: string;
+    z?: string | null;
     text?: string | null;
     image?: string | null;
     importance?: string | null;
@@ -16,7 +17,7 @@ export interface EmbeddingSpec {
     neighbors?: string | null;
   };
 
-  mode?: "points" | "density";
+  mode?: "points" | "density" | "points-3d";
   minimumDensity?: number;
   pointSize?: number;
   /** Maximum number of points to render (for downsampling). Default: 4000000. Set to null to disable. */
@@ -27,6 +28,8 @@ export interface EmbeddingSpec {
 export interface EmbeddingState {
   /** The viewport state */
   viewport?: ViewportState;
+  /** The 3D camera state (used in points-3d mode). */
+  camera3D?: Camera3DState;
   /** State of the legend */
   legend?: {
     /** Selected categories */

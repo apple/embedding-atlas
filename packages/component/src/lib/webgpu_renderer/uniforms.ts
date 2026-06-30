@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import { Dataflow, Node } from "../dataflow.js";
-import type { Matrix3, Vector2, Vector4 } from "../matrix.js";
+import type { Matrix3, Matrix4, Vector2, Vector4 } from "../matrix.js";
 import { gpuBuffer } from "./utils.js";
 
 export interface Uniforms {
@@ -25,6 +25,14 @@ export interface Uniforms {
   kde_anticausal: Vector4;
   kde_a: Vector4;
   background_color: Vector4;
+  // 3D point cloud uniforms (ignored by the 2D pipelines).
+  matrix4: Matrix4;
+  /** (unused, point_size_3d, fog_density, unused) */
+  params0: Vector4;
+  /** (eye.x, eye.y, eye.z, unused) */
+  params1: Vector4;
+  /** (camera_distance, sample_count, unused, unused) */
+  params2: Vector4;
   category_colors: { r: number; g: number; b: number; a: number }[];
 }
 
@@ -92,6 +100,14 @@ export class StructWriter {
     this.vec3f(matrix[6], matrix[7], matrix[8]);
   }
 
+  mat4x4f(matrix: Matrix4) {
+    // Column-major: each column is a vec4 (16-byte aligned).
+    this.vec4f(matrix[0], matrix[1], matrix[2], matrix[3]);
+    this.vec4f(matrix[4], matrix[5], matrix[6], matrix[7]);
+    this.vec4f(matrix[8], matrix[9], matrix[10], matrix[11]);
+    this.vec4f(matrix[12], matrix[13], matrix[14], matrix[15]);
+  }
+
   byteOffset() {
     return this.offset * 4;
   }
@@ -103,7 +119,8 @@ export interface ModuleUniforms {
 }
 
 export function makeModuleUniforms(df: Dataflow, device: Node<GPUDevice>): ModuleUniforms {
-  const byteSize = 4288;
+  // 4288 (2D) + mat4x4 (64) + 3 * vec4 (48) = 4400. category_colors must stay last.
+  const byteSize = 4400;
   let buffer = new ArrayBuffer(byteSize);
 
   let uniformBuffer = df.statefulDerive(
@@ -135,6 +152,10 @@ export function makeModuleUniforms(df: Dataflow, device: Node<GPUDevice>): Modul
       writer.vec4f(...uniforms.kde_anticausal);
       writer.vec4f(...uniforms.kde_a);
       writer.vec4f(...uniforms.background_color);
+      writer.mat4x4f(uniforms.matrix4);
+      writer.vec4f(...uniforms.params0);
+      writer.vec4f(...uniforms.params1);
+      writer.vec4f(...uniforms.params2);
       let gamma = uniforms.gamma;
       for (let i = 0; i < Math.min(uniforms.category_colors.length, 256); i++) {
         let { r, g, b, a } = uniforms.category_colors[i];

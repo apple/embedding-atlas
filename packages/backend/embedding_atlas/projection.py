@@ -24,6 +24,7 @@ def compute_projection(
     modality: str = "auto",
     x: str = "projection_x",
     y: str = "projection_y",
+    z: str | None = None,
     neighbors: str | None = "neighbors",
     embedder: str | Callable | None = None,
     model: str | None = None,
@@ -51,6 +52,10 @@ def compute_projection(
             'text', 'image', 'audio', 'vector', or 'auto' (auto-detect).
         x: str, column name where the UMAP X coordinates will be stored.
         y: str, column name where the UMAP Y coordinates will be stored.
+        z: str or None, column name where the UMAP Z coordinates will be
+            stored. Set to a column name to request a 3D projection. When set
+            and ``n_components`` is not specified in ``umap_args``, UMAP defaults
+            to 3 output components so the z column "just works".
         neighbors: str or None, column name where nearest neighbor indices
             will be stored. Set to None to skip.
         embedder: the embedding backend to use. Can be:
@@ -80,6 +85,7 @@ def compute_projection(
             modality=modality,
             x=x,
             y=y,
+            z=z,
             neighbors=neighbors,
             embedder=embedder,
             model=model,
@@ -99,6 +105,7 @@ async def async_compute_projection(
     modality: str = "auto",
     x: str = "projection_x",
     y: str = "projection_y",
+    z: str | None = None,
     neighbors: str | None = "neighbors",
     embedder: str | Callable | None = None,
     model: str | None = None,
@@ -121,7 +128,13 @@ async def async_compute_projection(
     nw_frame = nw.from_native(data_frame, eager_only=True)
     series = nw_frame[inputs]
     embedder_args = embedder_args or {}
-    umap_args = umap_args or {}
+    umap_args = dict(umap_args or {})
+
+    # If a z column is requested, ensure UMAP produces at least 3 components so that
+    # requesting a z column "just works". We check the effective value rather than
+    # key presence, because callers (e.g. the CLI) may pass an explicit default of 2.
+    if z is not None and umap_args.get("n_components", 2) < 3:
+        umap_args["n_components"] = 3
 
     # 1. Infer modality
     if modality == "auto":
@@ -217,6 +230,18 @@ async def async_compute_projection(
         nw.new_series(x, proj.projection[:, 0].tolist(), nw.Float64, backend=backend),
         nw.new_series(y, proj.projection[:, 1].tolist(), nw.Float64, backend=backend),
     ]
+    if z is not None:
+        if proj.projection.shape[1] < 3:
+            raise ValueError(
+                "A z column was requested, but the UMAP projection only has "
+                f"{proj.projection.shape[1]} component(s). Pass "
+                'umap_args={"n_components": 3} to produce a 3D projection.'
+            )
+        new_columns.append(
+            nw.new_series(
+                z, proj.projection[:, 2].tolist(), nw.Float64, backend=backend
+            )
+        )
     if neighbors is not None:
         new_columns.append(
             nw.new_series(

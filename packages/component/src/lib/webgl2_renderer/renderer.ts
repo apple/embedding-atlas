@@ -9,6 +9,7 @@ import {
   matrix3_vector_mul_matrix,
   type Matrix3,
 } from "../matrix.js";
+import { draw3DCount } from "../renderer_interface.js";
 import type { DensityMap, EmbeddingRenderer, EmbeddingRendererProps, RenderMode } from "../renderer_interface.js";
 import type { ViewportState } from "../utils.js";
 import { Viewport } from "../viewport_utils.js";
@@ -20,8 +21,36 @@ import { gaussianBlurR20Command, gaussianBlurR20PixelRadius } from "./gaussian_b
 import { paintContoursCommand } from "./paint_contours.js";
 import { paintDensityMapCommand } from "./paint_density_map.js";
 import { paintDiscretePointsCommand } from "./paint_discrete_points.js";
+import { paintPoints3DCommand } from "./paint_points_3d.js";
 import { paintPointsCommand } from "./paint_points.js";
-import { webglBuffer, webglFramebuffer } from "./utils.js";
+import { pickPoints3DCommand, type Pick3DCommand } from "./pick_points_3d.js";
+import { webglBuffer, webglElementBuffer, webglFramebuffer } from "./utils.js";
+
+// Stable fallback so the z vertex buffer is always constructible without churn.
+const EMPTY_Z = new Float32Array(1);
+
+// Builds the flat RGBA gamma-encoded category color matrix the WebGL paint shaders
+// consume: `slots` entries, each a category color (gamma-applied) or a gray
+// fallback past the provided colors. `defaultCount` sizes the auto-generated palette
+// when none is supplied. Shared by the 2D points, 3D points, and density paths.
+function buildGammaColorMatrix(
+  categoryColors: string[] | null,
+  slots: number,
+  defaultCount: number,
+  gamma: number,
+): number[] {
+  let colors = categoryColors ?? defaultCategoryColors(defaultCount);
+  let out: number[] = [];
+  for (let i = 0; i < slots; i++) {
+    if (i < colors.length) {
+      let { r, g, b } = parseColorNormalizedRgb(colors[i]);
+      out.push(Math.pow(r, gamma), Math.pow(g, gamma), Math.pow(b, gamma), 1);
+    } else {
+      out.push(0.5, 0.5, 0.5, 1);
+    }
+  }
+  return out;
+}
 
 export class EmbeddingRendererWebGL2 implements EmbeddingRenderer {
   readonly props: EmbeddingRendererProps;
@@ -32,6 +61,12 @@ export class EmbeddingRendererWebGL2 implements EmbeddingRenderer {
   private renderInputs: RenderInputs;
   private dataBuffers: DataBuffers;
   private renderer: Node<(props: EmbeddingRendererProps) => void>;
+  private renderer3D: Node<(props: EmbeddingRendererProps) => void>;
+  private picker: Node<Pick3DCommand>;
+  private pickDirty: boolean = true;
+  // Bumped on every view-changing setProps; lets an in-flight pick detect that the
+  // view changed before its redraw finished and avoid marking the cache clean.
+  private pickGeneration: number = 0;
 
   constructor(context: WebGL2RenderingContext, width: number, height: number) {
     this.props = {
@@ -64,6 +99,14 @@ export class EmbeddingRendererWebGL2 implements EmbeddingRenderer {
 
       downsampleMaxPoints: 4000000,
       downsampleDensityWeight: 5,
+
+      z: null,
+      viewProjection: null,
+      cameraEye: [0, 0, 0],
+      cameraDistance: 1,
+      pointSize3D: 6,
+      fogDensity: 0.6,
+      sampleIndices: null,
     };
 
     this.viewport = new Viewport({ x: 0, y: 0, scale: 1 }, width, height);
@@ -77,8 +120,10 @@ export class EmbeddingRendererWebGL2 implements EmbeddingRenderer {
       colorScheme: df.value(this.props.colorScheme),
       xData: df.value(this.props.x),
       yData: df.value(this.props.y),
+      zData: df.value(this.props.z ?? EMPTY_Z),
       categoryData: df.value(this.props.category),
       categoryCount: df.value(this.props.categoryCount),
+      sampleIndices: df.value(this.props.sampleIndices),
       matrix: df.value(matrix3_identity()),
       width: df.value(width),
       height: df.value(height),
@@ -89,6 +134,18 @@ export class EmbeddingRendererWebGL2 implements EmbeddingRenderer {
     };
     this.dataBuffers = dataBuffers(df, gl, this.renderInputs);
     this.renderer = renderCommand(df, gl, this.renderInputs, this.dataBuffers);
+    this.renderer3D = points3DRenderCommand(df, gl, this.renderInputs, this.dataBuffers);
+    this.picker = pickPoints3DCommand(
+      df,
+      gl,
+      this.dataBuffers.x,
+      this.dataBuffers.y,
+      this.dataBuffers.z,
+      this.dataBuffers.count,
+      this.dataBuffers.sampleIndex,
+      this.renderInputs.width,
+      this.renderInputs.height,
+    );
   }
 
   setProps(newProps: Partial<EmbeddingRendererProps>): boolean {
@@ -110,7 +167,9 @@ export class EmbeddingRendererWebGL2 implements EmbeddingRenderer {
     this.renderInputs.colorScheme.value = this.props.colorScheme;
     this.renderInputs.xData.value = this.props.x;
     this.renderInputs.yData.value = this.props.y;
+    this.renderInputs.zData.value = this.props.z ?? EMPTY_Z;
     this.renderInputs.categoryData.value = this.props.category;
+    this.renderInputs.sampleIndices.value = this.props.sampleIndices;
     if (this.props.category != null) {
       this.renderInputs.categoryCount.value = this.props.categoryCount;
     } else {
@@ -123,11 +182,62 @@ export class EmbeddingRendererWebGL2 implements EmbeddingRenderer {
     this.renderInputs.densityBandwidth.value = this.props.densityBandwidth;
     this.renderInputs.downsampleMaxPoints.value = this.props.downsampleMaxPoints;
     this.renderInputs.downsampleDensityWeight.value = this.props.downsampleDensityWeight;
+    if (needsRender) {
+      // The view changed; the cached 3D pick buffer must be redrawn on next pick.
+      // Bump the generation so an in-flight pick does not clear pickDirty afterward.
+      this.pickDirty = true;
+      this.pickGeneration++;
+    }
     return needsRender;
   }
 
   render(): void {
-    this.renderer.value(this.props);
+    if (this.props.viewProjection != null && this.props.z != null) {
+      this.renderer3D.value(this.props);
+    } else {
+      this.renderer.value(this.props);
+    }
+  }
+
+  async pick(x: number, y: number): Promise<number | null | undefined> {
+    if (this.props.viewProjection == null || this.props.z == null) {
+      return null;
+    }
+    let cameraDistance = this.props.cameraDistance;
+    // Same sample count as the draw, so picking matches the visible subset.
+    let sampleCount = draw3DCount(this.props.sampleIndices, this.props.x.length, this.props.downsampleMaxPoints);
+    // Re-render the pick buffer only when the view changed since the last pick.
+    let redraw = this.pickDirty;
+    let willRedraw = redraw && sampleCount > 0;
+    // Capture the view generation so the cache is only marked clean if no newer view
+    // change (setProps) happened while this pick ran.
+    let gen = this.pickGeneration;
+    try {
+      let value = await this.picker.value(
+        this.props.viewProjection,
+        this.props.pointSize3D,
+        cameraDistance,
+        sampleCount,
+        redraw,
+        x,
+        y,
+      );
+      // If the view changed (setProps bumped the generation) while this pick ran, its
+      // result is stale — report `undefined` (indeterminate, not a no-hit) so callers
+      // leave selection unchanged, and leave the cache dirty for the next pick.
+      if (this.pickGeneration !== gen) {
+        return undefined;
+      }
+      // Otherwise the redraw, if any, matches the current view: mark the cache clean.
+      if (willRedraw) {
+        this.pickDirty = false;
+      }
+      return value;
+    } catch (e) {
+      // Keep the cache dirty so the next pick redraws; report `undefined` so a
+      // transient failure is not misread as an intentional empty-space click.
+      return undefined;
+    }
   }
 
   destroy(): void {
@@ -161,8 +271,10 @@ interface RenderInputs {
   colorScheme: ValueNode<"light" | "dark">;
   xData: ValueNode<number[] | Float32Array>;
   yData: ValueNode<number[] | Float32Array>;
+  zData: ValueNode<number[] | Float32Array>;
   categoryData: ValueNode<number[] | Uint8Array | null>;
   categoryCount: ValueNode<number>;
+  sampleIndices: ValueNode<Uint32Array | null>;
   pointSize: ValueNode<number>;
   densityBandwidth: ValueNode<number>;
   matrix: ValueNode<Matrix3>;
@@ -175,20 +287,31 @@ interface RenderInputs {
 interface DataBuffers {
   x: Node<WebGLBuffer>;
   y: Node<WebGLBuffer>;
+  z: Node<WebGLBuffer>;
   category: Node<WebGLBuffer | null>;
   count: Node<number>;
+  /** Strided element-index buffer for 3D downsampling (null = draw all). */
+  sampleIndex: Node<WebGLBuffer | null>;
 }
 
 function dataBuffers(df: Dataflow, gl: Node<WebGL2RenderingContext>, inputs: RenderInputs): DataBuffers {
   const xBuffer = df.statefulDerive([gl, inputs.xData, "f32"], webglBuffer);
   const yBuffer = df.statefulDerive([gl, inputs.yData, "f32"], webglBuffer);
+  const zBuffer = df.statefulDerive([gl, inputs.zData, "f32"], webglBuffer);
   const categoryBuffer = df.if(
     df.derive([inputs.categoryData], (x) => x != null),
     (df) => df.statefulDerive([gl, df.assertNotNull(inputs.categoryData), "u8"], webglBuffer),
     (df) => df.value(null),
   );
   const count = df.derive([inputs.xData], (d: ArrayLike<number>) => d.length);
-  return { x: xBuffer, y: yBuffer, category: categoryBuffer, count: count };
+  // The 3D draw set (frustum-culled, strided subset for the current camera) is
+  // computed by the view and passed in; null means draw all points.
+  const sampleIndex = df.if(
+    df.derive([inputs.sampleIndices], (d) => d != null),
+    (df) => df.statefulDerive([gl, df.assertNotNull(inputs.sampleIndices)], webglElementBuffer),
+    (df) => df.value(null),
+  );
+  return { x: xBuffer, y: yBuffer, z: zBuffer, category: categoryBuffer, count: count, sampleIndex: sampleIndex };
 }
 
 function renderCommand(
@@ -229,19 +352,7 @@ function pointsRenderCommand(
       categoryCount: number,
     ) =>
       (props) => {
-        let colorMatrix: number[] = [];
-        let categoryColors = props.categoryColors ?? defaultCategoryColors(props.categoryCount);
-        for (let i = 0; i < categoryCount; i++) {
-          if (i < categoryColors.length) {
-            let { r, g, b } = parseColorNormalizedRgb(categoryColors[i]);
-            r = Math.pow(r, props.gamma);
-            g = Math.pow(g, props.gamma);
-            b = Math.pow(b, props.gamma);
-            colorMatrix = colorMatrix.concat([r, g, b, 1]);
-          } else {
-            colorMatrix = colorMatrix.concat([0.5, 0.5, 0.5, 1]);
-          }
-        }
+        let colorMatrix = buildGammaColorMatrix(props.categoryColors, categoryCount, props.categoryCount, props.gamma);
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, linearFB.framebuffer);
         gl.viewport(0, 0, linearFB.width, linearFB.height);
@@ -258,6 +369,68 @@ function pointsRenderCommand(
         gl.viewport(0, 0, props.width, props.height);
         gammaCorrection(linearFB.texture, props.gamma);
       },
+  );
+}
+
+function points3DRenderCommand(
+  df: Dataflow,
+  gl: Node<WebGL2RenderingContext>,
+  inputs: RenderInputs,
+  buffers: DataBuffers,
+): Node<(props: EmbeddingRendererProps) => void> {
+  const hasCategory = df.derive([inputs.categoryCount], (x: number) => x > 1);
+  let paintPoints3D = df.if(
+    hasCategory,
+    (df) =>
+      paintPoints3DCommand(
+        df,
+        gl,
+        buffers.x,
+        buffers.y,
+        buffers.z,
+        df.assertNotNull(buffers.category),
+        buffers.count,
+        buffers.sampleIndex,
+      ),
+    (df) => paintPoints3DCommand(df, gl, buffers.x, buffers.y, buffers.z, null, buffers.count, buffers.sampleIndex),
+  );
+  return df.derive(
+    [gl, paintPoints3D, inputs.colorScheme, inputs.categoryCount],
+    (gl, paintPoints3D, colorScheme: "light" | "dark", categoryCount: number) => (props) => {
+      if (props.viewProjection == null) {
+        return;
+      }
+      let colorMatrix = buildGammaColorMatrix(props.categoryColors, categoryCount, props.categoryCount, props.gamma);
+      // Gamma-encoded background (matches the in-shader gamma applied by the points).
+      let background: [number, number, number] = colorScheme == "light" ? [1, 1, 1] : [0, 0, 0];
+      let cameraDistance = props.cameraDistance;
+      let sampleCount = draw3DCount(props.sampleIndices, props.x.length, props.downsampleMaxPoints);
+      let invGamma = 1 / props.gamma;
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, props.width, props.height);
+      gl.depthMask(true);
+      gl.clearColor(
+        Math.pow(background[0], invGamma),
+        Math.pow(background[1], invGamma),
+        Math.pow(background[2], invGamma),
+        1,
+      );
+      gl.clearDepth(1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      paintPoints3D(
+        props.viewProjection,
+        props.pointSize3D,
+        cameraDistance,
+        sampleCount,
+        props.fogDensity,
+        props.cameraEye,
+        colorMatrix,
+        props.gamma,
+        background,
+      );
+    },
   );
 }
 
@@ -321,18 +494,9 @@ function densityRenderCommand(
     ) =>
       (props) => {
         let categoryColors = props.categoryColors ?? defaultCategoryColors(props.categoryCount);
-        let colorMatrix: number[] = [];
-        for (let i = 0; i < 4; i++) {
-          if (i < categoryColors.length) {
-            let { r, g, b } = parseColorNormalizedRgb(categoryColors[i]);
-            r = Math.pow(r, props.gamma);
-            g = Math.pow(g, props.gamma);
-            b = Math.pow(b, props.gamma);
-            colorMatrix = colorMatrix.concat([r, g, b, 1]);
-          } else {
-            colorMatrix = colorMatrix.concat([0.5, 0.5, 0.5, 1]);
-          }
-        }
+        // Density uses up to 4 channels regardless of categoryCount; `categoryColors`
+        // is also reused by the contours pass below.
+        let colorMatrix = buildGammaColorMatrix(props.categoryColors, 4, props.categoryCount, props.gamma);
 
         let scalerX = props.width / linearFB.width;
         let scalerY = props.height / linearFB.height;

@@ -36,7 +36,7 @@
     text?: string;
     embedding?:
       | {
-          precomputed: { x: string; y: string; neighbors?: string };
+          precomputed: { x: string; y: string; z?: string; neighbors?: string };
         }
       | {
           compute: {
@@ -61,6 +61,7 @@
 
   let embeddingXColumn: string | undefined = $state(undefined);
   let embeddingYColumn: string | undefined = $state(undefined);
+  let embeddingZColumn: string | undefined = $state(undefined);
   let embeddingNeighborsColumn: string | undefined = $state(undefined);
   let embeddingTextColumn: string | undefined = $state(undefined);
   let embeddingTextModel: string | undefined = $state(undefined);
@@ -89,6 +90,7 @@
         precomputed: {
           x: embeddingXColumn,
           y: embeddingYColumn,
+          z: embeddingZColumn != undefined ? embeddingZColumn : undefined,
           neighbors: embeddingNeighborsColumn != undefined ? embeddingNeighborsColumn : undefined,
         },
       };
@@ -184,6 +186,21 @@
           ]}
         />
       </div>
+      <div class="w-full flex flex-row items-center">
+        <div class="w-[6rem] dark:text-slate-400">Z (optional)</div>
+        <Select
+          class="flex-1 min-w-0"
+          value={embeddingZColumn}
+          onChange={(v) => (embeddingZColumn = v)}
+          options={[
+            { value: undefined, label: "(none)" },
+            ...numericalColumns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${x.column_type})` })),
+          ]}
+        />
+      </div>
+      <p class="text-sm text-slate-400 dark:text-slate-600">
+        Selecting a Z column renders a navigable 3D embedding view.
+      </p>
       <div class="w-full flex flex-row items-center">
         <div class="w-[6rem] dark:text-slate-400">Neighbors</div>
         <Select

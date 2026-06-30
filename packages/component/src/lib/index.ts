@@ -22,3 +22,4 @@ export type {
   OverlayProxy,
 } from "./embedding_view/types.js";
 export type { Point, Rectangle, ViewportState } from "./utils.js";
+export type { Camera3DState } from "./camera3d.js";

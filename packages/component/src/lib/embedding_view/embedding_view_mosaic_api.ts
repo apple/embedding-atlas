@@ -5,6 +5,7 @@ import { createClassComponent } from "svelte/legacy";
 
 import Component from "./EmbeddingViewMosaic.svelte";
 
+import type { Camera3DState } from "../camera3d.js";
 import type { Point, Rectangle, ViewportState } from "../utils.js";
 import type { EmbeddingViewConfig } from "./embedding_view_config.js";
 import type { ThemeConfig } from "./theme.js";
@@ -23,6 +24,10 @@ export interface EmbeddingViewMosaicProps {
 
   /** The y column name. */
   y: string;
+
+  /** The z column name. When provided and `config.mode` is `points-3d`, the view
+   *  renders a 3D point cloud. */
+  z?: string | null;
 
   /** The name of the category column.
    *  The categories should be represented as integers starting from 0.
@@ -84,6 +89,11 @@ export interface EmbeddingViewMosaicProps {
    *  To listen to viewport state change, use `onViewportState`. */
   viewportState?: ViewportState | null;
 
+  /** The 3D camera state (used when `config.mode` is `points-3d`).
+   *  If undefined or `null`, the view fits the camera to the data.
+   *  To listen for camera changes, use `onCamera3DState`. */
+  camera3DState?: Camera3DState | null;
+
   /** The current tooltip.
    *  The tooltip is an object with the following fields: `x`, `y`, `category`,
    *  `text`, `identifier`.
@@ -114,6 +124,9 @@ export interface EmbeddingViewMosaicProps {
 
   /** A callback for when `viewportState` changes. */
   onViewportState?: ((value: ViewportState) => void) | null;
+
+  /** A callback for when the 3D `camera3DState` changes. */
+  onCamera3DState?: ((value: Camera3DState) => void) | null;
 
   /** A callback for when `tooltip` changes. */
   onTooltip?: ((value: DataPoint | null) => void) | null;

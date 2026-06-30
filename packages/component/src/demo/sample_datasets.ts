@@ -54,6 +54,48 @@ export function generateSampleDataset(config: DatasetConfig): Row[] {
   return result;
 }
 
+export interface Row3D {
+  identifier: number;
+  x: number;
+  y: number;
+  z: number;
+  category: number;
+  text: string;
+}
+
+/**
+ * Generates a deterministic 3D dataset of well-separated Gaussian blobs (one per
+ * category). The blobs are placed apart in all three axes so that rotating the
+ * camera clearly reveals depth structure.
+ */
+export function generateSampleDataset3D(config: { numPoints: number; numCategories: number }): Row3D[] {
+  let rng = RNG(42);
+  let centers: { x: number; y: number; z: number; sigma: number; category: number; text: string }[] = [];
+  for (let c = 0; c < config.numCategories; c++) {
+    centers.push({
+      x: randomUniform(-6, 6, rng),
+      y: randomUniform(-6, 6, rng),
+      z: randomUniform(-6, 6, rng),
+      sigma: randomUniform(1.0, 2.5, rng),
+      category: c,
+      text: randomChoices(words, 2, rng).join(", "),
+    });
+  }
+  let result: Row3D[] = [];
+  for (let i = 0; i < config.numPoints; i++) {
+    let cl = centers[i % config.numCategories];
+    result.push({
+      identifier: i,
+      x: randomNormal(cl.x, cl.sigma, rng),
+      y: randomNormal(cl.y, cl.sigma, rng),
+      z: randomNormal(cl.z, cl.sigma, rng),
+      category: cl.category,
+      text: cl.text + ` (#${i})`,
+    });
+  }
+  return result;
+}
+
 class SplitMix64 {
   seed: bigint;
 

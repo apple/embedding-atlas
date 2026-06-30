@@ -1,9 +1,10 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
+  import EmbeddingView3DDemo from "./EmbeddingView3DDemo.svelte";
   import EmbeddingViewDemo from "./EmbeddingViewDemo.svelte";
   import EmbeddingViewMosaicDemo from "./EmbeddingViewMosaicDemo.svelte";
 
-  let testView: "EmbeddingView" | "EmbeddingViewMosaic" = $state("EmbeddingView");
+  let testView: "EmbeddingView" | "EmbeddingView3D" | "EmbeddingViewMosaic" = $state("EmbeddingView");
 </script>
 
 <div style="padding-bottom:8px">
@@ -11,6 +12,7 @@
     Component:
     <select bind:value={testView}>
       <option value="EmbeddingView">EmbeddingView</option>
+      <option value="EmbeddingView3D">EmbeddingView3D</option>
       <option value="EmbeddingViewMosaic">EmbeddingViewMosaic</option>
     </select>
   </label>
@@ -18,6 +20,8 @@
 
 {#if testView == "EmbeddingViewMosaic"}
   <EmbeddingViewMosaicDemo />
+{:else if testView == "EmbeddingView3D"}
+  <EmbeddingView3DDemo />
 {:else if testView == "EmbeddingView"}
   <EmbeddingViewDemo />
 {/if}

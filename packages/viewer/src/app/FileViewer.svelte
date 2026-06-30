@@ -96,11 +96,16 @@
     stage = "messages";
 
     try {
-      let projectionColumns: { x: string; y: string; neighbors?: string } | undefined;
+      let projectionColumns: { x: string; y: string; z?: string; neighbors?: string } | undefined;
       let neighborsColumn: string | undefined;
 
       if (spec.embedding != null && "precomputed" in spec.embedding) {
         projectionColumns = { x: spec.embedding.precomputed.x, y: spec.embedding.precomputed.y };
+        // Carry a precomputed Z column through so a saved 3D view restores as 3D
+        // instead of silently falling back to the 2D projection.
+        if (spec.embedding.precomputed.z != undefined) {
+          projectionColumns.z = spec.embedding.precomputed.z;
+        }
         if (spec.embedding.precomputed.neighbors != undefined) {
           neighborsColumn = spec.embedding.precomputed.neighbors;
         }

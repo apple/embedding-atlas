@@ -30,7 +30,15 @@ export async function defaultCharts(options: {
   coordinator: Coordinator;
   table: string;
   id: string;
-  projection?: { x: string; y: string; text?: string; image?: string; importance?: string; neighbors?: string };
+  projection?: {
+    x: string;
+    y: string;
+    z?: string;
+    text?: string;
+    image?: string;
+    importance?: string;
+    neighbors?: string;
+  };
   config?: DefaultChartsConfig;
 }): Promise<BuiltinChartSpec[]> {
   let { coordinator, table, projection } = options;
@@ -48,11 +56,14 @@ export async function defaultCharts(options: {
       data: {
         x: projection.x,
         y: projection.y,
+        z: projection.z,
         text: projection.text,
         image: projection.image,
         importance: projection.importance,
         neighbors: projection.neighbors,
       },
+      // A z column means a 3D projection: open it in 3D by default.
+      ...(projection.z != null ? { mode: "points-3d" as const } : {}),
     };
     if (typeof config.embedding == "object") {
       spec = { ...spec, ...config.embedding };
@@ -60,6 +71,9 @@ export async function defaultCharts(options: {
     charts.push(spec);
     exclude.push(projection.x);
     exclude.push(projection.y);
+    if (projection.z) {
+      exclude.push(projection.z);
+    }
     if (projection.text) {
       exclude.push(projection.text);
     }

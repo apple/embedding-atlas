@@ -57,6 +57,11 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
             y:
                 The column name for Y axis in the embedding.
 
+            z:
+                The column name for Z axis in the embedding. When specified
+                (together with ``x`` and ``y``), the embedding view becomes
+                3D-capable.
+
             text:
                 The column name for the textual data.
 

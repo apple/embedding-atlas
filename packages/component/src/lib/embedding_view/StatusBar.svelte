@@ -13,6 +13,13 @@
 
     selectionMode: "marquee" | "lasso" | "none";
     onSelectionMode: (v: "marquee" | "lasso" | "none") => void;
+
+    is3D?: boolean;
+    onResetCamera?: () => void;
+    // A selection brush is active but its outline is hidden (3D mode). Surfaced so the
+    // filter is never silent, with a one-click clear.
+    filterActive?: boolean;
+    onClearFilter?: () => void;
   }
 
   let {
@@ -22,6 +29,10 @@
     distancePerPoint,
     selectionMode,
     onSelectionMode,
+    is3D = false,
+    onResetCamera,
+    filterActive = false,
+    onClearFilter,
   }: Props = $props();
 </script>
 
@@ -65,6 +76,9 @@
     style:border-radius="2px"
     style:background={resolvedTheme.statusBarBackgroundColor}
   >
+    {#snippet divider()}
+      <div style="border-right: 1px solid currentColor; margin: 4px 2px; opacity: 0.3; width: 0; height: 10px"></div>
+    {/snippet}
     {#if resolvedTheme.brandingLink != null}
       <a
         href={resolvedTheme.brandingLink.href}
@@ -75,23 +89,43 @@
       >
         {resolvedTheme.brandingLink.text}
       </a>
-      <div style="border-right: 1px solid currentColor; margin: 4px 2px; opacity: 0.3; width: 0; height: 10px"></div>
+      {@render divider()}
     {/if}
-    <Button
-      icon="marquee"
-      active={selectionMode == "marquee"}
-      title="Toggle rectangle selection mode. In normal mode, use shift + drag for rectangle selection."
-      onClick={() => onSelectionMode(selectionMode == "marquee" ? "none" : "marquee")}
-    />
-    <Button
-      icon="lasso"
-      active={selectionMode == "lasso"}
-      title="Toggle lasso selection mode. In normal mode, use shift + meta + drag for lasso selection."
-      onClick={() => onSelectionMode(selectionMode == "lasso" ? "none" : "lasso")}
-    />
-    <div style="border-right: 1px solid currentColor; margin: 4px 2px; opacity: 0.3; width: 0; height: 10px"></div>
-    <MapScaleLegend distancePerPoint={distancePerPoint} />
-    <div style="border-right: 1px solid currentColor; margin: 4px 2px; opacity: 0.3; width: 0; height: 10px"></div>
+    {#if is3D}
+      {#if filterActive}
+        <!-- The brush outline is hidden in 3D, so surface the active filter explicitly
+             (never a silent hidden filter) with a one-click clear. -->
+        <Button
+          icon="filter"
+          active={true}
+          title="A selection filter is active (its brush outline is hidden in 3D). Click to clear it."
+          onClick={() => onClearFilter?.()}
+        />
+        {@render divider()}
+      {/if}
+      <Button
+        icon="reset"
+        title="Reset the 3D camera to fit all points. Drag to orbit, shift + drag to pan, scroll to zoom, double-click a point to focus."
+        onClick={() => onResetCamera?.()}
+      />
+      {@render divider()}
+    {:else}
+      <Button
+        icon="marquee"
+        active={selectionMode == "marquee"}
+        title="Toggle rectangle selection mode. In normal mode, use shift + drag for rectangle selection."
+        onClick={() => onSelectionMode(selectionMode == "marquee" ? "none" : "marquee")}
+      />
+      <Button
+        icon="lasso"
+        active={selectionMode == "lasso"}
+        title="Toggle lasso selection mode. In normal mode, use shift + meta + drag for lasso selection."
+        onClick={() => onSelectionMode(selectionMode == "lasso" ? "none" : "lasso")}
+      />
+      {@render divider()}
+      <MapScaleLegend distancePerPoint={distancePerPoint} />
+      {@render divider()}
+    {/if}
     <span>{pointCount.toLocaleString()} points</span>
   </div>
 </div>

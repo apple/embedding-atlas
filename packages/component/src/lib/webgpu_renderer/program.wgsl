@@ -23,6 +23,11 @@ struct Uniforms {
   kde_anticausal: vec4<f32>,
   kde_a: vec4<f32>,
   background_color: vec4<f32>,
+  // 3D point cloud uniforms. category_colors must remain the last field.
+  matrix4: mat4x4<f32>,
+  params0: vec4<f32>, // (unused, point_size_3d, fog_density, unused)
+  params1: vec4<f32>, // (eye.xyz, unused)
+  params2: vec4<f32>, // (camera_distance, sample_count, unused, unused)
   category_colors: array<vec4<f32>, 256>,
 }
 
@@ -48,6 +53,8 @@ struct FragmentOutput {
 @group(1) @binding(0) var<storage, read> x_buffer: array<f32>;
 @group(1) @binding(1) var<storage, read> y_buffer: array<f32>;
 @group(1) @binding(2) var<storage, read> category_buffer: array<u32>;
+@group(1) @binding(3) var<storage, read> z_buffer: array<f32>; // only used by the 3D pipelines
+@group(1) @binding(4) var<storage, read> sample_index_buffer: array<u32>; // 3D frustum-culled draw set (params2.y > 0)
 
 @group(2) @binding(0) var<storage, read_write> count_buffer: array<atomic<u32>>;
 @group(2) @binding(1) var<storage, read_write> blur_buffer: array<f16>;
@@ -77,6 +84,13 @@ fn get_point(index: u32) -> PointData {
   } else {
     result.category = 0;
   }
+  return result;
+}
+
+fn get_point_3d(index: u32) -> PointData {
+  // Same as get_point but with the real z instead of the 2D plane (z = 1).
+  var result = get_point(index);
+  result.position.z = z_buffer[index];
   return result;
 }
 
@@ -153,6 +167,137 @@ fn points_fs(in: PointsVertexOutput) -> FragmentOutput {
   out.color = in.color * a;
   out.log1malpha = log(1 - out.color.a);
   return out;
+}
+
+// =====================================================
+// Draw Discrete Points (3D, depth-tested)
+// =====================================================
+
+struct Points3DVertexOutput {
+  @builtin(position) position: vec4<f32>,
+  @location(0) dp: vec3<f32>, // dp.xy in [-1,1] across the quad, dp.z = effective pixel radius
+  @location(1) color: vec4<f32>,
+  @location(2) fog: f32,
+}
+
+// Downsampling: when params2.y (sample_count) > 0 the draw issues only that many
+// instances and each drawn instance maps to a real point index via the CPU-built
+// sample_index_buffer (a frustum-culled, strided subset for the current camera).
+// This bounds vertex + fragment + pick work by downsampleMaxPoints AND lets the
+// subset refine to the zoomed-in region. sample_count == 0 (no downsampling) maps
+// instance -> itself across all points.
+fn real_index_3d(index: u32) -> u32 {
+  let count = uniforms.count;
+  if (count == 0u) {
+    return 0u;
+  }
+  let sample_count = u32(uniforms.params2.y);
+  if (sample_count > 0u) {
+    return min(count - 1u, sample_index_buffer[index]);
+  }
+  return min(count - 1u, index);
+}
+
+// Shared geometry for the 3D point billboard. Returns the clip position and the
+// quad-local data, computing perspective-correct size falloff: the clip-space
+// offset is constant in w, so the on-screen size scales as 1/w (distance).
+fn points_3d_quad(index: u32, part: u32) -> Points3DVertexOutput {
+  var out: Points3DVertexOutput;
+
+  let framebuffer_size = vec2(f32(uniforms.framebuffer_width), f32(uniforms.framebuffer_height));
+  let point_size_3d = uniforms.params0.y;
+  let fog_density = uniforms.params0.z;
+  let eye = uniforms.params1.xyz;
+  let camera_distance = max(uniforms.params2.x, 1e-6);
+
+  let dp = vec2<f32>(f32(part % 2), f32(part / 2)) * 2.0 - 1.0;
+  let p = get_point_3d(real_index_3d(index));
+  let clip = uniforms.matrix4 * vec4<f32>(p.position, 1.0);
+
+  // Reject points at/behind the camera: tiny/negative clip.w would otherwise blow
+  // the billboard up to an enormous screen quad (fragment storm). Send off-screen.
+  if (clip.w <= 1e-4) {
+    out.position = vec4<f32>(-2.0, -2.0, 2.0, 1.0);
+    out.dp = vec3<f32>(0.0, 0.0, 0.0);
+    out.color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    out.fog = 0.0;
+    return out;
+  }
+
+  // On-screen pixel radius with perspective falloff, clamped to a sane maximum so a
+  // point very close to the eye cannot expand without bound (mirrors the WebGL cap).
+  let pixel_size = clamp(point_size_3d * camera_distance / clip.w, 0.5, 512.0);
+  // Derive the clip-space offset from the (capped) pixel radius so it survives the
+  // perspective divide as exactly `pixel_size` pixels. With no clamping this equals
+  // the previous constant offset (perspective-correct falloff).
+  let offset = dp * pixel_size * clip.w / framebuffer_size * 2.0;
+
+  // Subtle distance fog based on world distance from the eye.
+  let d = length(p.position - eye);
+  let fog = clamp((d / camera_distance - 0.5) * fog_density, 0.0, 0.9);
+
+  out.position = vec4<f32>(clip.xy + offset, clip.z, clip.w);
+  out.dp = vec3<f32>(dp, pixel_size);
+  out.color = vec4<f32>(uniforms.category_colors[p.category].rgb, 1.0);
+  out.fog = fog;
+  return out;
+}
+
+@vertex
+fn points_3d_vs(
+  @builtin(instance_index) index: u32,
+  @builtin(vertex_index) part: u32,
+) -> Points3DVertexOutput {
+  return points_3d_quad(index, part);
+}
+
+@fragment
+fn points_3d_fs(in: Points3DVertexOutput) -> @location(0) vec4<f32> {
+  let r = length(in.dp.xy) * in.dp.z;
+  let a = max(0.0, min(1.0, in.dp.z - r));
+  if (a <= 0.0) {
+    discard;
+  }
+  // Mix toward the (gamma-encoded) background for fog, then apply gamma in-shader
+  // since this path bypasses the OIT gamma-correction pass.
+  var rgb = mix(in.color.rgb, uniforms.background_color.rgb, in.fog);
+  rgb = pow(rgb, vec3(1.0 / uniforms.gamma));
+  return vec4<f32>(rgb, a);
+}
+
+// =====================================================
+// Pick 3D Points (frontmost instance index via depth test)
+// =====================================================
+
+struct Pick3DVertexOutput {
+  @builtin(position) position: vec4<f32>,
+  @location(0) dp: vec2<f32>,
+  @location(1) psize: f32,
+  @location(2) @interpolate(flat) instance: u32,
+}
+
+@vertex
+fn pick_3d_vs(
+  @builtin(instance_index) index: u32,
+  @builtin(vertex_index) part: u32,
+) -> Pick3DVertexOutput {
+  let quad = points_3d_quad(index, part);
+  var out: Pick3DVertexOutput;
+  out.position = quad.position;
+  out.dp = quad.dp.xy;
+  out.psize = quad.dp.z;
+  // Report the REAL point index (after stride mapping), not the drawn instance.
+  out.instance = real_index_3d(index) + 1u; // 0 reserved for "no hit"
+  return out;
+}
+
+@fragment
+fn pick_3d_fs(in: Pick3DVertexOutput) -> @location(0) u32 {
+  let r = length(in.dp) * in.psize;
+  if (in.psize - r <= 0.0) {
+    discard; // only the round disc area is pickable
+  }
+  return in.instance;
 }
 
 // =====================================================

@@ -223,6 +223,11 @@ def import_modules(names: list[str]):
     help="Column containing pre-computed Y coordinates for the embedding view.",
 )
 @click.option(
+    "--z",
+    "z_column",
+    help="Column containing pre-computed Z coordinates for the embedding view (requires --x and --y). To GENERATE a 3D projection instead, use --umap-n-components 3.",
+)
+@click.option(
     "--neighbors",
     "neighbors_column",
     help='Column containing pre-computed nearest neighbors in format: {"ids": [n1, n2, ...], "distances": [d1, d2, ...]}. IDs should be zero-based row indices.',
@@ -264,6 +269,14 @@ def import_modules(names: list[str]):
 )
 @click.option(
     "--umap-random-state", type=int, help="Random seed for reproducible UMAP results."
+)
+@click.option(
+    "--umap-n-components",
+    "umap_n_components",
+    type=click.IntRange(2, 3),
+    default=2,
+    show_default=True,
+    help="Number of UMAP output dimensions (2 or 3). 3 enables a 3D embedding view.",
 )
 @click.option(
     "--duckdb",
@@ -359,6 +372,7 @@ def main(
     max_concurrency: int | None,
     x_column: str | None,
     y_column: str | None,
+    z_column: str | None,
     neighbors_column: str | None,
     pagerank_column: str | None,
     query: str | None,
@@ -367,6 +381,7 @@ def main(
     umap_min_dist: float | None,
     umap_metric: str | None,
     umap_random_state: int | None,
+    umap_n_components: int,
     static: str | None,
     duckdb: str,
     host: str,
@@ -382,6 +397,17 @@ def main(
     enable_mcp: bool,
 ):
     apply_logging_config()
+
+    # --z names a PRE-COMPUTED coordinate column, so it is only meaningful together
+    # with pre-computed --x/--y. Without them a projection is computed, and passing a
+    # z column there would (a) auto-enable 3D regardless of --umap-n-components and
+    # (b) get overwritten by the generated projection_z. To GENERATE 3D, callers use
+    # --umap-n-components 3 (which writes a fresh projection_z column).
+    if z_column is not None and (x_column is None or y_column is None):
+        raise click.UsageError(
+            "--z names a pre-computed column and requires both --x and --y. "
+            "To generate a 3D projection, use --umap-n-components 3 instead."
+        )
 
     if with_modules is not None:
         import_modules(with_modules)
@@ -407,6 +433,11 @@ def main(
             umap_args["random_state"] = umap_random_state
         if umap_metric is not None:
             umap_args["metric"] = umap_metric
+        # Only set n_components for 3D. Leaving it absent for the default 2D case
+        # preserves the existing projection cache key ({}), so default runs do not
+        # miss the cache and recompute (possibly paid) embeddings.
+        if umap_n_components != 2:
+            umap_args["n_components"] = umap_n_components
         # Run embedding and projection
         if (
             text is not None
@@ -419,6 +450,8 @@ def main(
 
             x_column = find_column_name(df.columns, "projection_x")
             y_column = find_column_name(df.columns, "projection_y")
+            if umap_n_components == 3:
+                z_column = find_column_name(df.columns, "projection_z")
             if neighbors_column is None:
                 neighbors_column = find_column_name(df.columns, "__neighbors")
                 new_neighbors_column = neighbors_column
@@ -462,6 +495,7 @@ def main(
                 modality=modality,
                 x=x_column,
                 y=y_column,
+                z=z_column,
                 neighbors=new_neighbors_column,
                 embedder=embedder,
                 model=model,
@@ -506,6 +540,7 @@ def main(
         row_id=id_column,
         x=x_column,
         y=y_column,
+        z=z_column,
         neighbors=neighbors_column,
         importance=pagerank_column,
         text=text,
