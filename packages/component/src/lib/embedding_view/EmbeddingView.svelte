@@ -93,7 +93,10 @@
   pixelRatio={pixelRatio ?? 2}
   theme={theme}
   config={config}
-  data={{ x: data.x, y: data.y, z: data.z ?? null, category: data.category ?? null }}
+  xData={data.x}
+  yData={data.y}
+  zData={data.z ?? null}
+  categoryData={data.category ?? null}
   totalCount={derivedProperties.count}
   maxDensity={derivedProperties.maxDensity}
   categoryCount={derivedProperties.categoryCount}

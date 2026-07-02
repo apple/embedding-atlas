@@ -20,6 +20,8 @@ export interface EmbeddingSpec {
   mode?: "points" | "density" | "points-3d";
   minimumDensity?: number;
   pointSize?: number;
+  /** Fog density for the 3D (points-3d) view. Default: 0.6. */
+  fogDensity?: number;
   /** Maximum number of points to render (for downsampling). Default: 4000000. Set to null to disable. */
   downsampleMaxPoints?: number | null;
   config?: EmbeddingViewConfig;

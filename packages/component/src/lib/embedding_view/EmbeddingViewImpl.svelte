@@ -1,12 +1,10 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts" module>
   interface Props<Selection> {
-    data: {
-      x: Float32Array<ArrayBuffer>;
-      y: Float32Array<ArrayBuffer>;
-      z?: Float32Array<ArrayBuffer> | null;
-      category: Uint8Array<ArrayBuffer> | null;
-    };
+    xData: Float32Array<ArrayBuffer>;
+    yData: Float32Array<ArrayBuffer>;
+    zData?: Float32Array<ArrayBuffer> | null;
+    categoryData: Uint8Array<ArrayBuffer> | null;
     categoryCount: number;
     categoryColors: string[] | null;
     width: number;
@@ -45,13 +43,6 @@
     rects: Rectangle[];
     bandwidth: number;
     content?: LabelContent | null;
-  }
-
-  // The coordinate array references that identify a 3D dataset for the sampler.
-  interface DataArrays {
-    x: Float32Array<ArrayBuffer>;
-    y: Float32Array<ArrayBuffer>;
-    z: Float32Array<ArrayBuffer> | null;
   }
 
   function viewingParameters(
@@ -163,7 +154,10 @@
   type Selection = $$Generic<SelectionBase>;
 
   let {
-    data = { x: new Float32Array(), y: new Float32Array(), category: null },
+    xData = new Float32Array(),
+    yData = new Float32Array(),
+    zData = null,
+    categoryData = null,
     categoryCount = 1,
     categoryColors = null,
     width = 800,
@@ -209,7 +203,7 @@
   // The fit of an empty cloud IS the default three-quarter view, so derive the
   // fallback from fitCamera3D instead of duplicating its constants here.
   const FALLBACK_CAMERA: Camera3DState = fitCamera3D([], [], []);
-  let is3D = $derived(data.z != null && (config?.mode ?? "points") === "points-3d");
+  let is3D = $derived(zData != null && (config?.mode ?? "points") === "points-3d");
   // Live, animated camera. null means "follow the resolved external/default state".
   let liveCamera = $state<Camera3DState | null>(null);
   let resolvedCamera3DState = $derived(camera3DState ?? defaultCamera3DState ?? FALLBACK_CAMERA);
@@ -363,21 +357,22 @@
   // and picks from its own points.
   //
   // The frustum cull scans every point, which would freeze the UI on multi-million
-  // point datasets. So: (1) publish a CHEAP global-stride subset immediately for the
-  // first frame (O(cap), no scan); (2) run the O(N) frustum cull in a Web Worker,
-  // debounced to once per camera/data settle and cancelable (stale responses are
-  // dropped); (3) keep the current subset until the worker responds. The per-point
-  // arrays are uploaded to the worker once per dataset; each settle only sends a
-  // matrix and receives a bounded index set. Bounded by downsampleMaxPoints. null =
-  // draw all. The renderers consume this via the `sampleIndices` prop.
+  // point datasets. So: (1) publish a CHEAP global-stride subset immediately (O(cap),
+  // no scan); (2) refine on settle with the O(N) frustum cull run as a chunked,
+  // idle-scheduled, cancelable pass over the existing arrays (no copy, no worker, no
+  // GPU upload); (3) keep the current subset until the refine installs. Bounded by
+  // downsampleMaxPoints. null = draw all. The renderers consume this via the
+  // `sampleIndices` prop.
   let sampleIndices3D = $state.raw<Uint32Array<ArrayBuffer> | null>(null);
   let sampleIndicesTimer: ReturnType<typeof setTimeout> | null = null;
-  // Identify a dataset by its underlying x/y/z ARRAY references, not the `data`
-  // wrapper object: parents pass `data` as a fresh object literal every render, so
-  // keying on the wrapper would re-upload arrays and drop in-flight worker results on
-  // every unrelated update. The arrays only change on a real data swap (and x/y/z can
-  // change independently, so all three are tracked).
-  let previousSampleData: DataArrays | null = null;
+  // Previous coordinate array references, so the effect can tell a real data swap (which
+  // must reset the stride — old indices reference stale rows) from a camera/size/cap
+  // change (which keeps the current sample and just re-refines). x/y/z are separate
+  // reactive props, so unrelated updates (tooltip/hover/selection) never re-run the
+  // effect — there is no wrapper-identity churn to defend against.
+  let previousX: Float32Array<ArrayBuffer> | null = null;
+  let previousY: Float32Array<ArrayBuffer> | null = null;
+  let previousZ: Float32Array<ArrayBuffer> | null = null;
   // Plain (non-reactive) mirror of "do we currently hold a computed set", so the
   // recompute effect never READS sampleIndices3D (which it writes) and self-loops.
   let hasComputedSampleIndices = false;
@@ -387,13 +382,6 @@
   // was lowered below the current sample (and re-stride immediately) without reading
   // the $state it writes.
   let currentSampleLength = 0;
-  // The frustum-relevant inputs from the previous effect run, so the effect can tell a
-  // real change (camera/size/cap) from wrapper-only `data` churn (tooltip/selection
-  // re-renders) and avoid needlessly invalidating/rescheduling the refine.
-  let previousRefineCamera: Camera3DState | null = null;
-  let previousRefineWidth = 0;
-  let previousRefineHeight = 0;
-  let previousRefineCap: number | null = null;
 
   // Yields between frustum-cull chunks so the (O(N)) scan never blocks the UI thread.
   // Prefers requestIdleCallback (runs in spare time, with a timeout so it still makes
@@ -413,17 +401,6 @@
     return normalizeDownsampleCap(downsampleMaxPoints);
   }
 
-  // Snapshot of the current data's coordinate array references.
-  function dataArrays(): DataArrays {
-    return { x: data.x, y: data.y, z: data.z ?? null };
-  }
-
-  // True when two snapshots reference the same x/y/z buffers (a real data swap
-  // changes at least one reference; the `data` wrapper alone is not reliable).
-  function sameDataArrays(a: DataArrays | null, b: DataArrays | null): boolean {
-    return a != null && b != null && a.x === b.x && a.y === b.y && a.z === b.z;
-  }
-
   function setSampleIndices3D(value: Uint32Array<ArrayBuffer> | null) {
     hasComputedSampleIndices = value != null;
     currentSampleLength = value != null ? value.length : 0;
@@ -439,22 +416,24 @@
   // (published synchronously by the effect) remains on screen.
   function requestFrustumRefine() {
     let cam = camera3D;
-    let z = data.z;
+    let z = zData;
     let cap = effectiveDownsampleCap();
-    if (!is3D || cam == null || z == null || cap == null || data.x.length <= cap) {
+    if (!is3D || cam == null || z == null || cap == null || xData.length <= cap) {
       return;
     }
     let reqId = ++sampleRequestId;
-    let arrays = dataArrays();
-    frustumSampleIndicesChunked(arrays.x, arrays.y, z, cam.viewProjection(), cap, {
+    // Capture the coordinate arrays this pass is for, so a data swap mid-scan abandons it.
+    let x = xData;
+    let y = yData;
+    let stale = () => reqId !== sampleRequestId || xData !== x || yData !== y || zData !== z;
+    frustumSampleIndicesChunked(x, y, z, cam.viewProjection(), cap, {
       yieldToHost: idleYield,
-      // Abandon the pass if a newer refine was requested or the data was replaced.
-      shouldCancel: () => reqId !== sampleRequestId || !sameDataArrays(dataArrays(), arrays),
+      shouldCancel: stale,
     })
       .then((indices) => {
         // undefined = canceled; null = no longer downsampling. Either way, and on any
         // stale/superseded result, keep the current sample untouched.
-        if (reqId !== sampleRequestId || indices == null || !sameDataArrays(dataArrays(), arrays)) {
+        if (stale() || indices == null) {
           return;
         }
         setSampleIndices3D(indices);
@@ -467,18 +446,23 @@
   }
 
   $effect(() => {
-    // Re-run whenever something that could change the visible 3D subset changes. We
-    // read `data` (a wrapper recreated on every parent render) but decide relevance
-    // from its x/y/z arrays, the camera, size, and cap — never the wrapper identity.
-    let camera = renderCamera3DState;
-    void data;
+    // Re-run when the visible 3D subset's inputs change: the coordinate arrays (a real
+    // data swap), the camera (move/resize, tracked via camera3D), the cap, or is3D.
+    // These are all stable reactive reads, so tooltip/hover/selection churn — which no
+    // longer touches any of them — never re-runs this effect.
+    let cam = camera3D;
     let cap = effectiveDownsampleCap();
-    let w = width;
-    let h = height;
-    void is3D;
+    let x = xData;
+    let y = yData;
+    let z = zData;
+    let count = x.length;
 
-    let count = data.x.length;
-    if (!is3D || data.z == null || cap == null || count <= cap) {
+    let dataChanged = x !== previousX || y !== previousY || z !== previousZ;
+    previousX = x;
+    previousY = y;
+    previousZ = z;
+
+    if (!is3D || cam == null || z == null || cap == null || count <= cap) {
       // 2D, or few enough points to draw all: no downsampling, cancel any refine.
       if (sampleIndicesTimer != null) {
         clearTimeout(sampleIndicesTimer);
@@ -488,51 +472,21 @@
       if (hasComputedSampleIndices) {
         setSampleIndices3D(null);
       }
-      previousSampleData = dataArrays();
-      previousRefineCamera = camera;
-      previousRefineWidth = w;
-      previousRefineHeight = h;
-      previousRefineCap = cap;
       return;
     }
 
-    // Determine what ACTUALLY changed (ignoring wrapper-only churn). Size feeds the
-    // frustum via the camera's projection aspect, so it counts as a camera change.
-    let cur = dataArrays();
-    let dataChanged = !sameDataArrays(cur, previousSampleData);
-    let cameraChanged = camera !== previousRefineCamera || w !== previousRefineWidth || h !== previousRefineHeight;
-    let capChanged = cap !== previousRefineCap;
-    previousSampleData = cur;
-    previousRefineCamera = camera;
-    previousRefineWidth = w;
-    previousRefineHeight = h;
-    previousRefineCap = cap;
-
-    // Publish a cheap global-stride subset synchronously when it's the first render /
-    // a data swap (old indices reference stale rows), OR the cap was just lowered
-    // below the current sample (so reducing downsampleMaxPoints to recover from an
-    // overloaded view takes effect immediately, not only after the debounced refine).
-    // The chunked frustum refine still runs afterward to specialize to the zoomed-in
-    // region.
-    let resetStride = dataChanged || !hasComputedSampleIndices || currentSampleLength > cap;
-    if (resetStride) {
+    // Publish a cheap global-stride subset synchronously on a data swap (old indices are
+    // stale), the first render, or when the cap dropped below the current sample (so
+    // lowering downsampleMaxPoints to recover from an overloaded view takes effect at
+    // once). The chunked frustum refine below then specializes to the zoomed-in region.
+    if (dataChanged || !hasComputedSampleIndices || currentSampleLength > cap) {
       setSampleIndices3D(globalStrideIndices(count, cap));
     }
 
-    // Only invalidate the in-flight refine and reschedule when a frustum-relevant
-    // input actually changed. Wrapper-only updates (tooltip/selection re-renders pass
-    // a fresh `data` object with the same x/y/z, camera, size, cap) must NOT drop a
-    // pending result or it could never install during active hover/selection.
-    if (!(dataChanged || cameraChanged || capChanged || resetStride)) {
-      return;
-    }
-
-    // Invalidate any in-flight refine: its result is for a now-stale view.
+    // Supersede any in-flight refine (its result is for a now-stale view) and reschedule.
+    // Debounced, so continuous interaction reuses the last bounded subset and the chunked
+    // scan runs once per settle.
     sampleRequestId++;
-
-    // Refine to the frustum-aware subset once the camera/data settles. Debounced, so
-    // continuous interaction reuses the last bounded subset and the chunked scan runs
-    // once per settle.
     if (sampleIndicesTimer != null) {
       clearTimeout(sampleIndicesTimer);
     }
@@ -544,7 +498,7 @@
 
   let viewingParams = $derived(
     viewingParameters(
-      maxDensity ?? (totalCount ?? data.x.length) / 4,
+      maxDensity ?? (totalCount ?? xData.length) / 4,
       minimumDensity,
       resolvedViewportState.scale,
       pixelWidth,
@@ -555,6 +509,21 @@
   );
 
   let pointSize = $derived(viewingParams.pointSize);
+
+  // Radius (CSS px) of the selection/tooltip highlight ring. In 3D the shader scales the
+  // point size by perspective (cameraDistance / clip-w), so the ring tracks the actual
+  // on-screen disc at any depth; in 2D it is the flat point size.
+  function markerRadius(p: { x: number; y: number; z?: number }): number {
+    let cam = camera3D;
+    if (is3D && cam != null) {
+      let vp = cam.viewProjection();
+      let w = vp[3] * p.x + vp[7] * p.y + vp[11] * (p.z ?? 0) + vp[15];
+      if (w > 1e-6) {
+        return Math.max(3, (pointSize * cam.cameraDistance()) / w / pixelRatio);
+      }
+    }
+    return Math.max(3, pointSize / pixelRatio);
+  }
 
   let needsUpdateLabels = true;
   let previousLabels: Label[] | null = null;
@@ -573,9 +542,9 @@
       viewportScale: resolvedViewportState.scale,
       width: pixelWidth,
       height: pixelHeight,
-      x: data.x,
-      y: data.y,
-      category: data.category,
+      x: xData,
+      y: yData,
+      category: categoryData,
       categoryCount,
       categoryColors: resolvedCategoryColors,
       downsampleMaxPoints,
@@ -583,11 +552,13 @@
       ...viewingParams,
       // 3D point cloud props. The renderer draws 3D only when z and viewProjection
       // are both non-null, so leaving viewProjection null keeps it on the 2D path.
-      z: is3D ? (data.z ?? null) : null,
+      z: is3D ? (zData ?? null) : null,
       viewProjection: is3D && camera3D != null ? camera3D.viewProjection() : null,
       cameraEye: is3D && camera3D != null ? camera3D.eye() : [0, 0, 0],
       cameraDistance: is3D && camera3D != null ? camera3D.cameraDistance() : 1,
-      pointSize3D: (userPointSize ?? 6) * pixelRatio,
+      // Density-adaptive base size (already device-px and user-override aware), so 3D
+      // points shrink for dense clouds like 2D; the shader adds the perspective falloff.
+      pointSize3D: pointSize,
       fogDensity: config?.fogDensity ?? 0.6,
       sampleIndices: is3D ? sampleIndices3D : null,
     });
@@ -601,8 +572,8 @@
       (autoLabelEnabled !== false || labels != null) &&
       needsUpdateLabels &&
       renderer != null &&
-      data.x != null &&
-      data.x.length > 0 &&
+      xData != null &&
+      xData.length > 0 &&
       defaultViewportState != null
     ) {
       needsUpdateLabels = false;
@@ -933,11 +904,12 @@
     // a stale pick up to when renderer.pick returns — camera inertia/tween/controlled
     // updates or a filter/data refresh can still happen while queryByIndex resolves).
     // Capture the x/y/z buffers AND the camera state up front and treat any mid-resolve
-    // change as indeterminate. Key on the x/y/z buffers, NOT the `data` wrapper, which
-    // parents recreate on unrelated re-renders.
-    let snapshot = dataArrays();
+    // change as indeterminate.
+    let snapX = xData;
+    let snapY = yData;
+    let snapZ = zData;
     let cameraSnapshot = renderCamera3DState;
-    let stale = () => !sameDataArrays(dataArrays(), snapshot) || renderCamera3DState !== cameraSnapshot;
+    let stale = () => xData !== snapX || yData !== snapY || zData !== snapZ || renderCamera3DState !== cameraSnapshot;
     let index = await renderer.pick(position.x * pixelRatio, position.y * pixelRatio);
     // Indeterminate: renderer reported a stale/failed pick, or the data/camera changed.
     if (index === undefined || stale()) {
@@ -956,13 +928,51 @@
     return result ?? undefined;
   }
 
+  // The world point under the cursor on the focus plane (through the camera target,
+  // perpendicular to the view direction). Used to zoom toward the cursor in 3D; returns
+  // null when the view ray is parallel to that plane (degenerate).
+  function pivotAtCursor(camState: Camera3DState, sx: number, sy: number): [number, number, number] | null {
+    let c = new Camera3D(camState, width, height);
+    let ray = c.screenRay(sx, sy);
+    let eye = c.eye();
+    let t = camState.target;
+    let fx = t[0] - eye[0];
+    let fy = t[1] - eye[1];
+    let fz = t[2] - eye[2];
+    let fl = Math.hypot(fx, fy, fz) || 1;
+    fx /= fl;
+    fy /= fl;
+    fz /= fl;
+    let denom = ray.dir[0] * fx + ray.dir[1] * fy + ray.dir[2] * fz;
+    if (!(Math.abs(denom) > 1e-6)) {
+      return null;
+    }
+    let k = ((t[0] - ray.origin[0]) * fx + (t[1] - ray.origin[1]) * fy + (t[2] - ray.origin[2]) * fz) / denom;
+    return [ray.origin[0] + ray.dir[0] * k, ray.origin[1] + ray.dir[1] * k, ray.origin[2] + ray.dir[2] * k];
+  }
+
   function onWheel(e: WheelEvent) {
     e.preventDefault();
     if (is3D) {
       let cam = ensureLiveCamera();
       setTooltip(null);
       cameraTween = null;
-      liveCamera = clampDistance(dolly(cam, Math.exp(e.deltaY / 200)));
+      // Dolly, then shift the target toward the world point under the cursor so zooming
+      // homes in on where you point (2D-style zoom-to-cursor), not only the center. The
+      // effective factor uses the CLAMPED distance so a clamped zoom keeps the pivot put.
+      let dollied = clampDistance(dolly(cam, Math.exp(e.deltaY / 200)));
+      let f = cam.distance !== 0 ? dollied.distance / cam.distance : 1;
+      let { x: sx, y: sy } = localCoordinates(e);
+      let pivot = pivotAtCursor(cam, sx, sy);
+      let target: [number, number, number] =
+        pivot != null
+          ? [
+              cam.target[0] + (pivot[0] - cam.target[0]) * (1 - f),
+              cam.target[1] + (pivot[1] - cam.target[1]) * (1 - f),
+              cam.target[2] + (pivot[2] - cam.target[2]) * (1 - f),
+            ]
+          : dollied.target;
+      liveCamera = { ...dollied, target };
       commitCamera();
       return;
     }
@@ -1087,9 +1097,8 @@
   }
 
   async function onClick(pointer: CursorValue) {
-    // A click first clears any active brush (in both 2D and 3D), giving a
-    // click-to-clear path even though the brush overlay is hidden in 3D.
-    if (rangeSelection != null) {
+    // 2D: the brush outline is visible, so a click anywhere clears it (unchanged).
+    if (!is3D && rangeSelection != null) {
       setRangeSelection(null);
       return;
     }
@@ -1102,18 +1111,49 @@
     if (newSelection === undefined) {
       return;
     }
+    // 3D: the brush outline is hidden, so clicking EMPTY SPACE clears the active filter.
+    // A click that HITS a point selects it instead — so double-clicking a point to focus
+    // (whose leading single clicks also hit that point) no longer discards the filter.
+    if (is3D && rangeSelection != null && newSelection == null) {
+      setRangeSelection(null);
+      return;
+    }
     applyClickSelection(newSelection, pointer);
   }
 
   let onHoverThrottle = throttleTooltip(
     async (pointer: CursorValue | null) => {
       let position = pointer ? localCoordinates(pointer) : null;
-      // When a single point is selected, keep its (lockable) tooltip while the
-      // cursor is near it, and leave the tooltip untouched otherwise (so moving
-      // into an interactive tooltip does not dismiss it). This mirrors 2D; 3D uses
-      // the camera projection + pick instead of the viewport.
+      if (is3D) {
+        // 3D hover resolves the FRONT-MOST point under the cursor via a GPU pick, so an
+        // occluded selection does not keep its tooltip just because it projects near the
+        // cursor; the point actually in front wins. A locked selected-point tooltip is
+        // preserved on empty space / off-canvas so it can be moved into and interacted
+        // with (mirrors the 2D "leave untouched" rule).
+        if (position == null) {
+          if (!lockTooltip) {
+            setTooltip(null);
+          }
+          return;
+        }
+        let picked = await selectionFromPick(position);
+        if (picked === undefined) {
+          return; // indeterminate (view changed / pick failed mid-hover) — leave untouched
+        }
+        if (picked == null) {
+          if (!lockTooltip) {
+            setTooltip(null);
+          }
+        } else {
+          setTooltip(picked);
+        }
+        return;
+      }
+      // 2D: keep the single selected point's (lockable) tooltip while the cursor is near
+      // it, and leave the tooltip untouched otherwise (so moving into an interactive
+      // tooltip does not dismiss it).
       if (selection != null && selection.length == 1) {
-        let cSelection = is3D ? markerLocation(selection[0]) : pointLocation(selection[0].x, selection[0].y);
+        let cSelection = pointLocation(selection[0].x, selection[0].y);
         if (
           position != null &&
           isFinite(cSelection.x) &&
@@ -1121,17 +1161,6 @@
           pointDistance(position, cSelection) < 10
         ) {
           setTooltip(selection[0]);
-        }
-      } else if (is3D) {
-        if (position == null) {
-          setTooltip(null);
-        } else {
-          let picked = await selectionFromPick(position);
-          // Leave the tooltip unchanged on an indeterminate pick (view changed / pick
-          // failed mid-hover); only update it for a definitive hit or no-hit.
-          if (picked !== undefined) {
-            setTooltip(picked);
-          }
         }
       } else {
         setTooltip(await selectionFromPoint(position));
@@ -1336,7 +1365,7 @@
     <!-- Tooltip point -->
     {#if tooltip != null && renderer != null}
       {@const { x, y } = markerLocation(tooltip)}
-      {@const r = Math.max(3, pointSize / pixelRatio) + 1}
+      {@const r = markerRadius(tooltip) + 1}
       {#if isFinite(x) && isFinite(y) && isFinite(r)}
         <circle
           cx={x}
@@ -1353,7 +1382,7 @@
       {#each selection as point}
         {@const { x, y } = markerLocation(point)}
         {@const color = point.category != null ? resolvedCategoryColors[point.category] : resolvedCategoryColors[0]}
-        {@const r = Math.max(3, pointSize / pixelRatio) + 1}
+        {@const r = markerRadius(point) + 1}
         {#if isFinite(x) && isFinite(y) && isFinite(r)}
           <circle
             cx={x}
@@ -1442,7 +1471,7 @@
       <TooltipContainer
         location={loc}
         allowInteraction={lockTooltip}
-        targetHeight={Math.max(3, pointSize / pixelRatio)}
+        targetHeight={markerRadius(tooltip)}
         customTooltip={customTooltip ?? {
           class: DefaultTooltipRenderer,
           props: { colorScheme: colorScheme, fontFamily: resolvedTheme.fontFamily },
@@ -1457,7 +1486,7 @@
       resolvedTheme={resolvedTheme}
       statusMessage={statusMessage ?? webGPUPrompt}
       distancePerPoint={1 / (pointLocation(1, 0).x - pointLocation(0, 0).x)}
-      pointCount={data.x.length}
+      pointCount={xData.length}
       selectionMode={selectionMode}
       onSelectionMode={(v) => (selectionMode = v)}
       is3D={is3D}

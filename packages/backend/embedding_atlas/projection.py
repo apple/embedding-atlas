@@ -35,7 +35,7 @@ def compute_projection(
     cache_root: str | Path | None = None,
 ) -> IntoDataFrameT:
     """
-    Compute embeddings and generate 2D projections for a DataFrame column.
+    Compute embeddings and generate 2D or 3D projections for a DataFrame column.
 
     This is a unified entry point that auto-detects the modality of the input
     data (text, image, audio, or vector) and delegates to the appropriate

@@ -10,6 +10,7 @@ export {
 export { defaultCategoryColors, maxDensityModeCategories } from "@embedding-atlas/component";
 
 export type {
+  Camera3DState,
   CustomComponent,
   DataField,
   DataPoint,

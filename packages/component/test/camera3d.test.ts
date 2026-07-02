@@ -8,12 +8,12 @@ import {
   clampPitch,
   dolly,
   fitCamera3D,
-  frustumSampleIndices,
   frustumSampleIndicesChunked,
   globalStrideIndices,
   MAX_PITCH,
   orbit,
   pan,
+  pointsBounds3D,
   type Camera3DState,
 } from "../src/lib/camera3d.js";
 
@@ -196,9 +196,55 @@ describe("globalStrideIndices", () => {
     expect(idx.length).toBe(10);
     expect(Math.max(...idx)).toBeLessThan(10);
   });
+
+  it("returns empty for a zero count (no wrapped -1 index)", () => {
+    let idx = globalStrideIndices(0, 50);
+    expect(idx.length).toBe(0);
+    // Every element (there are none) would otherwise be a valid, non-wrapped index.
+    for (let v of idx) {
+      expect(v).toBeLessThan(4294967295);
+    }
+  });
 });
 
-describe("frustumSampleIndices", () => {
+describe("pointsBounds3D", () => {
+  it("returns a unit sphere centered on a single point", () => {
+    let b = pointsBounds3D(new Float32Array([5]), new Float32Array([6]), new Float32Array([7]));
+    expect(b.center).toEqual([5, 6, 7]);
+    expect(b.radius).toBe(1); // zero extent is forced to a unit radius
+  });
+
+  it("centers on identical points with a unit radius", () => {
+    let b = pointsBounds3D(new Float32Array([2, 2, 2]), new Float32Array([3, 3, 3]), new Float32Array([4, 4, 4]));
+    expect(b.center).toEqual([2, 3, 4]);
+    expect(b.radius).toBe(1);
+  });
+
+  it("skips NaN/Inf points so the center stays finite (no blank-view camera)", () => {
+    // The third point has a NaN x and an Inf y; only the two finite points contribute.
+    let x = new Float32Array([0, 10, NaN]);
+    let y = new Float32Array([0, 0, Infinity]);
+    let z = new Float32Array([0, 0, 5]);
+    let b = pointsBounds3D(x, y, z);
+    expect(b.center).toEqual([5, 0, 0]);
+    expect(Number.isFinite(b.radius)).toBe(true);
+    expect(b.radius).toBeGreaterThan(0);
+  });
+
+  it("returns a safe unit sphere when every point is non-finite", () => {
+    let b = pointsBounds3D(new Float32Array([NaN]), new Float32Array([NaN]), new Float32Array([NaN]));
+    expect(b.center).toEqual([0, 0, 0]);
+    expect(b.radius).toBe(1);
+  });
+
+  it("returns a safe unit sphere for an empty cloud", () => {
+    let b = pointsBounds3D(new Float32Array([]), new Float32Array([]), new Float32Array([]));
+    expect(b.center).toEqual([0, 0, 0]);
+    expect(b.radius).toBe(1);
+  });
+});
+
+describe("frustumSampleIndicesChunked", () => {
   // Three well-separated blobs along x, like the 3D demo dataset. Points are
   // interleaved by index (i % 3) so a global stride spreads evenly across blobs.
   function blobs(perBlob: number) {
@@ -217,20 +263,23 @@ describe("frustumSampleIndices", () => {
   }
 
   const FOV = (50 / 180) * Math.PI;
+  // The chunked sampler is the only sampler; a no-yield / no-cancel adapter with a
+  // tiny chunk size exercises the chunk-boundary logic synchronously in tests.
+  let noYield = { yieldToHost: () => Promise.resolve(), shouldCancel: () => false, chunkSize: 7 };
 
-  it("returns null when no downsampling is needed", () => {
+  it("returns null when no downsampling is needed", async () => {
     let { x, y, z } = blobs(10); // 30 points
     let vp = new Camera3D(fitCamera3D(x, y, z), 800, 800).viewProjection();
-    expect(frustumSampleIndices(x, y, z, vp, 30)).toBeNull(); // count == cap
-    expect(frustumSampleIndices(x, y, z, vp, 100)).toBeNull(); // count < cap
-    expect(frustumSampleIndices(x, y, z, vp, 0)).toBeNull(); // disabled
+    expect(await frustumSampleIndicesChunked(x, y, z, vp, 30, noYield)).toBeNull(); // count == cap
+    expect(await frustumSampleIndicesChunked(x, y, z, vp, 100, noYield)).toBeNull(); // count < cap
+    expect(await frustumSampleIndicesChunked(x, y, z, vp, 0, noYield)).toBeNull(); // disabled
   });
 
-  it("caps the result length and returns valid in-range indices", () => {
+  it("caps the result length and returns valid in-range indices", async () => {
     let { x, y, z, n } = blobs(100); // 300 points
     let vp = new Camera3D(fitCamera3D(x, y, z), 800, 800).viewProjection();
     let cap = 50;
-    let idx = frustumSampleIndices(x, y, z, vp, cap)!;
+    let idx = (await frustumSampleIndicesChunked(x, y, z, vp, cap, noYield))!;
     expect(idx).not.toBeNull();
     expect(idx.length).toBe(cap);
     for (let v of idx) {
@@ -239,20 +288,20 @@ describe("frustumSampleIndices", () => {
     }
   });
 
-  it("refines the selection to the zoomed-in region (previously hidden points become reachable)", () => {
+  it("refines the selection to the zoomed-in region (previously hidden points become reachable)", async () => {
     let { x, y, z, centers } = blobs(100); // 300 points
     let cap = 30;
     let inRight = (idx: Uint32Array) => [...idx].filter((i) => Math.abs(x[i] - centers[2]) < 2).length / idx.length;
 
     // Full-frame view over all three blobs: a global stride spreads across them.
     let full = new Camera3D(fitCamera3D(x, y, z), 800, 800).viewProjection();
-    let fullIdx = frustumSampleIndices(x, y, z, full, cap)!;
+    let fullIdx = (await frustumSampleIndicesChunked(x, y, z, full, cap, noYield))!;
     let fullFrac = inRight(fullIdx);
 
     // Zoom onto the right-hand blob so the others fall outside the frustum.
     let zoomState: Camera3DState = { target: [centers[2], 0, 0], distance: 2.2, yaw: 0, pitch: 0, fov: FOV };
     let zoom = new Camera3D(zoomState, 800, 800).viewProjection();
-    let zoomIdx = frustumSampleIndices(x, y, z, zoom, cap)!;
+    let zoomIdx = (await frustumSampleIndicesChunked(x, y, z, zoom, cap, noYield))!;
     let zoomFrac = inRight(zoomIdx);
 
     // The zoomed-in selection is dominated by the right blob, far more than the
@@ -267,11 +316,11 @@ describe("frustumSampleIndices", () => {
     expect(newlyVisible.length).toBeGreaterThan(0);
   });
 
-  it("excludes points outside / behind the frustum", () => {
+  it("excludes points outside / behind the frustum", async () => {
     let { x, y, z, centers } = blobs(100);
     let zoomState: Camera3DState = { target: [centers[2], 0, 0], distance: 2.2, yaw: 0, pitch: 0, fov: FOV };
     let cam = new Camera3D(zoomState, 800, 800);
-    let idx = frustumSampleIndices(x, y, z, cam.viewProjection(), 30)!;
+    let idx = (await frustumSampleIndicesChunked(x, y, z, cam.viewProjection(), 30, noYield))!;
     for (let i of idx) {
       // Every selected point projects to a finite (in-front-of-camera) pixel.
       let p = cam.project([x[i], y[i], z[i]]);
@@ -281,7 +330,7 @@ describe("frustumSampleIndices", () => {
     }
   });
 
-  it("culls points outside the near/far clip depth", () => {
+  it("culls points outside the near/far clip depth", async () => {
     // Right blob (visible) plus points placed far beyond the far plane along the
     // camera's view axis: they land inside the x/y NDC bounds but at depth > 1, so
     // the renderer would clip them. They must not consume the cap or hide the blob.
@@ -310,19 +359,19 @@ describe("frustumSampleIndices", () => {
     let far = cam.project([centers[2], 0, eye[2] - 5000]);
     expect(far.depth).toBeGreaterThan(1);
 
-    let idx = frustumSampleIndices(X, Y, Z, cam.viewProjection(), 30)!;
+    let idx = (await frustumSampleIndicesChunked(X, Y, Z, cam.viewProjection(), 30, noYield))!;
     // None of the appended far points (indices >= base) are selected.
     for (let v of idx) {
       expect(v).toBeLessThan(base);
     }
   });
 
-  it("falls back to a non-empty global stride when the camera frames no data", () => {
+  it("falls back to a non-empty global stride when the camera frames no data", async () => {
     let { x, y, z, n } = blobs(100);
     let away: Camera3DState = { target: [1000, 1000, 1000], distance: 1, yaw: 0, pitch: 0, fov: FOV };
     let vp = new Camera3D(away, 800, 800).viewProjection();
     let cap = 30;
-    let idx = frustumSampleIndices(x, y, z, vp, cap)!;
+    let idx = (await frustumSampleIndicesChunked(x, y, z, vp, cap, noYield))!;
     expect(idx).not.toBeNull();
     expect(idx.length).toBe(cap);
     for (let v of idx) {
@@ -330,27 +379,8 @@ describe("frustumSampleIndices", () => {
       expect(v).toBeLessThan(n);
     }
   });
-});
 
-describe("frustumSampleIndicesChunked", () => {
-  function blobs(perBlob: number) {
-    let n = perBlob * 3;
-    let x = new Float32Array(n);
-    let y = new Float32Array(n);
-    let z = new Float32Array(n);
-    let centers = [-6, 0, 6];
-    for (let i = 0; i < n; i++) {
-      let c = i % 3;
-      x[i] = centers[c] + Math.sin(i * 12.9898) * 0.4;
-      y[i] = Math.cos(i * 4.1414) * 0.4;
-      z[i] = Math.sin(i * 7.233) * 0.4;
-    }
-    return { x, y, z, n, centers };
-  }
-  const FOV = (50 / 180) * Math.PI;
-  let noYield = { yieldToHost: () => Promise.resolve(), shouldCancel: () => false, chunkSize: 7 };
-
-  it("produces exactly the same result as the synchronous sampler across chunk boundaries", async () => {
+  it("is deterministic across chunk boundaries (chunk size does not change the result)", async () => {
     let { x, y, z, centers } = blobs(100); // 300 points
     for (let state of [
       new Camera3D(fitCamera3D(x, y, z), 800, 800), // full frame (strided)
@@ -359,17 +389,21 @@ describe("frustumSampleIndicesChunked", () => {
     ]) {
       let vp = state.viewProjection();
       for (let cap of [10, 30, 250]) {
-        let sync = frustumSampleIndices(x, y, z, vp, cap);
-        let chunked = await frustumSampleIndicesChunked(x, y, z, vp, cap, noYield);
-        expect(Array.from(chunked!)).toEqual(Array.from(sync!));
+        // A tiny chunk size crosses many chunk boundaries; a huge one is effectively a
+        // single pass. Both must yield identical index sets.
+        let small = await frustumSampleIndicesChunked(x, y, z, vp, cap, {
+          yieldToHost: () => Promise.resolve(),
+          shouldCancel: () => false,
+          chunkSize: 7,
+        });
+        let big = await frustumSampleIndicesChunked(x, y, z, vp, cap, {
+          yieldToHost: () => Promise.resolve(),
+          shouldCancel: () => false,
+          chunkSize: 100000,
+        });
+        expect(Array.from(big!)).toEqual(Array.from(small!));
       }
     }
-  });
-
-  it("returns null when no downsampling is needed", async () => {
-    let { x, y, z } = blobs(10); // 30 points
-    let vp = new Camera3D(fitCamera3D(x, y, z), 800, 800).viewProjection();
-    expect(await frustumSampleIndicesChunked(x, y, z, vp, 30, noYield)).toBeNull();
   });
 
   it("returns undefined (and stops early) when canceled", async () => {

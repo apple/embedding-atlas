@@ -352,6 +352,7 @@
       mode: spec.mode ?? "points",
       ...(spec.minimumDensity != null ? { minimumDensity: spec.minimumDensity } : {}),
       ...(spec.pointSize != null ? { pointSize: spec.pointSize } : {}),
+      ...(spec.fogDensity != null ? { fogDensity: spec.fogDensity } : {}),
       downsampleMaxPoints: spec.downsampleMaxPoints ?? defaultDownsampleMaxPoints,
     }}
     labels={context.embeddingViewLabels}
@@ -461,7 +462,7 @@
           <div class="text-slate-500 dark:text-slate-400 select-none">Display Mode</div>
           <div class="flex gap-2 items-center">
             <Select
-              value={spec.mode ?? "points"}
+              value={spec.mode === "points-3d" && spec.data.z == null ? "points" : (spec.mode ?? "points")}
               onChange={(v) =>
                 onSpecChange((draft) => {
                   draft.mode = v;
@@ -513,6 +514,30 @@
                 })}
             />
           </div>
+          {#if (spec.mode ?? "points") == "points-3d"}
+            <div class="text-slate-500 dark:text-slate-400 select-none">Fog</div>
+            <div class="flex gap-2 items-center">
+              <Slider
+                bind:value={
+                  () => spec.fogDensity ?? 0.6,
+                  (v) =>
+                    onSpecChange((draft) => {
+                      draft.fogDensity = v;
+                    })
+                }
+                min={0}
+                max={2}
+                step={0.05}
+              />
+              <Button
+                label="Auto"
+                onClick={() =>
+                  onSpecChange((draft) => {
+                    delete draft.fogDensity;
+                  })}
+              />
+            </div>
+          {/if}
           {#if totalPointCount != null && totalPointCount > minDownsampleMaxPoints}
             {@const effectiveLimit = spec.downsampleMaxPoints ?? Math.min(defaultDownsampleMaxPoints, totalPointCount)}
             {@const isMaxed = effectiveLimit >= totalPointCount}

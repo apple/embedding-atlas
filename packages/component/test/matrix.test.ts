@@ -9,7 +9,7 @@ import {
   matrix4_mul_vec4,
   matrix4_multiply,
   matrix4_perspective,
-  matrix4_transform_point,
+  vector3_normalize,
   type Matrix4,
   type Vector3,
 } from "../src/lib/matrix.js";
@@ -110,17 +110,17 @@ describe("matrix4_invert", () => {
   });
 });
 
-describe("matrix4_transform_point", () => {
-  it("round-trips through a view-projection and its inverse", () => {
-    let proj = matrix4_perspective((50 / 180) * Math.PI, 1, 0.1, 100);
-    let view = matrix4_look_at([0, 0, 6], [0, 0, 0], [0, 1, 0]);
-    let vp = matrix4_multiply(proj, view);
-    let inv = matrix4_invert(vp);
-    let p: Vector3 = [1.5, -0.7, 0.2];
-    let projected = matrix4_transform_point(vp, p);
-    let restored = matrix4_transform_point(inv, projected);
-    expect(restored[0]).toBeCloseTo(p[0], 4);
-    expect(restored[1]).toBeCloseTo(p[1], 4);
-    expect(restored[2]).toBeCloseTo(p[2], 4);
+describe("degenerate camera math", () => {
+  it("vector3_normalize returns a finite vector for a zero-length input", () => {
+    let v = vector3_normalize([0, 0, 0]);
+    expect(v.every((c) => Number.isFinite(c))).toBe(true);
+    expect(v).toEqual([0, 0, 0]);
+  });
+
+  it("matrix4_look_at yields a finite matrix when eye == center (degenerate forward)", () => {
+    // A fully-zoomed camera or a zero-extent cloud can produce eye == center; the
+    // normalize-zero guard must keep the view matrix free of NaN.
+    let m = matrix4_look_at([1, 1, 1], [1, 1, 1], [0, 1, 0]);
+    expect(m.every((c) => Number.isFinite(c))).toBe(true);
   });
 });

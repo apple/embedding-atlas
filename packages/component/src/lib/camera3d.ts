@@ -215,25 +215,43 @@ export interface Bounds3D {
  */
 export function pointsBounds3D(x: ArrayLike<number>, y: ArrayLike<number>, z: ArrayLike<number>): Bounds3D {
   let n = x.length;
-  if (n === 0) {
-    return { center: [0, 0, 0], radius: 1 };
-  }
+  // Accumulate only FINITE points. A single NaN/Inf coordinate (e.g. a null z coming
+  // from the source, or an unvalidated --z column) would otherwise poison the centroid
+  // into NaN, giving a NaN camera target and a permanently blank view with no recovery.
+  // Skipping them keeps the center finite; an all-non-finite (or empty) cloud returns a
+  // safe unit sphere at the origin.
   let cx = 0;
   let cy = 0;
   let cz = 0;
+  let finite = 0;
   for (let i = 0; i < n; i++) {
-    cx += x[i];
-    cy += y[i];
-    cz += z[i];
+    let px = x[i];
+    let py = y[i];
+    let pz = z[i];
+    if (Number.isFinite(px) && Number.isFinite(py) && Number.isFinite(pz)) {
+      cx += px;
+      cy += py;
+      cz += pz;
+      finite++;
+    }
   }
-  cx /= n;
-  cy /= n;
-  cz /= n;
+  if (finite === 0) {
+    return { center: [0, 0, 0], radius: 1 };
+  }
+  cx /= finite;
+  cy /= finite;
+  cz /= finite;
   let radius = 0;
   for (let i = 0; i < n; i++) {
-    let dx = x[i] - cx;
-    let dy = y[i] - cy;
-    let dz = z[i] - cz;
+    let px = x[i];
+    let py = y[i];
+    let pz = z[i];
+    if (!(Number.isFinite(px) && Number.isFinite(py) && Number.isFinite(pz))) {
+      continue;
+    }
+    let dx = px - cx;
+    let dy = py - cy;
+    let dz = pz - cz;
     let d = dx * dx + dy * dy + dz * dz;
     if (d > radius) {
       radius = d;
@@ -296,9 +314,15 @@ export function fitCamera3D(
  * A deterministic global-stride subset of `[0, count)` of length `min(count, cap)`:
  * indices `floor(i * count / n)`. Cheap (O(cap), no full-dataset scan or
  * count-sized allocation) — used for the first 3D render and as the empty-frustum
- * fallback, before/until {@link frustumSampleIndices} refines to the visible set.
+ * fallback, before/until {@link frustumSampleIndicesChunked} refines to the visible set.
  */
 export function globalStrideIndices(count: number, cap: number): Uint32Array<ArrayBuffer> {
+  if (count <= 0) {
+    // Guard the empty cloud: without this, n would be 1 and out[0] = min(-1, ...) wraps
+    // to 4294967295 in the Uint32Array. Callers only pass count > cap > 0, but keep the
+    // function safe in isolation.
+    return new Uint32Array(0);
+  }
   let n = Math.max(1, Math.min(count, Math.floor(cap)));
   let out = new Uint32Array(n);
   let stride = count / n;
@@ -306,55 +330,6 @@ export function globalStrideIndices(count: number, cap: number): Uint32Array<Arr
     out[i] = Math.min(count - 1, Math.floor(i * stride));
   }
   return out;
-}
-
-/**
- * Selects up to `cap` point indices to draw/pick in 3D for a given camera. A fixed
- * GLOBAL stride would permanently hide the points it skips — zooming into a dense
- * region could never reveal them. So points outside the (slightly padded) view
- * frustum are culled first, and the in-frustum set is then strided down to the
- * cap; a zoomed-in region therefore selects from ITS own points and refines as the
- * camera moves.
- *
- * Returns null when no downsampling is needed (`count <= cap`) or `cap <= 0`, in
- * which case the caller should draw all points. When the camera frames no data
- * (everything behind/outside the frustum) it falls back to a global stride so the
- * view is not empty and a reframe still has pickable points.
- *
- * Bounded memory: the only allocation is the (<= cap) output — there is no
- * count-sized pool. Two O(n) passes (count in-frustum, then emit a strided subset)
- * keep peak memory at the cap. This still scans every point, so callers should run
- * it OFF the first-render path and throttle it (see EmbeddingViewImpl, which shows
- * a cheap {@link globalStrideIndices} subset first and refines here on settle).
- *
- * `viewProjection` is the column-major data-space -> clip-space matrix; `margin`
- * pads the NDC bounds so points whose disc straddles a screen edge are kept.
- */
-export function frustumSampleIndices(
-  x: ArrayLike<number>,
-  y: ArrayLike<number>,
-  z: ArrayLike<number>,
-  viewProjection: Matrix4,
-  cap: number,
-  margin: number = 1.2,
-): Uint32Array<ArrayBuffer> | null {
-  let count = x.length;
-  let capN = Math.floor(cap);
-  if (!(capN > 0) || count <= capN) {
-    return null;
-  }
-  let inFrustum = makeInFrustum(x, y, z, viewProjection, margin);
-
-  // Pass 1: count in-frustum points (no allocation).
-  let inCount = 0;
-  for (let i = 0; i < count; i++) {
-    if (inFrustum(i)) {
-      inCount++;
-    }
-  }
-  // Pass 2: emit a strided subset of the in-frustum points (or a global-stride
-  // fallback when nothing is in view).
-  return emitFrustumSample(inFrustum, count, inCount, capN);
 }
 
 /** Builds the per-point in-frustum predicate used by the 3D samplers. A point is
@@ -384,63 +359,31 @@ function makeInFrustum(
   };
 }
 
-/** Pass 2 of frustum sampling, given the pass-1 in-frustum count: returns a strided
- * subset of the in-frustum points (or a global stride when none are in view). Peak
- * allocation is the (<= cap) output. */
-function emitFrustumSample(
-  inFrustum: (i: number) => boolean,
-  count: number,
-  inCount: number,
-  capN: number,
-): Uint32Array<ArrayBuffer> {
-  if (inCount === 0) {
-    return globalStrideIndices(count, capN);
-  }
-  if (inCount <= capN) {
-    // Keep all in-frustum points, in order.
-    let out = new Uint32Array(inCount);
-    let k = 0;
-    for (let i = 0; i < count && k < inCount; i++) {
-      if (inFrustum(i)) {
-        out[k++] = i;
-      }
-    }
-    return out;
-  }
-  // Stride within the in-frustum points, emitting the (floor(k*stride))-th one for k
-  // in [0, cap) — equivalent to striding a materialized in-frustum pool, no pool.
-  let out = new Uint32Array(capN);
-  let stride = inCount / capN;
-  let k = 0;
-  let s = 0;
-  for (let i = 0; i < count && k < capN; i++) {
-    if (!inFrustum(i)) {
-      continue;
-    }
-    if (s === Math.floor(k * stride)) {
-      out[k++] = i;
-    }
-    s++;
-  }
-  // Rounding can leave the final slot(s) unfilled; pad with the last chosen point.
-  while (k < capN) {
-    out[k] = out[k - 1];
-    k++;
-  }
-  return out;
-}
-
 /**
- * Chunked, cooperative form of {@link frustumSampleIndices} for very large clouds:
- * the same complete frustum cull, but the O(N) pass-1 scan is split into `chunkSize`
- * slices with `yieldToHost()` awaited between them, so it never blocks the UI thread,
- * and `shouldCancel()` is polled so a newer camera/data change abandons stale work.
+ * Selects up to `cap` point indices to draw/pick in 3D for a given camera, culling to
+ * the visible frustum first so downsampling adapts to where the camera looks.
  *
- * Reads the existing coordinate arrays directly — no copy, no worker, no GPU upload —
- * so peak extra memory is just the (<= cap) result, regardless of dataset size.
+ * A fixed GLOBAL stride would permanently hide the points it skips — zooming into a
+ * dense region could never reveal them. So points outside the (slightly padded) view
+ * frustum are culled first, and the in-frustum set is then strided down to the cap; a
+ * zoomed-in region therefore selects from ITS own points and refines as the camera
+ * moves. When the camera frames no data it falls back to a global stride so the view
+ * is never empty and a reframe still has pickable points.
  *
- * Returns the sample, `null` when no downsampling is needed (`count <= cap`), or
- * `undefined` when it was canceled (caller should keep its current sample).
+ * For very large clouds the O(N) cull is cooperative: the scan is split into
+ * `chunkSize` slices with `yieldToHost()` awaited between them, so it never blocks the
+ * UI thread, and `shouldCancel()` is polled so a newer camera/data change abandons
+ * stale work. It reads the coordinate arrays directly — no copy, no worker, no GPU
+ * upload — so peak extra memory is just the (<= cap) result, regardless of dataset
+ * size. Callers show a cheap {@link globalStrideIndices} subset first and refine here
+ * on settle (see EmbeddingViewImpl).
+ *
+ * `viewProjection` is the column-major data-space -> clip-space matrix; `margin` pads
+ * the NDC bounds so points whose disc straddles a screen edge are kept.
+ *
+ * Returns the sample, `null` when no downsampling is needed (`count <= cap` or
+ * `cap <= 0`; caller draws all points), or `undefined` when it was canceled (caller
+ * keeps its current sample).
  */
 export async function frustumSampleIndicesChunked(
   x: ArrayLike<number>,
@@ -486,7 +429,7 @@ export async function frustumSampleIndicesChunked(
   }
 
   // Pass 2: emit the in-frustum subset, also chunked (it re-scans all points to find
-  // them, so it is O(N) too and must not block). Mirrors emitFrustumSample's logic.
+  // them, so it is O(N) too and must not block).
   if (inCount <= capN) {
     let out = new Uint32Array(inCount);
     let k = 0;

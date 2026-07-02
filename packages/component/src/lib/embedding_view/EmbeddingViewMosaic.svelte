@@ -33,12 +33,6 @@
     return array instanceof Ctor ? array : new Ctor(array);
   }
 
-  // Row cap for materializing a rowid-less source's identifier column to enable exact
-  // 3D picks (see initClient). Bounds browser memory: at this many rows even ~64-byte
-  // string/UUID identifiers stay in the tens-of-MB range; larger sources use the
-  // coordinate fallback instead. Base tables are unaffected (compact rowid, any size).
-  const IDENTIFIER_MATERIALIZE_MAX_ROWS = 500_000;
-
   let {
     coordinator = defaultCoordinator(),
     table,
@@ -83,15 +77,8 @@
   // rendered arrays, used to resolve a 3D pick to the EXACT row regardless of the
   // user identifier's type (string/UUID included) — without downloading per-row
   // identifiers. Null when the source has no usable rowid (e.g. a view); those fall
-  // back to the configured identifier (below) or the coordinate lookup. See
-  // queryByIndex / the bulk query below.
+  // back to the coordinate lookup. See queryByIndex / the bulk query below.
   let rowidData: BigInt64Array | null = $state.raw(null);
-  // Fallback exact identity for sources WITHOUT a rowid (views/joins) that DO have a
-  // configured identifier column: the per-row identifier values, row-aligned with the
-  // rendered arrays, so a 3D pick resolves to the exact row even when several rows
-  // share rendered coordinates. Null when rowid is available (rowid is preferred and
-  // compact) or no identifier is configured.
-  let identifierData: DataPointID[] | null = $state.raw(null);
   let categoryCount: number = $state.raw(1);
   let totalCount: number = $state.raw(1);
   let maxDensity: number = $state.raw(1);
@@ -128,15 +115,37 @@
       // exact row for ANY identifier type; otherwise picks fall back to coordinates.
       let rowidAvailable = false;
       if (source.z != null) {
+        // A user column literally named `rowid` SHADOWS DuckDB's rowid pseudocolumn: a
+        // `SELECT rowid` would then read that (possibly non-unique / unstable) user
+        // column and resolve 3D picks to the WRONG row (and over-select in the
+        // coordinated predicate). Read the schema first; if such a column exists, do not
+        // use rowid as identity at all — fall back to the coordinate lookup.
+        let rowidShadowed = false;
         try {
-          await deps.coordinator.query(
-            SQL.Query.from(source.table)
-              .select({ __probe: SQL.sql`rowid` })
-              .limit(1),
-          );
-          rowidAvailable = true;
+          // Use the same query builder (and identifier quoting) as the rowid probe below,
+          // so schema-qualified or quote-containing table names resolve consistently.
+          let head = await deps.coordinator.query(SQL.Query.from(source.table).select("*").limit(0));
+          rowidShadowed = (head.schema?.fields ?? []).some((f: any) => String(f.name).toLowerCase() === "rowid");
         } catch {
-          rowidAvailable = false;
+          // Could not read the schema — do NOT disable the rowid path on a probe hiccup;
+          // only a CONFIRMED user `rowid` column shadows the pseudocolumn. The rowid probe
+          // below still makes the final call (and fails safely to coordinates if needed).
+          rowidShadowed = false;
+        }
+        if (didDestroy) {
+          return;
+        }
+        if (!rowidShadowed) {
+          try {
+            await deps.coordinator.query(
+              SQL.Query.from(source.table)
+                .select({ __probe: SQL.sql`rowid` })
+                .limit(1),
+            );
+            rowidAvailable = true;
+          } catch {
+            rowidAvailable = false;
+          }
         }
         // Check AFTER the probe settles either way: a rejected probe (views/joins
         // without rowid) must honor a teardown that happened during the await too,
@@ -146,22 +155,6 @@
           return;
         }
       }
-
-      // Exact 3D picks for rowid-LESS sources (views/joins) need a per-row identity, so
-      // we carry the configured identifier row-aligned with the rendered points. But
-      // that materializes the WHOLE identifier column in the browser (potentially long
-      // strings/UUIDs), so only do it when the source is small enough to stay bounded;
-      // above the cap, picks use the (bounded) coordinate fallback. Base tables are
-      // unaffected — they use the compact 8-byte rowid regardless of size. Gated on the
-      // unfiltered total (known here, pre-query) so the heavy column is never even
-      // requested for large sources.
-      let identifierColumn =
-        source.z != null &&
-        !rowidAvailable &&
-        source.identifier != null &&
-        approxDensity.totalCount <= IDENTIFIER_MATERIALIZE_MAX_ROWS
-          ? source.identifier
-          : null;
 
       // A client is a thing that queries data from a selection with user-defined query
       client = makeClient({
@@ -178,11 +171,6 @@
               // supports it) so picks resolve to the exact row for any identifier type,
               // without downloading per-row (string) identifiers.
               ...(source.z != null && rowidAvailable ? { __rowid: SQL.sql`rowid` } : {}),
-              // No rowid (views/joins) but an identifier IS configured and the source is
-              // small enough (identifierColumn): carry the identifier per point so a 3D
-              // pick still resolves to the EXACT row even when several rows share
-              // rendered coordinates.
-              ...(identifierColumn != null ? { __identifier: SQL.column(identifierColumn) } : {}),
             })
             .where(predicate);
         },
@@ -198,14 +186,6 @@
           rowidData =
             rowidChild != null && rowidChild.length > 0 && rowidChild.nullCount === 0
               ? (rowidChild.toArray() as BigInt64Array)
-              : null;
-          // Same for the row-aligned identifier fallback (rowid-less sources). Require
-          // no nulls so every rendered point maps to an exact row; otherwise drop to
-          // the coordinate lookup rather than resolve an ambiguous/partial identity.
-          let identifierChild = data.getChild("__identifier");
-          identifierData =
-            identifierChild != null && identifierChild.length > 0 && identifierChild.nullCount === 0
-              ? (Array.from(identifierChild.toArray()) as DataPointID[])
               : null;
           updateTooltip(null);
           updateSelection(null);
@@ -434,20 +414,18 @@
 
   // Resolve a point by its render instance index (3D pick).
   //
-  // Exact-identity paths (preferred): a per-row key is row-aligned with the rendered
-  // arrays, so the picked index maps to the EXACT row even when points share x/y/z or
-  // collide after Float32 rounding. (1) the compact stable rowid (rowidData) for base
-  // tables, any identifier type, no per-row identifier download; (2) the configured
-  // identifier (identifierData) for rowid-less sources (views/joins) small enough to
-  // materialize it (see IDENTIFIER_MATERIALIZE_MAX_ROWS). Either key is AUTHORITATIVE: a
-  // null/error resolution is treated as INDETERMINATE (return null -> selection
-  // unchanged), never downgraded to coordinates — a coordinate match could pick a
-  // co-located twin and then emit an over-selecting predicate for the picked point.
+  // Exact-identity path (preferred): the compact stable rowid (rowidData) is row-aligned
+  // with the rendered arrays, so the picked index maps to the EXACT row for ANY
+  // identifier type (base tables) even when points share x/y/z or collide after Float32
+  // rounding. It is AUTHORITATIVE: a null/error resolution is treated as INDETERMINATE
+  // (return null -> selection unchanged), never downgraded to coordinates — a coordinate
+  // match could pick a co-located twin and then emit an over-selecting predicate for the
+  // picked point.
   //
-  // Last-resort fallback (no exact identity available — no rowid and either no
-  // identifier or a source too large to materialize one): a coordinate lookup matching
-  // the rendered Float32 x/y/z exactly (CAST AS FLOAT). This cannot distinguish rows
-  // that share coordinates, which is unavoidable without a per-row key.
+  // Fallback (no rowid — views/joins): a coordinate lookup matching the rendered Float32
+  // x/y/z exactly (CAST AS FLOAT). It still returns the resolved row's configured
+  // identifier, so a coordinated selection targets that exact row; it just cannot itself
+  // distinguish rows that share coordinates — unavoidable without a per-row key.
   async function queryByIndex(index: number): Promise<DataPoint | null> {
     if (index < 0 || index >= xData.length) {
       return null;
@@ -460,15 +438,6 @@
         return await pointQuery.queryByRowId(rowidData[index], filter?.predicate?.(clientId));
       } catch (e) {
         console.error("queryByIndex by rowid failed", e);
-        return null;
-      }
-    }
-
-    if (identifierData != null && index < identifierData.length) {
-      try {
-        return await pointQuery.queryByIdentifier(identifierData[index], filter?.predicate?.(clientId));
-      } catch (e) {
-        console.error("queryByIndex by identifier failed", e);
         return null;
       }
     }
@@ -642,7 +611,10 @@
   pixelRatio={pixelRatio ?? 2}
   theme={theme}
   config={config}
-  data={{ x: xData, y: yData, z: zData, category: categoryData }}
+  xData={xData}
+  yData={yData}
+  zData={zData}
+  categoryData={categoryData}
   totalCount={totalCount}
   maxDensity={maxDensity}
   categoryCount={categoryCount}

@@ -229,10 +229,3 @@ export function matrix4_invert(m: Matrix4): Matrix4 {
     (a20 * b03 - a21 * b01 + a22 * b00) * d,
   ];
 }
-
-/** Transforms a 3D point by `m` (treating it as `(x, y, z, 1)`) with perspective divide. */
-export function matrix4_transform_point(m: Matrix4, p: Vector3): Vector3 {
-  let [x, y, z, w] = matrix4_mul_vec4(m, [p[0], p[1], p[2], 1]);
-  let iw = w !== 0 ? 1 / w : 1;
-  return [x * iw, y * iw, z * iw];
-}

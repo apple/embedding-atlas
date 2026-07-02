@@ -19,6 +19,9 @@ Embedding Atlas is a tool that provides interactive visualizations for large emb
 - 🧊 **Order-independent transparency:**
   Ensure clear, accurate rendering of overlapping points.
 
+- 🧭 **Navigable 3D embedding view:**
+  Explore embeddings in 3D with orbit, pan, and zoom when a Z coordinate is available.
+
 - 🔍 **Real-time search & nearest neighbors:**
   Find similar data to a given query or existing data point.
 

@@ -137,12 +137,20 @@ export async function queryApproximateDensity(
       .select({ count: SQL.sql`COUNT(*)` })
       .groupby(...groupby),
   ).select({
-    totalCount: SQL.sql`SUM(count)::INT`,
-    maxCount: SQL.sql`MAX(count)::INT`,
+    // BIGINT (not INT): a table with more than ~2.1B rows would overflow INT32 and wrap
+    // totalCount to a bogus (possibly negative) value, corrupting the point-count display
+    // and downsample defaults that read it.
+    totalCount: SQL.sql`SUM(count)::BIGINT`,
+    maxCount: SQL.sql`MAX(count)::BIGINT`,
   });
 
   r = await coordinator.query(q);
-  let { maxCount, totalCount } = r.get(0);
+  let row = r.get(0);
+  // DuckDB returns a BIGINT aggregate as a JS bigint; convert at the boundary (exact to
+  // 2^53, far beyond any in-browser row count) so the numeric density/count math below —
+  // and the number-typed callers of totalCount — do not throw on bigint arithmetic.
+  let maxCount = Number(row.maxCount);
+  let totalCount = Number(row.totalCount);
   let maxDensity = maxCount / (binWidth * binWidth);
 
   return {
@@ -249,8 +257,10 @@ export class DataPointQuery {
 
   /**
    * Like {@link queryClosestPoint} but disambiguates by z as well, so points that
-   * stack at the same (x, y) but differ in depth resolve to the correct row.
-   * Used as the 3D pick fallback when no stable identifier column is available.
+   * stack at the same (x, y) but differ in depth resolve to the correct row. Used as the
+   * 3D pick fallback when no rowid is available. When distinct records collide at the
+   * exact rendered coordinates it returns null (indeterminate) rather than selecting an
+   * arbitrary sibling.
    */
   async queryClosestPoint3D(
     predicate: any | null,
@@ -259,10 +269,59 @@ export class DataPointQuery {
     pz: number,
     unitDistance: number,
   ): Promise<DataPoint | null> {
-    let { x, y, z } = this.source;
+    let { x, y, z, identifier } = this.source;
     if (z == null) {
       return this.queryClosestPoint(predicate, px, py, unitDistance);
     }
+
+    // The rendered px/py/pz are the picked point's Float32 coordinates, and the render
+    // query cast the source columns with ::FLOAT, so CAST(col AS FLOAT) reproduces them
+    // EXACTLY for the picked row. Match on that exact equality.
+    let exactClauses = [
+      SQL.sql`CAST(${SQL.column(x)} AS FLOAT) = ${px}`,
+      SQL.sql`CAST(${SQL.column(y)} AS FLOAT) = ${py}`,
+      SQL.sql`CAST(${SQL.column(z)} AS FLOAT) = ${pz}`,
+    ];
+
+    // Ambiguity guard: if two or more DISTINCT identifiers share the exact rendered
+    // coordinates, different records collide and we cannot tell which was picked, so
+    // resolve to indeterminate (null) rather than an arbitrary sibling whose identifier
+    // would then wrongly drive tooltip/selection/coordinated predicates. COUNT(DISTINCT)
+    // covers ANY number of colliding rows, not just the first two. Skipped when no
+    // identifier is configured — the coordinate predicate then matches all co-located
+    // rows anyway, so resolving one is fine.
+    if (identifier != null) {
+      let ambig = SQL.Query.from(this.source.table).select({
+        n: SQL.sql`COUNT(DISTINCT ${SQL.column(identifier)})`,
+      });
+      for (let c of exactClauses) {
+        ambig = ambig.where(c);
+      }
+      if (predicate) {
+        ambig = ambig.where(predicate);
+      }
+      let ambigRow = (await this.coordinator.query(ambig)).get(0);
+      if (ambigRow != null && Number(ambigRow.n) >= 2) {
+        return null;
+      }
+    }
+
+    // Resolve the exact-match row.
+    let exactQuery = SQL.Query.from(this.source.table).select(this.selectParams);
+    for (let c of exactClauses) {
+      exactQuery = exactQuery.where(c);
+    }
+    if (predicate) {
+      exactQuery = exactQuery.where(predicate);
+    }
+    let exactRow = (await this.coordinator.query(exactQuery.limit(1))).get(0);
+    if (exactRow != null) {
+      this.lastDistance = 0;
+      return this._convertToDataPoint(exactRow);
+    }
+
+    // No exact match (rare float edge case): fall back to the nearest point within the
+    // pixel radius so a legitimate pick still resolves.
     let rMax = unitDistance * 12;
 
     for (let r of [this.lastDistance, rMax]) {
@@ -336,26 +395,5 @@ export class DataPointQuery {
     // row even without a user identifier (rowids fit within 2^53 -> Number is exact).
     point.rowid = Number(rowid);
     return point;
-  }
-
-  /**
-   * Resolves the exact row for a configured identifier value (the 3D pick-by-index
-   * fallback for rowid-less sources such as views/joins). Optionally constrained to the
-   * active cross-filter. Returns null if no such row matches (the source has no
-   * identifier, the row was filtered out, or the value is unknown).
-   */
-  async queryByIdentifier(id: DataPointID, predicate?: any | null): Promise<DataPoint | null> {
-    let identifier = this.source.identifier;
-    if (identifier == null) {
-      return null;
-    }
-    let q = SQL.Query.from(this.source.table).select(this.selectParams);
-    q = q.where(SQL.eq(SQL.column(identifier), SQL.literal(id)));
-    if (predicate) {
-      q = q.where(predicate);
-    }
-    let result = await this.coordinator.query(q.limit(1));
-    let row = result.get(0);
-    return row != null ? this._convertToDataPoint(row) : null;
   }
 }

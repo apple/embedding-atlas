@@ -51,7 +51,7 @@ embedding-atlas huggingface_org/dataset_name
 
 The script will compute embedding vectors for the specified column containing the text, image, or audio data. By default, it uses [SentenceTransformers](https://sbert.net/) for text and [HuggingFace Transformers](https://huggingface.co/docs/transformers/) for images and audio. You can also use [LiteLLM](https://docs.litellm.ai/) for API-based embeddings via `--embedder litellm`. Use the `--model` option to specify an embedding model. If not specified, a default model will be used. The current defaults are `all-MiniLM-L6-v2` for text, `google/vit-base-patch16-224` for images, and `laion/clap-htsat-fused` for audio, but these are subject to change in future releases.
 
-After embedding vectors are computed, the script will then project the high-dimensional vectors to 2D with [UMAP](https://umap-learn.readthedocs.io/en/latest/index.html).
+After embedding vectors are computed, the script will then project the high-dimensional vectors to 2D with [UMAP](https://umap-learn.readthedocs.io/en/latest/index.html). To generate a navigable 3D projection instead, pass `--umap-n-components 3`.
 
 ::: tip
 Optionally, if you know what column your text data is in beforehand, you can specify which column to use with the `--text` flag, for example:
@@ -67,6 +67,12 @@ If you've already pre-computed the embedding projection (e.g., by running your o
 
 ```bash
 embedding-atlas path_to_dataset.parquet --x projection_x --y projection_y
+```
+
+To display a pre-computed 3D embedding, also store a Z coordinate column and pass it with `--z` (which requires `--x` and `--y`). The view then opens in a navigable 3D mode:
+
+```bash
+embedding-atlas path_to_dataset.parquet --x projection_x --y projection_y --z projection_z
 ```
 
 You may also pass in the `--neighbors` flag to specify the column name for pre-computed nearest neighbors.

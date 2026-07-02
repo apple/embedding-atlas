@@ -409,12 +409,36 @@ def main(
             "To generate a 3D projection, use --umap-n-components 3 instead."
         )
 
+    # --umap-n-components 3 only writes a projection_z when a projection is actually
+    # computed (projection enabled AND no pre-computed --x/--y). Combined with
+    # pre-computed coordinates or --disable-projection it would be silently ignored and
+    # the view would stay 2D, so fail loudly instead.
+    if umap_n_components == 3 and not (
+        enable_projection and (x_column is None or y_column is None)
+    ):
+        raise click.UsageError(
+            "--umap-n-components 3 generates a 3D projection and cannot be combined with "
+            "pre-computed --x/--y or --disable-projection. To display pre-computed 3D "
+            "coordinates, pass --x, --y and --z instead."
+        )
+
     if with_modules is not None:
         import_modules(with_modules)
 
     df = load_datasets(inputs, splits=split, query=query, sample=sample)
 
     print(df)
+
+    # A pre-computed --z column must exist and be numeric: the frontend casts it to FLOAT
+    # and fits the 3D camera to its extent, so a missing or non-numeric column would fail
+    # the query or collapse the view.
+    if z_column is not None:
+        if z_column not in df.columns:
+            raise click.UsageError(
+                f"--z column {z_column!r} was not found in the data."
+            )
+        if not pd.api.types.is_numeric_dtype(df[z_column]):
+            raise click.UsageError(f"--z column {z_column!r} must be numeric.")
 
     if enable_projection and (x_column is None or y_column is None):
         # No x, y column selected, first see if text/image/vectors column is specified, if not, ask for it

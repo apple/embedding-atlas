@@ -47,6 +47,12 @@ embedding-atlas path_to_dataset.parquet --x projection_x --y projection_y
 
 You may use the [SentenceTransformers](https://sbert.net/) package to compute high-dimensional embeddings from text data, and then use the [UMAP](https://umap-learn.readthedocs.io/en/latest/index.html) package to compute 2D projections.
 
+For a navigable 3D view, either store a pre-computed Z column and pass it with `--z` (alongside `--x`/`--y`), or generate a 3D projection with `--umap-n-components 3`:
+
+```bash
+embedding-atlas path_to_dataset.parquet --x projection_x --y projection_y --z projection_z
+```
+
 ### Using Pre-computed Vectors
 
 If you already have pre-computed embedding vectors (but not the 2D projections), you can specify the column containing the vectors with `--vector`:
