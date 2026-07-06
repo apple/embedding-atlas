@@ -360,6 +360,12 @@
       // Once we get the context, we can't fallback to setupWebGLRenderer.
       canFallbackToWebGL = false;
 
+      // Surface any WebGPU validation / shader errors that aren't captured by an
+      // explicit error scope, so failures don't manifest as a silently blank canvas.
+      device.addEventListener("uncapturederror", (event) => {
+        console.error("WebGPU uncaptured error:", (event as GPUUncapturedErrorEvent).error);
+      });
+
       device.lost.then(async (info) => {
         console.info(`WebGPU device was lost: ${info.message}`);
         if (info.reason != "destroyed") {

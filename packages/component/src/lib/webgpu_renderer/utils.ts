@@ -8,9 +8,6 @@ export function isWebGPUAvailable(): boolean {
   ) {
     return false;
   }
-  if (!navigator.gpu.wgslLanguageFeatures.has("unrestricted_pointer_parameters")) {
-    return false;
-  }
   return true;
 }
 

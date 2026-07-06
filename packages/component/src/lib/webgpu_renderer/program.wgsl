@@ -304,10 +304,9 @@ fn gaussian_blur_stage_1(@builtin(global_invocation_id) id: vec3<u32>) {
   let count = u32(height);
   let stride = u32(width);
 
-  deriche_conv_1d(
-    &blur_buffer, &blur_swap_buffer, start, stride, count,
-    uniforms.kde_causal, uniforms.kde_anticausal, uniforms.kde_a,
-    true
+  deriche_conv_1d_forward(
+    start, stride, count,
+    uniforms.kde_causal, uniforms.kde_anticausal, uniforms.kde_a
   );
 }
 
@@ -321,19 +320,31 @@ fn gaussian_blur_stage_2(@builtin(global_invocation_id) id: vec3<u32>) {
   let count = u32(width);
   let stride = u32(1);
 
-  deriche_conv_1d(
-    &blur_swap_buffer, &blur_buffer, start, stride, count,
-    uniforms.kde_causal, uniforms.kde_anticausal, uniforms.kde_a,
-    false
+  deriche_conv_1d_backward(
+    start, stride, count,
+    uniforms.kde_causal, uniforms.kde_anticausal, uniforms.kde_a
   );
 }
 
-fn deriche_conv_1d(
-    src: ptr<storage, array<f16>, read_write>,
-    dst: ptr<storage, array<f16>, read_write>,
+// The gaussian blur is a two-pass Deriche recursive filter (horizontal, then
+// vertical) implemented as a ping-pong between two storage buffers.
+//
+// The forward pass reads the fixed-point accumulated densities. These live in
+// `count_buffer` (an array<atomic<u32>>) which physically aliases `blur_buffer`.
+// We read them through the u32 view rather than reinterpreting `blur_buffer`'s
+// f16 pairs, because bitcasting a vec2<f16> to a u32 is not supported by all
+// WGSL implementations (e.g. Firefox / naga).
+//
+// The two passes are kept as separate functions (rather than one function with
+// a `forward` flag) so that each blur entry point statically references only the
+// buffers it uses. That keeps `count_buffer`/`blur_buffer` (which alias the same
+// GPU buffer) out of a single dispatch's usage scope at the same time, avoiding
+// WebGPU storage-buffer aliasing validation errors.
+
+// Forward pass: read u32 counts from count_buffer, write horizontal blur to blur_swap_buffer.
+fn deriche_conv_1d_forward(
     start: u32, stride: u32, count: u32,
-    kde_causal: vec4<f32>, kde_anticausal: vec4<f32>, kde_a: vec4<f32>,
-    src_is_u32: bool
+    kde_causal: vec4<f32>, kde_anticausal: vec4<f32>, kde_a: vec4<f32>
 ) {
   var s: vec4<f32> = vec4(0.0);
   var y0: f32 = 0.0;
@@ -344,12 +355,7 @@ fn deriche_conv_1d(
 
   for (var i: u32 = 0; i < count; i++) {
     let offset = start + i * stride;
-    var input: f32;
-    if (src_is_u32) {
-      input = f32(bitcast<u32>(vec2((*src)[offset * 2], (*src)[offset * 2 + 1]))) / f32(ACCUMULATE_UNIT);
-    } else {
-      input = f32((*src)[offset]);
-    }
+    var input: f32 = f32(atomicLoad(&count_buffer[offset])) / f32(ACCUMULATE_UNIT);
     if (input != 0.0) {
       first_nonzero = min(i, first_nonzero);
       last_nonzero = max(i, last_nonzero);
@@ -357,7 +363,7 @@ fn deriche_conv_1d(
     s = vec4(input, s.xyz);
     y1234 = vec4(y0, y1234.xyz);
     y0 = dot(kde_causal, s) - dot(kde_a, y1234);
-    (*dst)[offset] = f16(y0);
+    blur_swap_buffer[offset] = f16(y0);
   }
 
   if (first_nonzero > last_nonzero) {
@@ -373,17 +379,62 @@ fn deriche_conv_1d(
     let offset = start + p * stride;
     var input: f32 = 0.0;
     if (p >= first_nonzero) {
-      if (src_is_u32) {
-        input = f32(bitcast<u32>(vec2((*src)[offset * 2], (*src)[offset * 2 + 1]))) / f32(ACCUMULATE_UNIT);
-      } else {
-        input = f32((*src)[offset]);
-      }
+      input = f32(atomicLoad(&count_buffer[offset])) / f32(ACCUMULATE_UNIT);
     }
     y1234 = vec4(y0, y1234.xyz);
     y0 = dot(kde_anticausal, s) - dot(kde_a, y1234);
     s = vec4(input, s.xyz);
     if (y0 != 0.0) {
-      (*dst)[offset] = f16(f32((*dst)[offset]) + y0);
+      blur_swap_buffer[offset] = f16(f32(blur_swap_buffer[offset]) + y0);
+    }
+  }
+}
+
+// Backward pass: read f16 from blur_swap_buffer, write vertical blur to blur_buffer.
+fn deriche_conv_1d_backward(
+    start: u32, stride: u32, count: u32,
+    kde_causal: vec4<f32>, kde_anticausal: vec4<f32>, kde_a: vec4<f32>
+) {
+  var s: vec4<f32> = vec4(0.0);
+  var y0: f32 = 0.0;
+  var y1234: vec4<f32> = vec4(0.0);
+
+  var first_nonzero: u32 = count;
+  var last_nonzero: u32 = 0;
+
+  for (var i: u32 = 0; i < count; i++) {
+    let offset = start + i * stride;
+    var input: f32 = f32(blur_swap_buffer[offset]);
+    if (input != 0.0) {
+      first_nonzero = min(i, first_nonzero);
+      last_nonzero = max(i, last_nonzero);
+    }
+    s = vec4(input, s.xyz);
+    y1234 = vec4(y0, y1234.xyz);
+    y0 = dot(kde_causal, s) - dot(kde_a, y1234);
+    blur_buffer[offset] = f16(y0);
+  }
+
+  if (first_nonzero > last_nonzero) {
+    return;
+  }
+
+  s = vec4(0.0);
+  y0 = 0.0;
+  y1234 = vec4(0.0);
+
+  for (var i: u32 = count - 1 - last_nonzero; i < count; i++) {
+    let p = count - 1 - i;
+    let offset = start + p * stride;
+    var input: f32 = 0.0;
+    if (p >= first_nonzero) {
+      input = f32(blur_swap_buffer[offset]);
+    }
+    y1234 = vec4(y0, y1234.xyz);
+    y0 = dot(kde_anticausal, s) - dot(kde_a, y1234);
+    s = vec4(input, s.xyz);
+    if (y0 != 0.0) {
+      blur_buffer[offset] = f16(f32(blur_buffer[offset]) + y0);
     }
   }
 }

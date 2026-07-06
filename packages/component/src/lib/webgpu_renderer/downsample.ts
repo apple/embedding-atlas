@@ -190,7 +190,7 @@ export function makeDownsampleCommand(
       densitySamplePipeline,
       group0,
       group1,
-      group2Blur,
+      blurOnlyGroup,
       emptyGroup,
       group3,
       uniformBuffer,
@@ -223,7 +223,7 @@ export function makeDownsampleCommand(
           pass.setPipeline(viewportCullPipeline);
           pass.setBindGroup(0, group0);
           pass.setBindGroup(1, group1);
-          pass.setBindGroup(2, group2Blur);
+          pass.setBindGroup(2, blurOnlyGroup);
           pass.setBindGroup(3, group3);
           pass.dispatchWorkgroups(workgroupsX, workgroupsY);
           pass.end();
