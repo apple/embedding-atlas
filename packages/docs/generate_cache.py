@@ -27,7 +27,9 @@ def generate_dataset_embedding(
     query: str,
     output: str,
     output_folder: str,
-    model: str = "all-MiniLM-L6-v2",
+    inputs: str = "text",
+    modality: str = "text",
+    model: str | None = "all-MiniLM-L6-v2",
     umap_args: dict = {},
 ):
     click.echo(click.style(f"Processing {url}", fg="cyan"))
@@ -48,8 +50,8 @@ def generate_dataset_embedding(
 
     df = compute_projection(
         df,
-        inputs="text",
-        modality="text",
+        inputs=inputs,
+        modality=modality,
         x="x",
         y="y",
         neighbors="neighbors",
@@ -57,7 +59,7 @@ def generate_dataset_embedding(
         umap_args=umap_args,
     )
 
-    df = df.drop(columns="text")
+    df = df.drop(columns=inputs)
 
     Path(output_folder).mkdir(exist_ok=True, parents=True)
     df.to_parquet(Path(output_folder) / output)

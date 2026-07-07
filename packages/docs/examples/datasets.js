@@ -203,6 +203,49 @@ register(
   "62c90a28e3fb1bc0ad7bbcab1ac62b483ae6758291a655944d8f494bf6445745",
 );
 
+// https://huggingface.co/datasets/frgfm/imagewoof
+// License: Apache License 2.0
+register("imagewoof", async (context) => {
+  let [{ data }, precomputed] = await Promise.all([
+    fetchData(
+      "https://huggingface.co/datasets/frgfm/imagewoof/resolve/refs%2Fconvert%2Fparquet/160px/train/0000.parquet",
+      "98c6a88aea044e514491552fb8796dfac51cda0619bf9a7da18bfef29d02cda9",
+      context,
+    ),
+    context.fetch("../cache/98c6a88a.parquet"),
+  ]);
+  /*!
+    generate_dataset_embedding({
+      "url": "https://huggingface.co/datasets/frgfm/imagewoof/resolve/refs%2Fconvert%2Fparquet/160px/train/0000.parquet",
+      "sha256": "98c6a88aea044e514491552fb8796dfac51cda0619bf9a7da18bfef29d02cda9",
+      "inputs": "image",
+      "modality": "image",
+      "model": "facebook/dinov2-small-imagenet1k-1-layer",
+      "query": "SELECT row_number() OVER () AS id, image FROM data_frame",
+      "output": "98c6a88a.parquet"
+    })
+   */
+  let labels = JSON.parse(
+    atob(
+      "WyJTaGloLVR6dSIsICJSaG9kZXNpYW4gcmlkZ2ViYWNrIiwgIkJlYWdsZSIsICJFbmdsaXNoIGZveGhvdW5kIiwgIkJvcmRlciB0ZXJyaWVyIiwgIkF1c3RyYWxpYW4gdGVycmllciIsICJHb2xkZW4gcmV0cmlldmVyIiwgIk9sZCBFbmdsaXNoIHNoZWVwZG9nIiwgIlNhbW95ZWQiLCAiRGluZ28iXQ==",
+    ),
+  );
+  let labelArray = "[" + labels.map((x) => `'${x.replace(/'/g, "''")}'`).join(", ") + "]";
+  await context.db.registerFileBuffer("precomputed.parquet", precomputed);
+  await context.db.registerFileBuffer("dataset.parquet", data);
+  await context.connection.query(`
+    CREATE TABLE ${context.table} AS
+    SELECT
+      dataset.image, (${labelArray})[dataset.label + 1] AS label,
+      x AS projection_x, y AS projection_y, neighbors
+    FROM (SELECT image, label, row_number() OVER () AS __id__ FROM 'dataset.parquet') AS dataset
+    LEFT JOIN 'precomputed.parquet' AS precomputed ON dataset.__id__ = precomputed.id
+  `);
+  await context.db.dropFile("dataset.parquet");
+  await context.db.dropFile("precomputed.parquet");
+  return true;
+});
+
 async function fetchData(url, sha256sum, context) {
   let data = await context.fetch(url);
   let digest = await window.crypto.subtle.digest("SHA-256", data);
