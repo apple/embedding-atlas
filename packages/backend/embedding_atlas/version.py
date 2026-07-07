@@ -1,3 +1,3 @@
 # Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-__version__ = "0.21.0"
+__version__ = "0.22.0"
