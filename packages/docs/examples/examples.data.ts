@@ -402,7 +402,14 @@ const examples: Record<string, Example[]> = {
           "1": {
             type: "embedding",
             title: "Embedding",
-            data: { x: "projection_x", y: "projection_y", neighbors: "neighbors", category: "label" },
+            data: {
+              x: "projection_x",
+              y: "projection_y",
+              image: "image",
+              neighbors: "neighbors",
+              category: "label",
+              importance: "pagerank",
+            },
           },
           "2": { type: "instances", title: "Instances", viewMode: "cards" },
         },

@@ -134,6 +134,72 @@ export function boundingRect(points: Point[]): Rectangle {
   return { xMin: xMin, yMin: yMin, xMax: xMax, yMax: yMax };
 }
 
+/** Bins x/y coordinates onto a fixed integer grid, so that both points and
+ * rectangular regions can be mapped to shared integer keys. Used to assign
+ * points to regions without an O(points x rectangles) test. */
+export class XYBinning {
+  private xMin: number;
+  private yMin: number;
+  private xStep: number;
+  private yStep: number;
+
+  constructor(xMin: number, yMin: number, xStep: number, yStep: number) {
+    this.xMin = xMin;
+    this.yMin = yMin;
+    this.xStep = xStep;
+    this.yStep = yStep;
+  }
+
+  static inferFromRegions(regions: Rectangle[][]): XYBinning {
+    let xMin = Number.POSITIVE_INFINITY;
+    let yMin = Number.POSITIVE_INFINITY;
+    let xMax = Number.NEGATIVE_INFINITY;
+    let yMax = Number.NEGATIVE_INFINITY;
+    for (let region of regions) {
+      for (let rect of region) {
+        if (rect.xMin < xMin) {
+          xMin = rect.xMin;
+        } else if (rect.xMax > xMax) {
+          xMax = rect.xMax;
+        }
+        if (rect.yMin < yMin) {
+          yMin = rect.yMin;
+        } else if (rect.yMax > yMax) {
+          yMax = rect.yMax;
+        }
+      }
+    }
+    if (xMin < xMax && yMin < yMax) {
+      return new XYBinning(xMin, yMin, (xMax - xMin) / 200, (yMax - yMin) / 200);
+    } else {
+      return new XYBinning(0, 0, 1, 1);
+    }
+  }
+
+  key(x: number, y: number) {
+    let ix = Math.floor((x - this.xMin) / this.xStep);
+    let iy = Math.floor((y - this.yMin) / this.yStep);
+    return ix + iy * 32768;
+  }
+
+  keys(rects: Rectangle[]): Set<number> {
+    let keys = new Set<number>();
+    for (let { xMin, yMin, xMax, yMax } of rects) {
+      let xiLowerBound = Math.floor((xMin - this.xMin) / this.xStep);
+      let xiUpperBound = Math.floor((xMax - this.xMin) / this.xStep);
+      let yiLowerBound = Math.floor((yMin - this.yMin) / this.yStep);
+      let yiUpperBound = Math.floor((yMax - this.yMin) / this.yStep);
+      for (let xi = xiLowerBound; xi <= xiUpperBound; xi++) {
+        for (let yi = yiLowerBound; yi <= yiUpperBound; yi++) {
+          let p = yi * 32768 + xi;
+          keys.add(p);
+        }
+      }
+    }
+    return keys;
+  }
+}
+
 /** Download the array buffer. */
 export function downloadBuffer(arrayBuffer: ArrayBuffer, fileName: string = "arraybuffer.bin") {
   const a = document.createElement("a");

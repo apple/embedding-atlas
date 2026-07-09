@@ -7,6 +7,7 @@
 
   import EmbeddingViewImpl from "./EmbeddingViewImpl.svelte";
 
+  import { ImageSummarizer } from "../image_summarizer/image_summarizer.js";
   import { deepEquals, type Point, type Rectangle, type ViewportState } from "../utils.js";
   import type { EmbeddingViewMosaicProps } from "./embedding_view_mosaic_api.js";
   import { IMAGE_LABEL_SIZE } from "./labels.js";
@@ -392,55 +393,73 @@
   }
 
   async function queryClusterImageLabels(clusters: Rectangle[][]): Promise<(LabelContent | null)[]> {
-    if (image == null || importance == null) {
+    if (image == null || importance == null || identifier == null) {
       return [];
     }
-    // Build a VALUES table of all rectangles with their region index
-    let values = clusters
-      .flatMap((rects, regionId) =>
-        rects.map(
-          (r) => SQL.sql`(
-            ${SQL.literal(regionId)},
-            ${SQL.literal(r.xMin)}, ${SQL.literal(r.xMax)},
-            ${SQL.literal(r.yMin)}, ${SQL.literal(r.yMax)}
-          )`,
-        ),
-      )
-      .join(", ");
-    let sql = `
-      WITH rectangles(regionId, xMin, xMax, yMin, yMax) AS (VALUES ${values})
-      SELECT
-        r.regionId AS regionId,
-        arg_max(${SQL.column(image, "t")}, ${SQL.column(importance, "t")}) AS bestImage,
-        arg_max(${SQL.column(x, "t")}, ${SQL.column(importance, "t")}) AS bestX,
-        arg_max(${SQL.column(y, "t")}, ${SQL.column(importance, "t")}) AS bestY
-      FROM rectangles r
-      JOIN "${table}" AS t ON
-        ${SQL.column(x, "t")} BETWEEN r.xMin AND r.xMax AND
-        ${SQL.column(y, "t")} BETWEEN r.yMin AND r.yMax
-      GROUP BY r.regionId
-      ORDER BY r.regionId
-    `;
-    let result = await coordinator.query(sql);
-    let rows = result.toArray();
+    let idColumn = identifier;
 
-    // Map results back by region_id, measuring image dimensions for aspect ratio
-    let output: ({
-      image: string;
-      width: number;
-      height: number;
-      x: number;
-      y: number;
-    } | null)[] = clusters.map(() => null);
+    let output: ({ image: string; width: number; height: number; x: number; y: number } | null)[] = clusters.map(
+      () => null,
+    );
+    let summarizer = new ImageSummarizer({ regions: clusters });
 
-    for (let i = 0; i < rows.length; i++) {
-      let { bestImage, bestX, bestY, regionId } = rows[i];
+    let normId = (v: any) => (typeof v == "bigint" ? Number(v) : v);
+
+    // Stream the points from the database in chunks so we neither pull every
+    // column at once nor block the main thread for too long.
+    let start = 0;
+    let chunkSize = 10000;
+    while (true) {
+      let r = await coordinator.query(
+        SQL.Query.from(table)
+          .select({
+            x: SQL.sql`${SQL.column(x)}::DOUBLE`,
+            y: SQL.sql`${SQL.column(y)}::DOUBLE`,
+            importance: SQL.sql`${SQL.column(importance)}::DOUBLE`,
+            id: SQL.column(idColumn),
+          })
+          .offset(start)
+          .limit(chunkSize),
+      );
+      let ids = r.getChild("id").toArray();
+      summarizer.add({
+        x: r.getChild("x").toArray(),
+        y: r.getChild("y").toArray(),
+        importance: r.getChild("importance").toArray(),
+        id: ids,
+      });
+      if (ids.length < chunkSize) {
+        break;
+      }
+      start += chunkSize;
+    }
+    let winners = summarizer.summarize();
+    let winnerIds = Array.from(new Set(winners.filter((w) => w != null).map((w) => normId(w!.id))));
+    let idToImage = new Map<any, any>();
+    if (winnerIds.length > 0) {
+      let r = await coordinator.query(
+        SQL.Query.from(table)
+          .select({ id: SQL.column(idColumn), image: SQL.column(image) })
+          .where(
+            SQL.isIn(
+              SQL.column(idColumn),
+              winnerIds.map((v) => SQL.literal(v)),
+            ),
+          ),
+      );
+      for (let row of r) {
+        idToImage.set(normId(row.id), row.image);
+      }
+    }
+    for (let regionId = 0; regionId < winners.length; regionId++) {
+      let winner = winners[regionId];
+      if (winner == null) continue;
+      let bestImage = idToImage.get(normId(winner.id));
       if (bestImage == null) continue;
       let dataUrl = imageToDataUrl(bestImage);
       if (dataUrl == null) continue;
-      output[regionId] = { image: dataUrl, width: 0, height: 0, x: bestX, y: bestY };
+      output[regionId] = { image: dataUrl, width: 0, height: 0, x: winner.x, y: winner.y };
     }
-
     await Promise.all(
       output.map(async (item) => {
         if (item == null) {
@@ -453,7 +472,6 @@
         item.height = height * scale;
       }),
     );
-
     return output;
   }
 
