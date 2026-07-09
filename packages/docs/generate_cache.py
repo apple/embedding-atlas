@@ -9,6 +9,7 @@ import click
 import duckdb
 import pandas as pd
 import requests
+from embedding_atlas.pagerank import compute_pagerank_column
 from embedding_atlas.projection import compute_projection
 
 
@@ -30,6 +31,7 @@ def generate_dataset_embedding(
     inputs: str = "text",
     modality: str = "text",
     model: str | None = "all-MiniLM-L6-v2",
+    pagerank: bool = False,
     umap_args: dict = {},
 ):
     click.echo(click.style(f"Processing {url}", fg="cyan"))
@@ -58,6 +60,9 @@ def generate_dataset_embedding(
         model=model,
         umap_args=umap_args,
     )
+
+    if pagerank:
+        df["pagerank"] = compute_pagerank_column(df, neighbors="neighbors")
 
     df = df.drop(columns=inputs)
 

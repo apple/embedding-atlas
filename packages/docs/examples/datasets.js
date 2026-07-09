@@ -221,6 +221,7 @@ register("imagewoof", async (context) => {
       "inputs": "image",
       "modality": "image",
       "model": "facebook/dinov2-small-imagenet1k-1-layer",
+      "pagerank": true,
       "query": "SELECT row_number() OVER () AS id, image FROM data_frame",
       "output": "98c6a88a.parquet"
     })
@@ -236,7 +237,7 @@ register("imagewoof", async (context) => {
   await context.connection.query(`
     CREATE TABLE ${context.table} AS
     SELECT
-      dataset.image, (${labelArray})[dataset.label + 1] AS label,
+      dataset.image, (${labelArray})[dataset.label + 1] AS label, pagerank,
       x AS projection_x, y AS projection_y, neighbors
     FROM (SELECT image, label, row_number() OVER () AS __id__ FROM 'dataset.parquet') AS dataset
     LEFT JOIN 'precomputed.parquet' AS precomputed ON dataset.__id__ = precomputed.id
