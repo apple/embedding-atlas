@@ -177,6 +177,11 @@ def import_modules(names: list[str]):
     help="Model name for generating embeddings (e.g., 'all-MiniLM-L6-v2').",
 )
 @click.option(
+    "--device",
+    default=None,
+    help="PyTorch device for embedding models (e.g., 'cpu', 'cuda', 'mps', or 'cuda:0').",
+)
+@click.option(
     "--trust-remote-code",
     is_flag=True,
     default=False,
@@ -356,6 +361,7 @@ def main(
     split: list[str] | None,
     enable_projection: bool,
     model: str | None,
+    device: str | None,
     trust_remote_code: bool,
     batch_size: int | None,
     embedder: str | None,
@@ -453,6 +459,8 @@ def main(
 
             # Build embedder_args from CLI options
             embedder_args = {}
+            if device is not None:
+                embedder_args["device"] = device
             if trust_remote_code:
                 embedder_args["trust_remote_code"] = True
             if api_key is not None:
