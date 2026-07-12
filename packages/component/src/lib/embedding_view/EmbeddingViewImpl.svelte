@@ -101,6 +101,11 @@
   import { defaultCategoryColors } from "../colors.js";
   import type { EmbeddingRenderer } from "../renderer_interface.js";
   import {
+    initializeRendererWithFallback,
+    RENDERER_UNAVAILABLE_MESSAGE,
+    RENDERER_UNAVAILABLE_TITLE,
+  } from "../renderer_selection.js";
+  import {
     cacheKeyForObject,
     deepEquals,
     pointDistance,
@@ -220,6 +225,7 @@
   let canvas: HTMLCanvasElement | null = $state(null);
   let renderer: EmbeddingRenderer | null = $state(null);
   let webGPUPrompt: string | null = $state(null);
+  let rendererError: string | null = $state(null);
 
   let minimumDensity = $derived(config?.minimumDensity ?? 1 / 16);
   let userPointSize = $derived(config?.pointSize ?? null);
@@ -305,24 +311,26 @@
     }
   }
 
-  function setupWebGLRenderer(canvas: HTMLCanvasElement) {
-    webGPUPrompt = "WebGPU is unavailable. Falling back to WebGL.";
-
+  function setupWebGLRenderer(canvas: HTMLCanvasElement): boolean {
     let context: WebGL2RenderingContext | null;
 
-    function createRenderer() {
+    function createRenderer(): boolean {
       context = canvas.getContext("webgl2", { antialias: false });
       if (context == null) {
         console.error("Could not get WebGL 2 context");
-        return;
+        return false;
       }
       context.getExtension("EXT_color_buffer_float");
       context.getExtension("EXT_float_blend");
       context.getExtension("OES_texture_float_linear");
       renderer = new EmbeddingRendererWebGL2(context, pixelWidth, pixelHeight);
+      rendererError = null;
+      return true;
     }
 
-    createRenderer();
+    if (!createRenderer()) {
+      return false;
+    }
 
     canvas.addEventListener("webglcontextlost", () => {
       renderer?.destroy();
@@ -331,34 +339,27 @@
     });
 
     canvas.addEventListener("webglcontextrestored", () => {
-      createRenderer();
+      if (!createRenderer()) {
+        rendererError = RENDERER_UNAVAILABLE_MESSAGE;
+      }
     });
+
+    return true;
   }
 
-  function setupWebGPURenderer(canvas: HTMLCanvasElement) {
-    let canFallbackToWebGL = true;
-
-    async function createRenderer() {
+  async function setupWebGPURenderer(canvas: HTMLCanvasElement): Promise<boolean> {
+    async function createRenderer(): Promise<boolean> {
       let device = await requestWebGPUDevice();
       if (device == null) {
         console.error("Could not get WebGPU device");
-        if (canFallbackToWebGL) {
-          setupWebGLRenderer(canvas);
-        }
-        return;
+        return false;
       }
 
       let context = canvas.getContext("webgpu");
       if (context == null) {
         console.error("Could not get WebGPU canvas context");
-        if (canFallbackToWebGL) {
-          setupWebGLRenderer(canvas);
-        }
-        return;
+        return false;
       }
-
-      // Once we get the context, we can't fallback to setupWebGLRenderer.
-      canFallbackToWebGL = false;
 
       // Surface any WebGPU validation / shader errors that aren't captured by an
       // explicit error scope, so failures don't manifest as a silently blank canvas.
@@ -372,7 +373,9 @@
           renderer?.destroy();
           renderer = null;
           context.unconfigure();
-          await createRenderer();
+          if (!(await createRenderer())) {
+            rendererError = RENDERER_UNAVAILABLE_MESSAGE;
+          }
         }
       });
 
@@ -385,9 +388,11 @@
       });
 
       renderer = new EmbeddingRendererWebGPU(context, device, format, pixelWidth, pixelHeight);
+      rendererError = null;
+      return true;
     }
 
-    createRenderer();
+    return await createRenderer();
   }
 
   function syncViewportState(defaultViewportState: ViewportState | null) {
@@ -402,15 +407,25 @@
     if (canvas == null) {
       return;
     }
-    // Setup WebGPU renderer (with fallback to WebGL)
-    setupWebGPURenderer(canvas);
+    const mountedCanvas = canvas;
+    // Setup WebGPU renderer (with fallback to WebGL2)
+    initializeRendererWithFallback(
+      () => setupWebGPURenderer(mountedCanvas),
+      () => setupWebGLRenderer(mountedCanvas),
+    ).then((backend) => {
+      if (backend == "webgl2") {
+        webGPUPrompt = "WebGPU is unavailable. Using WebGL 2.";
+      } else if (backend == null) {
+        rendererError = RENDERER_UNAVAILABLE_MESSAGE;
+      }
+    });
 
     // Override toDataURL. This is because we must submit the render commands before
     // calling toDataURL, to ensure the current image is populated with contents.
-    let _toDataURL = canvas.toDataURL;
-    canvas.toDataURL = (...args) => {
+    let _toDataURL = mountedCanvas.toDataURL;
+    mountedCanvas.toDataURL = (...args) => {
       render();
-      return _toDataURL.apply(canvas, args);
+      return _toDataURL.apply(mountedCanvas, args);
     };
   });
 
@@ -860,6 +875,32 @@
       {/if}
     {/if}
   </svg>
+  {#if rendererError != null}
+    <div
+      role="alert"
+      aria-live="assertive"
+      style:position="absolute"
+      style:inset="0"
+      style:z-index="1"
+      style:display="flex"
+      style:align-items="center"
+      style:justify-content="center"
+      style:padding="24px"
+      style:font-family={resolvedTheme.fontFamily}
+      style:color={resolvedTheme.statusBarTextColor}
+    >
+      <div
+        style:max-width="520px"
+        style:padding="16px 20px"
+        style:border-radius="6px"
+        style:text-align="center"
+        style:background={resolvedTheme.statusBarBackgroundColor}
+      >
+        <div style:font-weight="600" style:margin-bottom="6px">{RENDERER_UNAVAILABLE_TITLE}</div>
+        <div>{rendererError}</div>
+      </div>
+    </div>
+  {/if}
   <!-- Tooltip popup -->
   {#if tooltip != null && renderer != null}
     {@const loc = pointLocation(tooltip.x, tooltip.y)}
@@ -878,7 +919,7 @@
   {#if resolvedTheme.statusBar}
     <StatusBar
       resolvedTheme={resolvedTheme}
-      statusMessage={statusMessage ?? webGPUPrompt}
+      statusMessage={statusMessage ?? (rendererError != null ? RENDERER_UNAVAILABLE_TITLE : webGPUPrompt)}
       distancePerPoint={1 / (pointLocation(1, 0).x - pointLocation(0, 0).x)}
       pointCount={data.x.length}
       selectionMode={selectionMode}
