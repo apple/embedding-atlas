@@ -110,6 +110,20 @@ For the algorithm that automatically produces clusters and labels in the embeddi
 }
 ```
 
+For sensemaking on UMAP's internal kNN graph:
+
+```bibtex
+@misc{chau2026dimensionality,
+  title={Dimensionality Reduction Meets Network Science: Sensemaking on UMAP's kNN Graph},
+  author={Duen Horng Chau and Donghao Ren and Fred Hohman and Dominik Moritz},
+  year={2026},
+  eprint={2607.08746},
+  archivePrefix={arXiv},
+  primaryClass={cs.HC},
+  url={https://arxiv.org/abs/2607.08746},
+}
+```
+
 ## Development
 
 For development instructions, please visit <https://apple.github.io/embedding-atlas/develop.html>, or check out `packages/docs/develop.md`.
