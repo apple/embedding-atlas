@@ -286,6 +286,13 @@ def import_modules(names: list[str]):
     "--umap-random-state", type=int, help="Random seed for reproducible UMAP results."
 )
 @click.option(
+    "--umap-n-components",
+    type=click.IntRange(2, 3),
+    default=None,
+    help="Number of output dimensions for UMAP (2 or 3, default: 2). Use 3 to compute a "
+    "3D projection and enable the navigable 3D embedding view.",
+)
+@click.option(
     "--table",
     "extra_tables",
     type=(str, str),
@@ -410,6 +417,7 @@ def main(
     umap_min_dist: float | None,
     umap_metric: str | None,
     umap_random_state: int | None,
+    umap_n_components: int | None,
     extra_tables: list[tuple[str, str]] | None,
     table_relations: list[tuple[str, str]] | None,
     static: str | None,
@@ -466,7 +474,10 @@ def main(
                 raise click.BadParameter(f"--table-relation {name!r}: {e}")
             additional_tables_meta[name]["relation"] = relation
 
-    if enable_projection and (x_column is None or y_column is None):
+    want_3d = umap_n_components == 3
+    if enable_projection and (
+        x_column is None or y_column is None or (want_3d and z_column is None)
+    ):
         # No x, y column selected, first see if text/image/vectors column is specified, if not, ask for it
         if text is None and image is None and audio is None and vector is None:
             selected_column = prompt_for_column(
@@ -483,6 +494,8 @@ def main(
             umap_args["random_state"] = umap_random_state
         if umap_metric is not None:
             umap_args["metric"] = umap_metric
+        if want_3d:
+            umap_args["n_components"] = 3
         # Run embedding and projection
         if (
             text is not None
@@ -495,6 +508,8 @@ def main(
 
             x_column = find_column_name(df.columns, "projection_x")
             y_column = find_column_name(df.columns, "projection_y")
+            if want_3d:
+                z_column = find_column_name(df.columns, "projection_z")
             if neighbors_column is None:
                 neighbors_column = find_column_name(df.columns, "__neighbors")
                 new_neighbors_column = neighbors_column
@@ -538,6 +553,7 @@ def main(
                 modality=modality,
                 x=x_column,
                 y=y_column,
+                z=z_column if want_3d else None,
                 neighbors=new_neighbors_column,
                 embedder=embedder,
                 model=model,

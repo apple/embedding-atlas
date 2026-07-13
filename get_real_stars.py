@@ -7,14 +7,19 @@ gaia_cat = lsdb.open_catalog(  # type: ignore
     columns=["ra", "dec", "phot_g_mean_mag", "parallax", "pmra", "pmdec"]
 )
 
-print("2. Performing a Cone Search (radius of 1.5 degrees) for a beautiful circular cluster...")
-# This selects stars in a perfect, natural circle around RA 49.0, Dec 3.7
-# (the center of the region you just downloaded)
-cone = gaia_cat.cone_search(ra=49.0, dec=3.7, radius_arcsec=5400)  # type: ignore
+print("2. Performing a Cone Search (radius of 9.0 degrees) for a large, richly-populated field...")
+# A much wider radius than before (9 degrees, ~350,000 raw stars vs. the earlier 4 degrees,
+# ~12,000 stars), so that after quality filtering and a smooth radial thinning (applied in
+# prepare_stars_parquet.py / convert_stars_to_json.py) we comfortably clear 100,000 displayed
+# stars with an organically fading density instead of a small, hard-edged patch.
+cone = gaia_cat.cone_search(ra=49.0, dec=3.7, radius_arcsec=32400)  # type: ignore
 
 print("3. Fetching the star data...")
-# We fetch 10,000 stars from this circular region
-df = cone.head(n=10000)  # type: ignore
+# Fetch every star in the cone (not `.head(n)`, which would only return the first N rows
+# in HATS/LSDB's internal HEALPix partition order - the first few sky patches, not a
+# representative spatial spread of the whole cone). Taking the full result guarantees
+# every part of the cone is represented, regardless of partitioning.
+df = cone.compute()  # type: ignore
 
 print("4. Filtering and classifying the stars...")
 # Rename the columns so they look clean and readable in the dashboard
@@ -38,6 +43,12 @@ def get_star_class(mag):
 
 df["star_class"] = df["brightness_magnitude"].apply(get_star_class)
 
+# LSDB adds an internal `_healpix_29` spatial-partitioning index column whose int64 values
+# exceed JavaScript's safe integer range (2^53), which crashes the viewer's Arrow/BigInt-to-
+# Number conversion when rendering the data table. It's an internal index, not meaningful
+# application data, so drop it rather than carry it through to the frontend.
+df = df.drop(columns=["_healpix_29"], errors="ignore")
+
 # Save the dataset to a Parquet file
 df.to_parquet("real_stars.parquet")
-print("5. Success! Saved 10,000 real stars to 'real_stars.parquet'!")
+print(f"5. Success! Saved {len(df)} real stars to 'real_stars.parquet'!")

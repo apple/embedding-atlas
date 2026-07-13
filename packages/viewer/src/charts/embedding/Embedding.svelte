@@ -74,6 +74,14 @@
   let highlightStore = isolatedWritable(context.highlight);
 
   let categoryColumn = $derived(spec.data.category);
+  // 3D whenever the chart has a Z column, unless the user has explicitly toggled back to 2D
+  // (a flat top-down projection of the same data) via the button below the view.
+  let is3D = $derived(spec.data.z != null && chartState.displayMode !== "2d");
+  // Reserve space below the view for the 2D/3D toggle button, so it sits below the rendered
+  // point cloud (not overlapping the view's own status bar) rather than eating into the fixed
+  // chart height allocated by the layout.
+  const toggleBarHeight = 32;
+  let viewHeight = $derived(spec.data.z != null ? Math.max((height ?? 800) - toggleBarHeight, 100) : height);
 
   let categoryLegend: EmbeddingLegend | null = $state.raw(null);
   let totalPointCount: number | null = $state.raw(null);
@@ -254,27 +262,33 @@
   }
 </script>
 
-<div class="relative bg-white dark:bg-black">
-  {#if spec.data.z != null}
+<div class="flex flex-col" style:height="{height}px">
+<div class="relative bg-white dark:bg-black" style:height="{viewHeight}px">
+  {#if spec.data.z != null && is3D}
     <EmbeddingView3DMosaic
       width={width}
-      height={height}
+      height={viewHeight}
       coordinator={context.coordinator}
-      table={context.table}
-      filter={context.filter}
-      identifier={context.id}
+      table={dataTable}
+      filter={filter}
+      rangeSelection={filter}
+      identifier={rowId}
       x={spec.data.x}
       y={spec.data.y}
       z={spec.data.z}
       category={categoryLegend?.indexColumn}
       categoryColors={categoryLegend?.legend.map((x) => x.color) ?? [theme.embeddingColor]}
-      additionalFields={Object.fromEntries(context.columns.map((c) => [c.name, c.name]))}
+      additionalFields={isDefaultTable
+        ? Object.fromEntries((context.tables[context.table]?.columns ?? []).map((c) => [c.name, c.name]))
+        : {}}
       pointSize={spec.pointSize}
       downsampleMaxPoints={spec.downsampleMaxPoints}
       selection={selection}
       onSelection={(points: DataPoint[] | null) => {
         selection = points;
-        highlightStore.set(points?.map((p) => p.identifier) ?? null);
+        if (isDefaultTable) {
+          highlightStore.set(points?.map((p) => p.identifier) ?? null);
+        }
       }}
       onTooltip={(v: DataPoint | null) => {
         tooltip = v;
@@ -283,7 +297,7 @@
   {:else}
   <EmbeddingViewMosaic
     width={width}
-    height={height}
+    height={viewHeight}
     coordinator={context.coordinator}
     table={dataTable}
     filter={filter}
@@ -502,4 +516,19 @@
       </PopupButton>
     </div>
   </div>
+</div>
+{#if spec.data.z != null}
+  <div class="flex justify-center items-center py-1.5 bg-white dark:bg-black border-t border-slate-200 dark:border-slate-800">
+    <Button
+      label={is3D ? "Switch to 2D" : "Switch to 3D"}
+      title={is3D
+        ? "Show a flat top-down projection of this data (X/Y only)"
+        : "Show a navigable 3D point cloud (this chart has a Z column)"}
+      onClick={() =>
+        onStateChange((draft) => {
+          draft.displayMode = is3D ? "2d" : "3d";
+        })}
+    />
+  </div>
+{/if}
 </div>

@@ -22,6 +22,7 @@ export interface EmbeddingView3DProps {
   downsampleMaxPoints?: number | null;
   activeFilterHidden?: boolean;
   showStatusBar?: boolean;
+  onRangeSelect?: ((indices: number[]) => void) | null;
 }
 
 export class EmbeddingView3D {

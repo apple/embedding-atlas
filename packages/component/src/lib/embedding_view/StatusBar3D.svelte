@@ -10,9 +10,18 @@
      *  drives a non-silent status-bar badge instead of leaving the active filter invisible. */
     activeFilterHidden?: boolean;
     onResetCamera: () => void;
+    selectionMode?: "marquee" | "lasso" | "none";
+    onSelectionMode?: (mode: "marquee" | "lasso" | "none") => void;
   }
 
-  let { pointCount, totalCount, activeFilterHidden = false, onResetCamera }: Props = $props();
+  let {
+    pointCount,
+    totalCount,
+    activeFilterHidden = false,
+    onResetCamera,
+    selectionMode = "none",
+    onSelectionMode,
+  }: Props = $props();
 </script>
 
 <div
@@ -42,6 +51,20 @@
     style:pointer-events="auto"
   >
     <Button icon="reset" title="Reset camera to default view" onClick={onResetCamera} />
+    {#if onSelectionMode}
+      <Button
+        icon="marquee"
+        active={selectionMode == "marquee"}
+        title="Toggle rectangle selection mode (drag to select points; disables camera orbit while dragging). This is a one-shot snapshot selection, not a persistent, re-evaluable region like 2D's lasso."
+        onClick={() => onSelectionMode(selectionMode == "marquee" ? "none" : "marquee")}
+      />
+      <Button
+        icon="lasso"
+        active={selectionMode == "lasso"}
+        title="Toggle lasso selection mode (drag to select points; disables camera orbit while dragging). This is a one-shot snapshot selection, not a persistent, re-evaluable region like 2D's lasso."
+        onClick={() => onSelectionMode(selectionMode == "lasso" ? "none" : "lasso")}
+      />
+    {/if}
     <span>
       {#if pointCount < totalCount}
         {pointCount.toLocaleString()} / {totalCount.toLocaleString()} points (downsampled)

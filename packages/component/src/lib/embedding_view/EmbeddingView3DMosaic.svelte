@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { coordinator as defaultCoordinator, makeClient } from "@uwdata/mosaic-core";
+  import { coordinator as defaultCoordinator, makeClient, type MosaicClient } from "@uwdata/mosaic-core";
   import * as SQL from "@uwdata/mosaic-sql";
 
   import EmbeddingView3D from "./EmbeddingView3D.svelte";
@@ -32,6 +32,11 @@
     /** Approximate maximum number of points to render at once; see `EmbeddingView3D`. */
     downsampleMaxPoints?: number | null;
     showStatusBar?: boolean;
+    /** A Mosaic `Selection` to update when the user completes a marquee/lasso drag (see
+     *  `EmbeddingView3D`'s `onRangeSelect` doc comment - this is a one-shot snapshot, not a
+     *  persistent geometric region). The predicate prioritizes the configured `identifier`
+     *  column, falling back to coordinate equality when none is configured. */
+    rangeSelection?: Selection | null;
   }
 
   let {
@@ -53,7 +58,10 @@
     onTooltip = null,
     downsampleMaxPoints = 500000,
     showStatusBar = true,
+    rangeSelection = null,
   }: Props = $props();
+
+  let mosaicClient: MosaicClient | null = $state.raw(null);
 
   let xData: Float32Array<ArrayBuffer> = $state.raw(new Float32Array());
   let yData: Float32Array<ArrayBuffer> = $state.raw(new Float32Array());
@@ -65,11 +73,31 @@
     new DataPointQuery(coordinator, { table, x, y, category, identifier, additionalFields }),
   );
 
-  let activeFilterHidden = $derived(filter != null && filter.clauses.length > 0);
+  // A Mosaic `Selection`'s `.clauses` is a plain mutable array on a class instance, not a Svelte
+  // reactive value - `$derived` would only re-run when the `filter`/`rangeSelection` prop
+  // *references* change, never when their internal clauses are updated in place. Selections emit
+  // a "value" event on every update (the same event `EmbeddingViewMosaic.svelte`'s tooltip/
+  // selection effects already listen for), so mirror that pattern here.
+  let activeFilterHidden = $state.raw(false);
+
+  $effect(() => {
+    function updateActiveFilterHidden() {
+      activeFilterHidden =
+        (filter != null && filter.clauses.length > 0) ||
+        (rangeSelection != null && rangeSelection.clauses.length > 0);
+    }
+    updateActiveFilterHidden();
+    filter?.addEventListener("value", updateActiveFilterHidden);
+    rangeSelection?.addEventListener("value", updateActiveFilterHidden);
+    return () => {
+      filter?.removeEventListener("value", updateActiveFilterHidden);
+      rangeSelection?.removeEventListener("value", updateActiveFilterHidden);
+    };
+  });
 
   $effect(() => {
     let deps = { coordinator, source: { table, x, y, z, category, identifier } };
-    let client: { destroy: () => void } | null = null;
+    let client: MosaicClient | null = null;
 
     async function initClient() {
       let source = deps.source;
@@ -100,11 +128,13 @@
           identifierData = idColumn != null ? idColumn.toArray() : null;
         },
       });
+      mosaicClient = client;
     }
 
     initClient();
 
     return () => {
+      mosaicClient = null;
       client?.destroy();
     };
   });
@@ -152,6 +182,40 @@
       fields: {},
     });
   }
+
+  const MAX_RANGE_SELECT_ROWS = 2000;
+
+  function handleRangeSelect(indices: number[]) {
+    if (rangeSelection == null || mosaicClient == null) return;
+    if (indices.length === 0) {
+      rangeSelection.update({ source: mosaicClient, clients: new Set([mosaicClient]), predicate: null, value: null });
+      return;
+    }
+    if (indices.length > MAX_RANGE_SELECT_ROWS) {
+      console.warn(
+        `3D marquee/lasso selection matched ${indices.length} points, more than the ${MAX_RANGE_SELECT_ROWS}-row ` +
+          `cap for a single filter predicate - only the first ${MAX_RANGE_SELECT_ROWS} are included.`,
+      );
+      indices = indices.slice(0, MAX_RANGE_SELECT_ROWS);
+    }
+
+    let predicate =
+      identifier != null && identifierData != null
+        ? SQL.isIn(
+            SQL.column(identifier),
+            indices.map((i) => SQL.literal(identifierData![i])),
+          )
+        : SQL.or(
+            ...indices.map((i) =>
+              SQL.and(
+                SQL.eq(SQL.cast(SQL.column(x), "DOUBLE"), SQL.literal(xData[i])),
+                SQL.eq(SQL.cast(SQL.column(y), "DOUBLE"), SQL.literal(yData[i])),
+                SQL.eq(SQL.cast(SQL.column(z), "DOUBLE"), SQL.literal(zData[i])),
+              ),
+            ),
+          );
+    rangeSelection.update({ source: mosaicClient, clients: new Set([mosaicClient]), predicate, value: indices });
+  }
 </script>
 
 <EmbeddingView3D
@@ -166,4 +230,5 @@
   downsampleMaxPoints={downsampleMaxPoints}
   activeFilterHidden={activeFilterHidden}
   showStatusBar={showStatusBar}
+  onRangeSelect={rangeSelection != null ? handleRangeSelect : null}
 />

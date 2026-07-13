@@ -45,4 +45,8 @@ export interface EmbeddingState {
    * Coordinates should be in data units.
    */
   brush?: Rectangle | Point[];
+  /** Overrides the default display mode. When `data.z` is set, the view renders in 3D unless
+   *  this is explicitly set to `"2d"`; when `data.z` is unset, this has no effect (there's no
+   *  3D data to render). */
+  displayMode?: "2d" | "3d";
 }

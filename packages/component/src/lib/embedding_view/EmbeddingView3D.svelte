@@ -40,6 +40,13 @@
     activeFilterHidden?: boolean;
     /** Set to false to hide the built-in status bar (camera reset, point count, filter badge). */
     showStatusBar?: boolean;
+    /** Called with the row indices (into `data`) of every currently-rendered point that falls
+     *  within a completed marquee/lasso drag, in screen space. Unlike 2D's lasso/marquee, this is
+     *  a one-shot snapshot at the moment the drag ends, not a persistent, re-evaluable geometric
+     *  region (a 3D camera can rotate, so a screen-space outline has no stable meaning over
+     *  time) - see `activeFilterHidden`, which callers should set once they turn this into an
+     *  active filter, so the status bar can indicate it non-silently. */
+    onRangeSelect?: ((indices: number[]) => void) | null;
   }
 
   let {
@@ -54,7 +61,15 @@
     downsampleMaxPoints = 500000,
     activeFilterHidden = false,
     showStatusBar = true,
+    onRangeSelect = null,
   }: Props = $props();
+
+  let selectionMode: "marquee" | "lasso" | "none" = $state.raw("none");
+  // The in-progress drag path, in canvas-local pixel coordinates (not clientX/Y), so the SVG
+  // overlay and the final containment test both work in the same coordinate space regardless of
+  // where the canvas sits on the page.
+  let dragPoints: { x: number; y: number }[] = $state.raw([]);
+  let isDragSelecting = $state.raw(false);
 
   let canvas: HTMLCanvasElement | null = $state(null);
   let scene: THREE.Scene | null = null;
@@ -117,9 +132,20 @@
     });
 
     renderer.domElement.addEventListener("pointerdown", (e) => {
+      if (selectionMode !== "none" && canvas && controls) {
+        isDragSelecting = true;
+        controls.enabled = false;
+        let rect = canvas.getBoundingClientRect();
+        dragPoints = [{ x: e.clientX - rect.left, y: e.clientY - rect.top }];
+        return;
+      }
       pointerDownPos = { x: e.clientX, y: e.clientY };
     });
     renderer.domElement.addEventListener("pointerup", (e) => {
+      if (isDragSelecting) {
+        finalizeRangeSelection();
+        return;
+      }
       if (pointerDownPos == null) return;
       let dx = e.clientX - pointerDownPos.x;
       let dy = e.clientY - pointerDownPos.y;
@@ -130,6 +156,17 @@
       handlePointerSelect(e, onPointClick);
     });
     renderer.domElement.addEventListener("pointermove", (e) => {
+      if (isDragSelecting && canvas) {
+        let rect = canvas.getBoundingClientRect();
+        let p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        if (selectionMode === "marquee") {
+          // Only the two corners are needed for a rectangle.
+          dragPoints = [dragPoints[0], p];
+        } else {
+          dragPoints = [...dragPoints, p];
+        }
+        return;
+      }
       let now = performance.now();
       if (now - lastHoverTime < 60) return;
       lastHoverTime = now;
@@ -139,10 +176,70 @@
       onPointHover?.(index);
     });
     renderer.domElement.addEventListener("pointerleave", () => {
+      if (isDragSelecting) {
+        finalizeRangeSelection();
+      }
       hoverIndex = null;
       hoverScreenPos = null;
       onPointHover?.(null);
     });
+  }
+
+  /** Project a 3D data point to canvas-local pixel coordinates, or null if it's behind the
+   *  camera (NDC z outside [-1, 1]). */
+  function projectToScreen(x: number, y: number, z: number): { x: number; y: number } | null {
+    if (!camera) return null;
+    let v = new THREE.Vector3(x, y, z).project(camera);
+    if (v.z < -1 || v.z > 1) return null;
+    return { x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height };
+  }
+
+  function pointInPolygon(px: number, py: number, polygon: { x: number; y: number }[]): boolean {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      let xi = polygon[i].x,
+        yi = polygon[i].y;
+      let xj = polygon[j].x,
+        yj = polygon[j].y;
+      let intersects = yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi;
+      if (intersects) inside = !inside;
+    }
+    return inside;
+  }
+
+  /** At drag-end, test every currently-rendered point (respecting the active downsample subset,
+   *  if any) against the completed marquee rectangle/lasso polygon in screen space, and report
+   *  the matching row indices. A one-shot snapshot, not a persistent region - see `onRangeSelect`
+   *  doc comment. */
+  function finalizeRangeSelection() {
+    isDragSelecting = false;
+    if (controls) controls.enabled = true;
+    let path = dragPoints;
+    dragPoints = [];
+    if (path.length < 2 || onRangeSelect == null) return;
+
+    let testPoint: (sx: number, sy: number) => boolean;
+    if (selectionMode === "marquee") {
+      let xMin = Math.min(path[0].x, path[path.length - 1].x);
+      let xMax = Math.max(path[0].x, path[path.length - 1].x);
+      let yMin = Math.min(path[0].y, path[path.length - 1].y);
+      let yMax = Math.max(path[0].y, path[path.length - 1].y);
+      testPoint = (sx, sy) => sx >= xMin && sx <= xMax && sy >= yMin && sy <= yMax;
+    } else {
+      if (path.length < 3) return;
+      testPoint = (sx, sy) => pointInPolygon(sx, sy, path);
+    }
+
+    let count = downsampleIndices != null ? downsampleIndices.length : data.x.length;
+    let matched: number[] = [];
+    for (let i = 0; i < count; i++) {
+      let rowIndex = downsampleIndices != null ? downsampleIndices[i] : i;
+      let screen = projectToScreen(data.x[rowIndex], data.y[rowIndex], data.z[rowIndex]);
+      if (screen != null && testPoint(screen.x, screen.y)) {
+        matched.push(rowIndex);
+      }
+    }
+    onRangeSelect(matched);
   }
 
   /** Resolve the row index (into `data`) of the point under the given pointer event, accounting
@@ -221,7 +318,16 @@
     // `pointSize` is a world-space size (same units as the data), not a screen-pixel size, so it
     // must scale with the data's extent: a fixed pixel-ish default would render as either
     // invisible specks or giant overlapping squares depending on the data's own coordinate range.
-    let size = pointSize ?? radius * 0.02;
+    // Scaling purely off the bounding radius isn't enough on its own, though: the camera
+    // auto-fits to that same radius, so a wider spread alone doesn't reduce how "solid" the
+    // cloud looks - the *count* matters too. Basing the default on the average spacing between
+    // points (approximate bounding-sphere volume divided by point count) keeps points legible
+    // and visibly separated regardless of how sparse or dense a given dataset is, rather than a
+    // fixed fraction of the radius that looks fine for one dataset and like a solid blob for
+    // another with more points packed into the same space.
+    let volume = (4 / 3) * Math.PI * radius ** 3;
+    let avgSpacing = data.x.length > 0 ? Math.cbrt(volume / data.x.length) : radius * 0.1;
+    let size = pointSize ?? avgSpacing * 0.18;
     currentPointSize = size;
 
     let material = new THREE.PointsMaterial({
@@ -457,7 +563,37 @@
       totalCount={totalCount}
       activeFilterHidden={activeFilterHidden}
       onResetCamera={resetCamera}
+      selectionMode={onRangeSelect != null ? selectionMode : "none"}
+      onSelectionMode={onRangeSelect != null ? (mode) => (selectionMode = mode) : undefined}
     />
+  {/if}
+  {#if isDragSelecting && dragPoints.length > 1}
+    <svg
+      style:position="absolute"
+      style:left="0"
+      style:top="0"
+      style:width="{width}px"
+      style:height="{height}px"
+      style:pointer-events="none"
+    >
+      {#if selectionMode === "marquee"}
+        {@const x0 = Math.min(dragPoints[0].x, dragPoints[1].x)}
+        {@const y0 = Math.min(dragPoints[0].y, dragPoints[1].y)}
+        {@const w = Math.abs(dragPoints[1].x - dragPoints[0].x)}
+        {@const h = Math.abs(dragPoints[1].y - dragPoints[0].y)}
+        <rect
+          x={x0}
+          y={y0}
+          width={w}
+          height={h}
+          fill="rgba(76,120,168,0.2)"
+          stroke="rgb(76,120,168)"
+          stroke-width="1"
+        />
+      {:else}
+        <polygon points={dragPoints.map((p) => `${p.x},${p.y}`).join(" ")} fill="rgba(76,120,168,0.2)" stroke="rgb(76,120,168)" stroke-width="1" />
+      {/if}
+    </svg>
   {/if}
   {#if hoverIndex != null && hoverScreenPos != null}
     <div

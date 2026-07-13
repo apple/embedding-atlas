@@ -26,6 +26,7 @@ export interface EmbeddingView3DMosaicProps {
   onTooltip?: ((value: DataPoint | null) => void) | null;
   downsampleMaxPoints?: number | null;
   showStatusBar?: boolean;
+  rangeSelection?: Selection | null;
 }
 
 export class EmbeddingView3DMosaic {
