@@ -237,6 +237,12 @@ def import_modules(names: list[str]):
     help="Column containing pre-computed Y coordinates for the embedding view.",
 )
 @click.option(
+    "--z",
+    "z_column",
+    help="Column containing pre-computed Z coordinates for the embedding view. "
+    "When specified, the embedding view renders as a navigable 3D point cloud.",
+)
+@click.option(
     "--neighbors",
     "neighbors_column",
     help='Column containing pre-computed nearest neighbors in format: {"ids": [n1, n2, ...], "distances": [d1, d2, ...]}. IDs should be zero-based row indices.',
@@ -395,6 +401,7 @@ def main(
     max_concurrency: int | None,
     x_column: str | None,
     y_column: str | None,
+    z_column: str | None,
     neighbors_column: str | None,
     pagerank_column: str | None,
     query: str | None,
@@ -575,6 +582,7 @@ def main(
         row_id=id_column,
         x=x_column,
         y=y_column,
+        z=z_column,
         neighbors=neighbors_column,
         importance=pagerank_column,
         text=text,

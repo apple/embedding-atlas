@@ -27,8 +27,9 @@ export interface EmbeddingAtlasProps {
     /** The column for unique row identifiers. */
     id: string;
 
-    /** The X and Y columns for the embedding projection view. */
-    projection?: { x: string; y: string } | null;
+    /** The X, Y, and (optionally) Z columns for the embedding projection view.
+     *  When `z` is specified, the embedding view renders as a navigable 3D point cloud. */
+    projection?: { x: string; y: string; z?: string } | null;
 
     /**
      * The column for pre-computed nearest neighbors.

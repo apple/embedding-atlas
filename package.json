@@ -23,9 +23,11 @@
   },
   "devDependencies": {
     "prettier": "^3.8.1",
-    "prettier-plugin-svelte": "^4.0.0"
+    "prettier-plugin-svelte": "^4.0.0",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@types/three": "^0.184.1",
     "svelte": "^5.54.1"
   }
 }

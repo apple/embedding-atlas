@@ -58,6 +58,7 @@
     "vite-plugin-wasm": "^3.6.0"
   },
   "dependencies": {
+    "three": "^0.184.0",
     "vitefu": "^1.1.2"
   }
 }
