@@ -1,12 +1,49 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import * as THREE from "three";
-  import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
   import { defaultCategoryColors } from "../colors.js";
   import { pickVisibleIndices } from "./downsample_3d.js";
   import StatusBar3D from "./StatusBar3D.svelte";
+
+  // three.js is loaded lazily (see `loadThree()`/`onMount` below), not statically imported: it's
+  // a large dependency that 2D-only users of this package should never have to download. These
+  // are type-only references (erased at compile time, zero runtime/bundle cost) paired with
+  // `!`-asserted runtime holders that `loadThree()` populates before anything else in this file
+  // touches them - every value usage below is inside functions only ever called from `initScene()`
+  // onward, and `initScene()` only runs after `loadThree()` resolves.
+  type ThreeModule = typeof import("three");
+  type OrbitControlsClass = typeof import("three/examples/jsm/controls/OrbitControls.js").OrbitControls;
+  type OrbitControlsInstance = InstanceType<OrbitControlsClass>;
+  // `THREE.X` only works as a *value* expression (e.g. `new THREE.Scene()`) once `THREE` below is
+  // a real object - as a *type* annotation (e.g. `let scene: THREE.Scene`), `THREE` would need to
+  // be a type/namespace, which a plain `let` value declaration doesn't provide. These indexed-access
+  // aliases cover every three.js type actually used as an annotation in this file.
+  type Scene3D = InstanceType<ThreeModule["Scene"]>;
+  type Camera3D = InstanceType<ThreeModule["PerspectiveCamera"]>;
+  type Renderer3D = InstanceType<ThreeModule["WebGLRenderer"]>;
+  type Points3D = InstanceType<ThreeModule["Points"]>;
+  type BufferGeometry3D = InstanceType<ThreeModule["BufferGeometry"]>;
+  type Raycaster3D = InstanceType<ThreeModule["Raycaster"]>;
+  type Vector3D = InstanceType<ThreeModule["Vector3"]>;
+  type Material3D = InstanceType<ThreeModule["Material"]>;
+
+  let THREE!: ThreeModule;
+  let OrbitControlsCtor!: OrbitControlsClass;
+
+  let threeLoadPromise: Promise<void> | null = null;
+  function loadThree(): Promise<void> {
+    if (threeLoadPromise) return threeLoadPromise;
+    threeLoadPromise = Promise.all([
+      import("three"),
+      import("three/examples/jsm/controls/OrbitControls.js"),
+    ]).then(([threeModule, controlsModule]) => {
+      THREE = threeModule;
+      OrbitControlsCtor = controlsModule.OrbitControls;
+      raycaster = new THREE.Raycaster();
+    });
+    return threeLoadPromise;
+  }
 
   interface Props {
     data: {
@@ -72,15 +109,15 @@
   let isDragSelecting = $state.raw(false);
 
   let canvas: HTMLCanvasElement | null = $state(null);
-  let scene: THREE.Scene | null = null;
-  let camera: THREE.PerspectiveCamera | null = null;
-  let renderer: THREE.WebGLRenderer | null = null;
-  let controls: OrbitControls | null = null;
-  let pointCloud: THREE.Points | null = null;
-  let pointGeometry: THREE.BufferGeometry | null = null;
-  let highlightPoints: THREE.Points | null = null;
+  let scene: Scene3D | null = null;
+  let camera: Camera3D | null = null;
+  let renderer: Renderer3D | null = null;
+  let controls: OrbitControlsInstance | null = null;
+  let pointCloud: Points3D | null = null;
+  let pointGeometry: BufferGeometry3D | null = null;
+  let highlightPoints: Points3D | null = null;
   let animationId: number | null = null;
-  let raycaster = new THREE.Raycaster();
+  let raycaster!: Raycaster3D; // assigned in loadThree()
   let pointerDownPos: { x: number; y: number } | null = null;
   let currentPointSize = 1;
   let renderedCount = $state.raw(0);
@@ -95,7 +132,7 @@
   // The camera fit computed the first time non-empty data arrives, used by the "reset camera"
   // control. Deliberately captured only once (not re-applied on every data/filter change), so
   // that e.g. narrowing an active filter doesn't yank the user's current view back to a fit.
-  let defaultCameraState: { target: THREE.Vector3; position: THREE.Vector3 } | null = null;
+  let defaultCameraState: { target: Vector3D; position: Vector3D } | null = null;
   let didInitialFit = false;
 
   // Idle-scheduled, cancellable downsampling (see downsample_3d.ts). `downsampleGeneration` is
@@ -116,7 +153,7 @@
     camera = new THREE.PerspectiveCamera(60, width / height, 0.01, 1e6);
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    controls = new OrbitControls(camera, renderer.domElement);
+    controls = new OrbitControlsCtor(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
 
@@ -304,7 +341,7 @@
     if (pointCloud) {
       scene.remove(pointCloud);
       pointCloud.geometry.dispose();
-      (pointCloud.material as THREE.Material).dispose();
+      (pointCloud.material as Material3D).dispose();
       pointCloud = null;
     }
 
@@ -413,7 +450,7 @@
     if (highlightPoints) {
       scene.remove(highlightPoints);
       highlightPoints.geometry.dispose();
-      (highlightPoints.material as THREE.Material).dispose();
+      (highlightPoints.material as Material3D).dispose();
       highlightPoints = null;
     }
     if (selectedIndices == null || selectedIndices.length === 0) return;
@@ -448,7 +485,7 @@
 
   let cameraAnimationId: number | null = null;
 
-  function animateCameraTo(target: THREE.Vector3, position: THREE.Vector3, duration = 700) {
+  function animateCameraTo(target: Vector3D, position: Vector3D, duration = 700) {
     if (!camera || !controls) return;
     if (cameraAnimationId != null) cancelAnimationFrame(cameraAnimationId);
     let startTarget = controls.target.clone();
@@ -502,10 +539,12 @@
   }
 
   onMount(() => {
-    initScene();
-    updatePointCloud();
-    resize();
-    animate();
+    loadThree().then(() => {
+      initScene();
+      updatePointCloud();
+      resize();
+      animate();
+    });
   });
 
   onDestroy(() => {
@@ -519,11 +558,11 @@
     controls?.dispose();
     if (pointCloud) {
       pointCloud.geometry.dispose();
-      (pointCloud.material as THREE.Material).dispose();
+      (pointCloud.material as Material3D).dispose();
     }
     if (highlightPoints) {
       highlightPoints.geometry.dispose();
-      (highlightPoints.material as THREE.Material).dispose();
+      (highlightPoints.material as Material3D).dispose();
     }
     renderer?.dispose();
   });

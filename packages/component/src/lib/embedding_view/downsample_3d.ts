@@ -8,14 +8,27 @@
 // the visible count in advance). Processing is chunked across idle callbacks so a large dataset
 // doesn't block hover/pan/zoom, and is cancellable (checked between every chunk) so a downsample
 // pass started before the user moves the camera again doesn't finish and clobber newer results.
+//
+// Deliberately has no dependency on three.js: `frustum` only needs a `containsPoint` method
+// (a real `THREE.Frustum` satisfies this structurally, no cast needed), so this module stays a
+// pure, independently-testable algorithm and doesn't pull three.js into any bundle that imports
+// it - see EmbeddingView3D.svelte's `loadThree()` for why that matters.
 
-import * as THREE from "three";
+export interface Point3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface FrustumLike {
+  containsPoint(point: Point3): boolean;
+}
 
 export interface PickVisibleIndicesOptions {
   /** Interleaved x,y,z positions, length `count * 3`. */
   positions: Float32Array;
   count: number;
-  frustum: THREE.Frustum;
+  frustum: FrustumLike;
   maxPoints: number;
   /** Checked between chunks; when true, processing stops without calling `onComplete`. */
   isStale: () => boolean;
@@ -38,7 +51,7 @@ export function pickVisibleIndices(options: PickVisibleIndicesOptions): void {
   let reservoirLength = 0;
   let visibleSeen = 0;
   let i = 0;
-  let point = new THREE.Vector3();
+  let point: Point3 = { x: 0, y: 0, z: 0 };
 
   function processChunk(deadline: { timeRemaining: () => number }) {
     if (isStale()) return;
@@ -48,7 +61,9 @@ export function pickVisibleIndices(options: PickVisibleIndicesOptions): void {
     // budget, so a single slice can't itself cause a long frame stall.
     let sliceEnd = end;
     while (i < sliceEnd) {
-      point.set(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+      point.x = positions[i * 3];
+      point.y = positions[i * 3 + 1];
+      point.z = positions[i * 3 + 2];
       if (frustum.containsPoint(point)) {
         if (reservoirLength < maxPoints) {
           reservoir[reservoirLength++] = i;

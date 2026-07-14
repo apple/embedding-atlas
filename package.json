@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "build": "./scripts/build.sh",
-    "test:js": "npm run test -w @embedding-atlas/density-clustering -w @embedding-atlas/umap-wasm -w @embedding-atlas/utils -w @embedding-atlas/viewer",
+    "test:js": "npm run test -w @embedding-atlas/density-clustering -w @embedding-atlas/umap-wasm -w @embedding-atlas/utils -w @embedding-atlas/component -w @embedding-atlas/viewer",
     "test:rust": "cargo test --workspace",
     "test:python": "cd packages/backend && uv run pytest",
     "test": "npm run test:js && npm run test:python && npm run test:rust",
