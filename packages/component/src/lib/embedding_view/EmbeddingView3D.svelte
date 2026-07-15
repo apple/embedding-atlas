@@ -27,9 +27,30 @@
   type Raycaster3D = InstanceType<ThreeModule["Raycaster"]>;
   type Vector3D = InstanceType<ThreeModule["Vector3"]>;
   type Material3D = InstanceType<ThreeModule["Material"]>;
+  type CanvasTexture3D = InstanceType<ThreeModule["CanvasTexture"]>;
 
   let THREE!: ThreeModule;
   let OrbitControlsCtor!: OrbitControlsClass;
+  let circleTexture!: CanvasTexture3D;
+
+  // Points render as circles rather than the WebGL default (hard-edged squares) via a small
+  // soft-edged disc drawn to an offscreen canvas and used as the point sprite's `map`, matching
+  // the anti-aliased look of the 2D view's points.
+  function makeCircleTexture(): CanvasTexture3D {
+    let size = 64;
+    let canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    let ctx = canvas.getContext("2d")!;
+    let gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    gradient.addColorStop(0, "rgba(255,255,255,1)");
+    gradient.addColorStop(0.8, "rgba(255,255,255,1)");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    let texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+  }
 
   let threeLoadPromise: Promise<void> | null = null;
   function loadThree(): Promise<void> {
@@ -41,6 +62,7 @@
       THREE = threeModule;
       OrbitControlsCtor = controlsModule.OrbitControls;
       raycaster = new THREE.Raycaster();
+      circleTexture = makeCircleTexture();
     });
     return threeLoadPromise;
   }
@@ -373,6 +395,8 @@
       sizeAttenuation: true,
       transparent: true,
       opacity: 0.9,
+      map: circleTexture,
+      alphaTest: 0.1,
     });
     pointGeometry = geometry;
     pointCloud = new THREE.Points(geometry, material);
@@ -471,6 +495,8 @@
       transparent: true,
       opacity: 0.95,
       depthTest: false,
+      map: circleTexture,
+      alphaTest: 0.1,
     });
     highlightPoints = new THREE.Points(geometry, material);
     highlightPoints.renderOrder = 999;
