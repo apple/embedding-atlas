@@ -5,6 +5,7 @@ import type { Coordinator } from "@uwdata/mosaic-core";
 import { columnDescriptions, distinctCount, isFloatingPointDBType } from "../utils/database.js";
 import type { BuiltinChartSpec } from "./chart_types.js";
 import type { EmbeddingSpec } from "./embedding/types.js";
+import type { FeaturesListSpec } from "./features/types.js";
 import type { InstancesSpec } from "./instances/types.js";
 import type { ChartSpec } from "./spec/spec.js";
 
@@ -31,9 +32,10 @@ export async function defaultCharts(options: {
   table: string;
   id: string;
   projection?: { x: string; y: string; text?: string; image?: string; importance?: string; neighbors?: string };
+  features?: string;
   config?: DefaultChartsConfig;
 }): Promise<BuiltinChartSpec[]> {
-  let { coordinator, table, projection } = options;
+  let { coordinator, table, projection, features } = options;
   let config = options.config ?? {};
   let exclude = config.exclude ?? [];
 
@@ -63,6 +65,18 @@ export async function defaultCharts(options: {
     if (projection.text) {
       exclude.push(projection.text);
     }
+  }
+
+  if (features != null) {
+    let spec: FeaturesListSpec = {
+      type: "features-list",
+      title: "Features",
+      data: {
+        features: features,
+      },
+    };
+    charts.push(spec);
+    exclude.push(features);
   }
 
   charts.push({ type: "predicates", title: "SQL Predicates" });
@@ -147,11 +161,12 @@ export async function defaultCharts(options: {
   return charts;
 }
 
-export function histogramSpec(field: string, groupField?: string): ChartSpec {
+export function histogramSpec(field: string, groupField?: string, table?: string): ChartSpec {
   return {
     title: field,
     layers: [
       {
+        ...(table != null ? { from: table } : {}),
         mark: "bar",
         style: { fillColor: "$markColorFade" },
         encoding: {
@@ -160,6 +175,7 @@ export function histogramSpec(field: string, groupField?: string): ChartSpec {
         },
       },
       {
+        ...(table != null ? { from: table } : {}),
         mark: "bar",
         filter: "$filter",
         encoding: {

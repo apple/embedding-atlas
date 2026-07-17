@@ -13,12 +13,12 @@
   import { IconClose } from "../assets/icons.js";
 
   import type { EmbeddingAtlasProps, EmbeddingAtlasState } from "../api.js";
-  import { computeEmbedding } from "../embedding/index.js";
   import { systemColorScheme } from "../utils/color_scheme.js";
   import { initializeDatabase } from "../utils/database.js";
   import { downloadBuffer } from "../utils/download.js";
   import { exportMosaicSelection, type ExportFormat } from "../utils/mosaic_exporter.js";
   import { getQueryPayload, setQueryPayload } from "../utils/query_payload.js";
+  import { computeProjection } from "./compute_projection.js";
   import { importDataTable } from "./import_data.js";
   import { Logger } from "./logging.js";
 
@@ -113,7 +113,7 @@
         let x = input + "_proj_x";
         let y = input + "_proj_y";
         let msg = logger.info(`Embedding: Initialize`);
-        await computeEmbedding({
+        await computeProjection({
           coordinator: coordinator,
           table: "dataset",
           idColumn: "__row_index__",

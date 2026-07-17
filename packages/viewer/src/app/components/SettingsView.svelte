@@ -2,34 +2,25 @@
 <script lang="ts">
   import type { UMAPOptions } from "@embedding-atlas/umap-wasm";
   import { untrack } from "svelte";
+  import { get } from "svelte/store";
 
+  import ModelNameInput from "../../views/ModelNameInput.svelte";
+  import ProviderConfigForm from "../../views/ProviderConfigForm.svelte";
   import Button from "../../widgets/Button.svelte";
   import CheckBox from "../../widgets/CheckBox.svelte";
-  import ComboBox from "../../widgets/ComboBox.svelte";
+  import DisclosureButton from "../../widgets/DisclosureButton.svelte";
   import NumberInput from "../../widgets/NumberInput.svelte";
   import SegmentedControl from "../../widgets/SegmentedControl.svelte";
   import Select from "../../widgets/Select.svelte";
 
   import { EMBEDDING_ATLAS_VERSION } from "../../constants.js";
+  import { defaultModels } from "../../inference/model_config_store.js";
+  import { inferProvider } from "../../inference/resolve.js";
   import { jsTypeFromDBType } from "../../utils/database.js";
 
-  // Predefined embedding models. The default is the first model.
-  const textModels = [
-    "Xenova/all-MiniLM-L6-v2",
-    "Xenova/paraphrase-multilingual-mpnet-base-v2",
-    "Xenova/multilingual-e5-small",
-    "Xenova/multilingual-e5-base",
-    "Xenova/multilingual-e5-large",
-  ];
-  const imageModels = [
-    "Xenova/dinov2-small",
-    "Xenova/dinov2-base",
-    "Xenova/dinov2-large",
-    "Xenova/dino-vitb8",
-    "Xenova/dino-vits8",
-    "Xenova/dino-vitb16",
-    "Xenova/dino-vits16",
-  ];
+  // Fallbacks when the user clears the model field on confirm.
+  const DEFAULT_TEXT_MODEL = "Xenova/all-MiniLM-L6-v2";
+  const DEFAULT_IMAGE_MODEL = "Xenova/dinov2-small";
 
   export interface Settings {
     version: string;
@@ -63,17 +54,30 @@
   let embeddingYColumn: string | undefined = $state(undefined);
   let embeddingNeighborsColumn: string | undefined = $state(undefined);
   let embeddingTextColumn: string | undefined = $state(undefined);
-  let embeddingTextModel: string | undefined = $state(undefined);
   let embeddingImageColumn: string | undefined = $state(undefined);
-  let embeddingImageModel: string | undefined = $state(undefined);
 
-  let showUmapOptions = $state(false);
+  // Per-file model picks. Initialised once from the global default; edits stay local —
+  // we don't want a per-file pick to silently overwrite the user's saved default.
+  let embeddingTextModel: string = $state(get(defaultModels).embedding);
+  let embeddingImageModel: string = $state(DEFAULT_IMAGE_MODEL);
+
   let umapMinDist = $state(0.1);
   let umapNNeighbors = $state(15);
   let umapGpu = $state(true);
 
+  let umapOptions = $derived<UMAPOptions>({
+    minDist: umapMinDist,
+    nNeighbors: umapNNeighbors,
+    gpu: umapGpu,
+  });
+
   let numericalColumns = $derived(columns.filter((x) => jsTypeFromDBType(x.column_type) == "number"));
   let stringColumns = $derived(columns.filter((x) => jsTypeFromDBType(x.column_type) == "string"));
+
+  // Provider that the currently selected embedding model routes to, so we can surface
+  // the relevant connection settings (e.g. OpenAI endpoint / API key) inline.
+  let activeModel = $derived(embeddingMode === "from-image" ? embeddingImageModel : embeddingTextModel);
+  let activeProvider = $derived(activeModel.trim() === "" ? null : inferProvider(activeModel.trim()));
 
   $effect.pre(() => {
     let c = textColumn;
@@ -94,23 +98,17 @@
       };
     }
     if (embeddingMode == "from-text" && embeddingTextColumn != undefined) {
-      let model = embeddingTextModel?.trim() ?? "";
-      if (model == undefined || model == "") {
-        model = textModels[0];
+      let model = embeddingTextModel.trim();
+      if (model == "") {
+        model = DEFAULT_TEXT_MODEL;
       }
-      let umapOptions = showUmapOptions
-        ? { minDist: umapMinDist, nNeighbors: umapNNeighbors, gpu: umapGpu }
-        : undefined;
       value.embedding = { compute: { column: embeddingTextColumn, type: "text", model: model, umapOptions } };
     }
     if (embeddingMode == "from-image" && embeddingImageColumn != undefined) {
-      let model = embeddingImageModel?.trim() ?? "";
-      if (model == undefined || model == "") {
-        model = imageModels[0];
+      let model = embeddingImageModel.trim();
+      if (model == "") {
+        model = DEFAULT_IMAGE_MODEL;
       }
-      let umapOptions = showUmapOptions
-        ? { minDist: umapMinDist, nNeighbors: umapNNeighbors, gpu: umapGpu }
-        : undefined;
       value.embedding = { compute: { column: embeddingImageColumn, type: "image", model: model, umapOptions } };
     }
     onConfirm?.(value);
@@ -214,20 +212,6 @@
           ]}
         />
       </div>
-      <div class="w-full flex flex-row items-center">
-        <div class="w-[6rem] dark:text-slate-400">Model</div>
-        <ComboBox
-          className="flex-1"
-          value={embeddingTextModel}
-          placeholder="(default {textModels[0]})"
-          onChange={(v) => (embeddingTextModel = v)}
-          options={textModels}
-        />
-      </div>
-      <p class="text-sm text-slate-400 dark:text-slate-600">
-        Computing the embedding and 2D projection in browser may take a while. The model will be loaded with
-        Transformers.js.
-      </p>
     {:else if embeddingMode == "from-image"}
       <div class="w-full flex flex-row items-center">
         <div class="w-[6rem] dark:text-slate-400">Image</div>
@@ -241,30 +225,25 @@
           ]}
         />
       </div>
-      <div class="w-full flex flex-row items-center">
-        <div class="w-[6rem] dark:text-slate-400">Model</div>
-        <ComboBox
-          className="flex-1"
-          value={embeddingImageModel}
-          placeholder="(default {imageModels[0]})"
-          onChange={(v) => (embeddingImageModel = v)}
-          options={imageModels}
-        />
-      </div>
-      <p class="text-sm text-slate-400 dark:text-slate-600">
-        Computing the embedding and 2D projection in browser may take a while. The model will be loaded with
-        Transformers.js.
-      </p>
     {/if}
     {#if embeddingMode == "from-text" || embeddingMode == "from-image"}
-      <button
-        class="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 select-none mt-1"
-        onclick={() => (showUmapOptions = !showUmapOptions)}
-      >
-        <span class="text-[10px]">{showUmapOptions ? "\u25BC" : "\u25B6"}</span>
-        UMAP Options
-      </button>
-      {#if showUmapOptions}
+      <!-- Model -->
+      <div class="w-full flex flex-row items-start">
+        <div class="w-[6rem] dark:text-slate-400 mt-1">Model</div>
+        <div class="flex-1 min-w-0">
+          {#if embeddingMode == "from-text"}
+            <ModelNameInput bind:value={embeddingTextModel} modality="text" />
+          {:else}
+            <ModelNameInput bind:value={embeddingImageModel} modality="image" />
+          {/if}
+        </div>
+      </div>
+      <!-- Provider connection / inference settings for the selected model -->
+      {#if activeProvider != null}
+        <ProviderConfigForm providerType={activeProvider} />
+      {/if}
+      <!-- UMAP settings -->
+      <DisclosureButton label="UMAP Settings" class="mt-1">
         <div class="w-full flex flex-row items-center">
           <div class="w-[6rem] dark:text-slate-400">Min Dist</div>
           <NumberInput className="flex-1 min-w-0" bind:value={umapMinDist} min={0} max={1} step={0.01} />
@@ -277,7 +256,7 @@
           <div class="w-[6rem] dark:text-slate-400">GPU</div>
           <CheckBox bind:checked={umapGpu} label="Use WebGPU if available" />
         </div>
-      {/if}
+      </DisclosureButton>
     {/if}
   </div>
   <div class="w-full flex flex-row items-center mt-4">

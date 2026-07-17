@@ -46,6 +46,9 @@ export interface SelectionOutputs {
   key: string;
   type: "x" | "y" | "xy";
 
+  /** The table whose filter this selection writes to. Undefined = default table. */
+  table?: string;
+
   clause: (value: {
     x?: XYSelectionValue | null;
     y?: XYSelectionValue | null;
@@ -148,14 +151,15 @@ export class ChartRuntime {
           value: value,
         };
 
+        const targetFilter = this.context.filterFor(selection.table) ?? this.context.filter;
         if (clause) {
-          this.context.filter.update({
+          targetFilter.update({
             source: this.source,
             clients: new Set(clients),
             ...clause,
           });
         } else {
-          this.context.filter.update({
+          targetFilter.update({
             source: this.source,
             clients: new Set(clients),
             value: null,
@@ -346,9 +350,10 @@ function buildLayer(ctx: BuildContext, layer: Layer, layerIndex: number) {
     if (typeof layer.from == "object" && layer.from.sql.indexOf("$filter") >= 0) {
       hasFilter = true;
     }
+    let layerFilter = ctx.context.filterFor(typeof layer.from === "string" ? layer.from : undefined);
     let client = makeClient({
       coordinator: ctx.context.coordinator,
-      selection: hasFilter ? ctx.context.filter : undefined,
+      selection: hasFilter ? layerFilter : undefined,
       query: (predicate) => {
         let baseQuery = SQL.Query.from(ctx.fromExpr(layer.from ?? ctx.context.table, predicateToString(predicate)))
           .select(selectEntries)
@@ -963,6 +968,9 @@ function chartOutputs(
 function selectionOutputs(spec: ChartSpec, scaleHints: Record<string, ScaleHints>): SelectionOutputs[] {
   let selections: SelectionOutputs[] = [];
 
+  const firstFrom = spec.layers?.[0]?.from;
+  const table = typeof firstFrom === "string" ? firstFrom : undefined;
+
   // Selections
   Object.entries(spec.selection ?? {}).forEach(([key, selection]) => {
     if ("encoding" in selection) {
@@ -982,6 +990,7 @@ function selectionOutputs(spec: ChartSpec, scaleHints: Record<string, ScaleHints
       selections.push({
         key: key,
         type: selection.encoding,
+        table: table,
         clause: (value) => {
           if (value == undefined) {
             return;

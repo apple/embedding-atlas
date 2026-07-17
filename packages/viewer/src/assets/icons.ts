@@ -2,6 +2,7 @@
 
 // Common icons
 export { default as IconPlus } from "~icons/fluent/add-16-filled";
+export { default as IconReset } from "~icons/fluent/arrow-counterclockwise-16-filled";
 export { default as IconDownload } from "~icons/fluent/arrow-download-16-filled";
 export { default as IconImport } from "~icons/fluent/arrow-import-16-filled";
 export { default as IconSortUpDown } from "~icons/fluent/arrow-sort-16-filled";
@@ -31,6 +32,12 @@ export { default as IconPlay } from "~icons/fluent/play-20-filled";
 // Icons for the CheckBox component
 export { default as IconCheckboxChecked } from "~icons/fluent/checkbox-checked-20-filled";
 export { default as IconCheckboxUnchecked } from "~icons/fluent/checkbox-unchecked-20-filled";
+
+// Icons for the features list pin / select buttons
+export { default as IconPin } from "~icons/fluent/pin-16-filled";
+export { default as IconPinRegular } from "~icons/fluent/pin-16-regular";
+export { default as IconSelected } from "~icons/fluent/checkmark-circle-16-filled";
+export { default as IconUnselected } from "~icons/fluent/circle-16-regular";
 
 // Icons for list layout view toggles (hide/show parts)
 export { default as IconEmbeddingView } from "~icons/fluent/data-scatter-20-filled";

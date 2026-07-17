@@ -29,6 +29,8 @@ def make_server(
 ):
     """Creates a server for hosting Embedding Atlas"""
 
+    additional_tables = data_source.additional_tables
+
     app = FastAPI()
 
     if cors is not None:
@@ -56,12 +58,27 @@ def make_server(
         lambda: to_parquet_bytes(data_source.dataset),
     )
 
+    if additional_tables:
+        for name, df in additional_tables.items():
+            mount_bytes(
+                app,
+                f"/data/tables/{name}.parquet",
+                "application/octet-stream",
+                (lambda d: lambda: to_parquet_bytes(d))(df),
+            )
+
     @app.get("/data/metadata.json")
     async def get_metadata():
         meta = {}
         # Database
         if duckdb_uri is None or duckdb_uri == "wasm":
-            meta["database"] = {"type": "wasm", "load": True}
+            db_meta: dict = {"type": "wasm", "load": True}
+            if additional_tables:
+                db_meta["additionalTables"] = [
+                    {"name": name, "url": f"tables/{name}.parquet"}
+                    for name in additional_tables
+                ]
+            meta["database"] = db_meta
         elif duckdb_uri == "server":
             # Point to the server itself.
             meta["database"] = {"type": "rest"}
@@ -104,7 +121,9 @@ def make_server(
         return Response(content=data, media_type="application/zip")
 
     if duckdb_uri == "server":
-        duckdb_connection = make_duckdb_connection(data_source.dataset)
+        duckdb_connection = make_duckdb_connection(
+            data_source.dataset, additional_tables=additional_tables
+        )
     else:
         duckdb_connection = None
 
@@ -305,10 +324,16 @@ def make_mcp_proxy(app: FastAPI):
         return await handler.send_request(await request.json())
 
 
-def make_duckdb_connection(df):
+def make_duckdb_connection(df, additional_tables: dict | None = None):
     con = duckdb.connect(":memory:")
     _ = df  # used in the query
     con.sql("CREATE TABLE dataset AS (SELECT * FROM df)")
+    if additional_tables is not None:
+        for name, additional_df in additional_tables.items():
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+                raise ValueError(f"invalid table name: {name!r}")
+            _ = additional_df  # used in the query
+            con.sql(f"CREATE TABLE {name} AS (SELECT * FROM additional_df)")
     con.sql("SET enable_external_access = false")
     con.sql("SET lock_configuration = true")
     return con

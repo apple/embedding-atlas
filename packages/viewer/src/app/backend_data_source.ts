@@ -32,6 +32,7 @@ interface Metadata {
     uri?: string;
     load?: boolean;
     datasetUrl?: string;
+    additionalTables?: { name: string; url: string }[];
   };
 
   mcp?: {
@@ -71,6 +72,12 @@ export class BackendDataSource implements DataSource {
       await coordinator.exec(`
         CREATE OR REPLACE TABLE ${table} AS (SELECT * FROM read_parquet(${SQL.literal(datasetUrl)}));
       `);
+      for (const t of metadata.database?.additionalTables ?? []) {
+        let tableUrl = t.url.startsWith("http") ? t.url : joinUrl(this.serverUrl, t.url);
+        await coordinator.exec(`
+          CREATE OR REPLACE TABLE ${t.name} AS (SELECT * FROM read_parquet(${SQL.literal(tableUrl)}));
+        `);
+      }
     }
 
     if (!metadata.isStatic) {

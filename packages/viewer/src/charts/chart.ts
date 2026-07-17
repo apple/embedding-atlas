@@ -5,6 +5,7 @@ import type { Coordinator, Selection } from "@uwdata/mosaic-core";
 import type { Draft } from "immer";
 import type { Readable, Writable } from "svelte/store";
 
+import type { HighlightScorer } from "../highlight/scheduler.js";
 import type { ColumnDesc } from "../utils/database.js";
 import type { ScreenshotOptions } from "../utils/screenshot.js";
 import type { ChartThemeConfig } from "./common/theme.js";
@@ -46,11 +47,20 @@ export interface ChartContext {
   /** The row id column. */
   id: string;
 
-  /** A list of columns the table contains. */
-  columns: ColumnDesc[];
+  /** All tables, keyed by name, each with its row-id column and columns. */
+  tables: Record<string, { id: string; columns: ColumnDesc[] }>;
 
   /** The global cross filter selection. */
   filter: Selection;
+
+  /**
+   * Get the global cross filter for a given table.
+   * If the table is undefined, returns the filter for the data table (aka., same as `filter`).
+   * Aux tables always get a Selection; if the table has no declared relation, the
+   * returned Selection isn't bridged to the main filter (charts on it still work
+   * locally, just no cross-table propagation).
+   */
+  filterFor: (table?: string) => Selection;
 
   /** The current color scheme. */
   colorScheme: Readable<"light" | "dark">;
@@ -95,6 +105,12 @@ export interface ChartContext {
 
   /** The current overlay. When this changes, supported views will render it as overlay. */
   overlay: Writable<Overlay | null>;
+
+  /** Highlight texts with a text query. */
+  textHighlight: Writable<string | null>;
+
+  /** Highlight scorer. */
+  highlightScorer: Writable<HighlightScorer<string>>;
 
   /** Configuration for the embedding view. See docs for the EmbeddingView. */
   embeddingViewConfig?: EmbeddingViewConfig | null;
