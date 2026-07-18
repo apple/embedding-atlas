@@ -51,23 +51,50 @@ const SCORING_DEFAULTS = {
 export function embeddingHighlightScorer(options?: EmbeddingScorerOptions): HighlightScorer<string> {
   const scoring = { ...SCORING_DEFAULTS, ...options };
   let handle: Promise<EmbeddingScorerHandle> | null = null;
+  // Identifies the (model, config) that `handle` was built with, so a later
+  // change to the highlight model / provider config rebuilds it instead of
+  // being silently ignored until reload.
+  let handleKey: string | null = null;
+
   function getHandle(): Promise<EmbeddingScorerHandle> {
-    if (handle == null) {
-      const name = options?.model ?? get(defaultModels).highlight;
-      const config = get(providerConfigs)[inferProvider(name)] ?? {};
-      handle = createEmbeddingScorer({
-        model: name,
-        config,
-        scoring: {
-          // Undefined here means "auto-calibrate per-model" in the worker.
-          similarityRange: options?.similarityRange,
-          minTextLength: scoring.minTextLength,
-          windowSize: scoring.windowSize,
-          windowStride: scoring.windowStride,
-        },
-      });
+    const name = options?.model ?? get(defaultModels).highlight;
+    const config = get(providerConfigs)[inferProvider(name)] ?? {};
+    const key = JSON.stringify({ name, config });
+
+    if (handle != null && handleKey === key) {
+      return handle;
     }
-    return handle;
+
+    // Model/config changed — release the previous worker-side scorer so it
+    // doesn't leak (an in-flight `score` already holds its own reference and
+    // completes normally), then build a fresh one below.
+    if (handle != null) {
+      const stale = handle;
+      stale.then((scorer) => scorer.destroy()).catch(() => {});
+    }
+
+    handleKey = key;
+    const p = createEmbeddingScorer({
+      model: name,
+      config,
+      scoring: {
+        // Undefined here means "auto-calibrate per-model" in the worker.
+        similarityRange: options?.similarityRange,
+        minTextLength: scoring.minTextLength,
+        windowSize: scoring.windowSize,
+        windowStride: scoring.windowStride,
+      },
+    });
+    handle = p;
+    // Evict a failed load so the next call retries instead of reusing a
+    // permanently-rejected promise (mirrors connect() in embedding/index.ts).
+    p.catch(() => {
+      if (handle === p) {
+        handle = null;
+        handleKey = null;
+      }
+    });
+    return p;
   }
 
   return async (texts, query) => {
