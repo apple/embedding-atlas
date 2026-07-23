@@ -20,6 +20,12 @@ See [Examples](./examples/) for live demos with embedding and tabular datasets.
 You can use Embedding Atlas directly from this website by [loading your own data](https://apple.github.io/embedding-atlas/app/). In this online version, Embedding Atlas will compute the embedding and projection in your browser. Your data does not leave your machine.
 :::
 
+## Browser requirements
+
+The embedding view requires WebGPU or WebGL 2. Embedding Atlas uses WebGPU when available and automatically falls back to WebGL 2 otherwise. If neither renderer can be initialized, the embedding view displays an error instead of a blank canvas.
+
+If you see this error, make sure hardware acceleration is enabled in your browser, update your browser and graphics drivers, and check that your virtual machine or remote desktop environment exposes WebGPU or WebGL 2. Other dashboard features that do not use the embedding view can still work without these rendering APIs.
+
 ## Packages
 
 Embedding Atlas is released as two packages:
