@@ -2,7 +2,7 @@
 
 // The component API for embedding viewer.
 
-import type { EmbeddingViewConfig, Label } from "@embedding-atlas/component";
+import type { DataPointID, EmbeddingViewConfig, Label } from "@embedding-atlas/component";
 import type { Coordinator } from "@uwdata/mosaic-core";
 import { createClassComponent } from "svelte/legacy";
 
@@ -93,6 +93,9 @@ export interface EmbeddingAtlasProps {
 
   /** A callback when the current filter predicate changes (e.g., due to brush or click interactions). */
   onPredicateChange?: ((predicate: string | null) => void) | null;
+
+  /** Point identifiers to highlight across the dashboard's embedding and instances views. */
+  selection?: DataPointID[] | null;
 
   /** Model context API where the component will register its tools to. */
   modelContext?: ModelContextAPI | null;

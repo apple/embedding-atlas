@@ -35,6 +35,7 @@
     onExportSelection,
     onStateChange,
     onPredicateChange,
+    selection,
     modelContext,
     cache,
   }: EmbeddingAtlasProps = $props();
@@ -53,6 +54,7 @@
     onExportSelection,
     onStateChange,
     onPredicateChange,
+    selection,
     modelContext,
     cache,
   });
@@ -98,6 +100,10 @@
     if (chartTheme !== get(store.chartTheme)) {
       store.chartTheme.set(chartTheme ?? undefined);
     }
+  });
+
+  $effect.pre(() => {
+    store.setHighlight(selection);
   });
 
   let mcpStatus = $state.raw<string | undefined>(undefined);

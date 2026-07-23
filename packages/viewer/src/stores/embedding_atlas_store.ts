@@ -1,5 +1,6 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import type { DataPointID } from "@embedding-atlas/component";
 import { deepEquals } from "@embedding-atlas/utils";
 import { type Coordinator, Selection } from "@uwdata/mosaic-core";
 import { type Draft, produce } from "immer";
@@ -114,6 +115,7 @@ export class EmbeddingAtlasStore {
       embeddingViewConfig: options.embeddingViewConfig,
       embeddingViewLabels: options.embeddingViewLabels,
     };
+    this.setHighlight(options.selection);
 
     this.search.result.subscribe((result) => {
       if (result == undefined) {
@@ -203,6 +205,14 @@ export class EmbeddingAtlasStore {
 
   getCurrentState(): EmbeddingAtlasState {
     return get(this.state);
+  }
+
+  setHighlight(selection: DataPointID[] | null | undefined) {
+    const next = selection == null ? null : [...selection];
+    if (samePointIds(get(this.chartContext.highlight), next)) {
+      return;
+    }
+    this.chartContext.highlight.set(next);
   }
 
   private _syncHistory() {
@@ -412,6 +422,13 @@ export class EmbeddingAtlasStore {
       this.chartDelegates.get(id)?.delete(delegate);
     };
   }
+}
+
+function samePointIds(left: readonly unknown[] | null, right: readonly DataPointID[] | null): boolean {
+  if (left == null || right == null) {
+    return left === right;
+  }
+  return left.length === right.length && left.every((id, index) => Object.is(id, right[index]));
 }
 
 function resolveColumnStyles(
