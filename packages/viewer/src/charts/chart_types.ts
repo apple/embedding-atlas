@@ -25,7 +25,7 @@ import type { ChartBuilderDescription, ChartViewProps } from "./chart.js";
 import { histogramSpec } from "./default_charts.js";
 import type { EmbeddingSpec, EmbeddingState } from "./embedding/types.js";
 import FeaturesList from "./features/FeaturesList.svelte";
-import type { FeaturesListSpec } from "./features/types.js";
+import type { FeaturesListSpec, FeaturesListState } from "./features/types.js";
 import type { InstancesSpec } from "./instances/types.js";
 import type { ChartSpec, ChartState } from "./spec/spec.js";
 
@@ -109,7 +109,7 @@ export type BuiltinChartSpec =
   | PredicatesSpec;
 
 // State type for all builtin chart types
-export type BuiltinChartState = ChartState | EmbeddingState | CountPlotState | PredicatesState;
+export type BuiltinChartState = ChartState | EmbeddingState | CountPlotState | FeaturesListState | PredicatesState;
 
 // Chart builders
 

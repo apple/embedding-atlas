@@ -37,7 +37,7 @@ export async function defaultCharts(options: {
 }): Promise<BuiltinChartSpec[]> {
   let { coordinator, table, projection, features } = options;
   let config = options.config ?? {};
-  let exclude = config.exclude ?? [];
+  let exclude = [...(config.exclude ?? [])];
 
   let columns = (await columnDescriptions(coordinator, table)).filter((x) => !x.name.startsWith("__"));
 
