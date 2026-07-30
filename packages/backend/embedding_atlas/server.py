@@ -5,7 +5,7 @@ import concurrent.futures
 import json
 import re
 import uuid
-from functools import lru_cache
+from functools import lru_cache, partial
 from io import BytesIO
 from typing import Callable
 
@@ -55,7 +55,7 @@ def make_server(
         app,
         "/data/dataset.parquet",
         "application/octet-stream",
-        lambda: to_parquet_bytes(data_source.dataset),
+        partial(to_parquet_bytes, data_source.dataset),
     )
 
     if additional_tables:
@@ -64,7 +64,7 @@ def make_server(
                 app,
                 f"/data/tables/{name}.parquet",
                 "application/octet-stream",
-                (lambda d: lambda: to_parquet_bytes(d))(df),
+                partial(to_parquet_bytes, df),
             )
 
     @app.get("/data/metadata.json")
