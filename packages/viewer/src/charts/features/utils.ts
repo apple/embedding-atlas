@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import * as SQL from "@uwdata/mosaic-sql";
 
 import { resolveSQLTemplate } from "../../utils/database.js";

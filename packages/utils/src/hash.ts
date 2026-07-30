@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 /**
  * Returns a short non-secure hash for an object.
  * The object must be JSON-serializable, and the hash is sensitive to object key order.

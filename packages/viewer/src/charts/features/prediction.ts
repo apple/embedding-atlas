@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 /**
  * Per-class direction score for multi-class prediction. One entry per
  * (non-empty) class, ordered to match the `classNames` array. Built from the

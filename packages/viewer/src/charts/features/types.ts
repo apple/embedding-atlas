@@ -1,3 +1,5 @@
+// Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import type { SQLField, SQLTable } from "../spec/spec.js";
 
 export interface FeaturesListSpec {
