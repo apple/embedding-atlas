@@ -51,6 +51,8 @@ embedding-atlas huggingface_org/dataset_name
 
 The script will compute embedding vectors for the specified column containing the text, image, or audio data. By default, it uses [SentenceTransformers](https://sbert.net/) for text and [HuggingFace Transformers](https://huggingface.co/docs/transformers/) for images and audio. You can also use [LiteLLM](https://docs.litellm.ai/) for API-based embeddings via `--embedder litellm`. Use the `--model` option to specify an embedding model. If not specified, a default model will be used. The current defaults are `all-MiniLM-L6-v2` for text, `google/vit-base-patch16-224` for images, and `laion/clap-htsat-fused` for audio, but these are subject to change in future releases.
 
+Use `--device` to select the PyTorch device used for embedding, such as `cpu`, `cuda`, `mps`, or an indexed CUDA device like `cuda:0`. For example, use `--device cpu` to force CPU execution when PyTorch detects a GPU that the installed PyTorch build does not support.
+
 After embedding vectors are computed, the script will then project the high-dimensional vectors to 2D with [UMAP](https://umap-learn.readthedocs.io/en/latest/index.html).
 
 ::: tip
