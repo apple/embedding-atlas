@@ -5,16 +5,21 @@
   import TooltipContent from "../../views/TooltipContent.svelte";
 
   import { IconSearch } from "../../assets/icons.js";
+  import { highlight as highlightText } from "../../highlight/action.js";
   import type { ColumnStyle } from "../../renderers/types.js";
+  import type { ChartContext } from "../chart.js";
 
   interface Props {
+    context: ChartContext;
     tooltip: DataPoint;
     columnStyles?: Record<string, ColumnStyle>;
     colorScheme: "light" | "dark";
     onNearestNeighborSearch?: (id: any) => void;
   }
 
-  let { tooltip, columnStyles, colorScheme, onNearestNeighborSearch }: Props = $props();
+  let { context, tooltip, columnStyles, colorScheme, onNearestNeighborSearch }: Props = $props();
+
+  let { textHighlight, highlightScorer } = $derived(context);
 </script>
 
 <div class="embedding-atlas-root">
@@ -23,6 +28,11 @@
     class:dark={colorScheme == "dark"}
     style:max-width="400px"
     style:max-height="300px"
+    use:highlightText={{
+      query: $textHighlight ?? undefined,
+      scorer: $highlightScorer,
+      include: "[data-highlight]",
+    }}
   >
     <TooltipContent values={tooltip.fields ?? {}} columnStyles={columnStyles ?? {}} />
     {#if onNearestNeighborSearch}

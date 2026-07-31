@@ -1,5 +1,6 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import { deepEquals } from "@embedding-atlas/utils";
 import { derived, writable, type Readable, type Writable } from "svelte/store";
 
 type Stores = Readable<any> | [Readable<any>, ...Readable<any>[]];
@@ -20,6 +21,22 @@ function dedup<T>(store: Readable<T>): Readable<T> {
       let current: T;
       return store.subscribe((value) => {
         if (first || value !== current) {
+          first = false;
+          current = value;
+          run(value);
+        }
+      });
+    },
+  };
+}
+
+function dedupBy<T>(store: Readable<T>, equals: (a: T, b: T) => boolean): Readable<T> {
+  return {
+    subscribe(run) {
+      let first = true;
+      let current: T;
+      return store.subscribe((value) => {
+        if (first || !equals(value, current)) {
           first = false;
           current = value;
           run(value);
@@ -75,6 +92,25 @@ export function stableDerived<S extends Stores, T>(
   initialValue?: T,
 ): Readable<T> {
   return dedup(derived(stores, fn, initialValue));
+}
+
+/**
+ * A derived store that dedups by structural (deep) equality via `deepEquals`.
+ *
+ * Unlike `stableDerived`, this avoids re-notifying subscribers when the deriver
+ * builds a fresh object/array on every run from the same upstream contents.
+ * Use it when the derived value is plain JSON-serializable data (e.g., a
+ * "client signature" object), not when the value contains functions, Maps,
+ * Dates, or non-enumerable structures.
+ */
+export function deepStableDerived<S extends Stores, T>(
+  stores: S,
+  fn: (values: StoresValues<S>) => T,
+  initialValue?: T,
+): Readable<T> {
+  return dedupBy(derived(stores, fn, initialValue), (a, b) => {
+    return deepEquals(a, b);
+  });
 }
 
 /**

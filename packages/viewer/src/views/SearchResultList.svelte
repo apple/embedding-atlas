@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import Mark from "mark.js";
+  import { fuzzyHighlightScorer, highlight as highlightText } from "../highlight/index.js";
 
   import Paginator from "../widgets/Paginator.svelte";
   import TooltipContent from "./TooltipContent.svelte";
@@ -21,10 +21,8 @@
 
   let { items, label, highlight, limit = 100, columnStyles, onClick, onClose }: Props = $props();
 
-  function markHighlight(element: HTMLElement, highlight: string) {
-    let m = new Mark(element);
-    m.mark(highlight);
-  }
+  // Shared scorer so every result item coalesces into one batched match call.
+  const fuzzyScorer = fuzzyHighlightScorer();
 
   let resultCountText = $derived(
     items.length == 0
@@ -81,7 +79,7 @@
                 </span>
               </div>
             {/if}
-            <div use:markHighlight={highlight}>
+            <div use:highlightText={{ scorer: fuzzyScorer, query: highlight }}>
               <TooltipContent values={item.fields} columnStyles={columnStyles ?? {}} />
             </div>
           </button>

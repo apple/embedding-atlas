@@ -65,6 +65,11 @@
 
   let theme = $derived(resolveChartTheme($colorScheme, $themeConfig));
 
+  let dataTable = $derived(spec.data.table ?? context.table);
+  let rowId = $derived(spec.data.id ?? context.id);
+  let filter = $derived(context.filterFor(spec.data.table) ?? context.filter);
+  let isDefaultTable = $derived(dataTable === context.table);
+
   // svelte-ignore state_referenced_locally
   let highlightStore = isolatedWritable(context.highlight);
 
@@ -76,7 +81,7 @@
   // Query total point count for render limit slider
   $effect.pre(() => {
     context.coordinator
-      .query(SQL.Query.from(context.table).select({ count: SQL.sql`COUNT(*)::INT` }))
+      .query(SQL.Query.from(dataTable).select({ count: SQL.sql`COUNT(*)::INT` }))
       .then((result: any) => {
         totalPointCount = result.get(0).count;
       });
@@ -88,8 +93,8 @@
 
   // Update the category mapping and legend.
   $effect.pre(() => {
-    let promise = context.cache.value(`embedding/category/${categoryColumn}`, () =>
-      makeCategoryColumn(context.coordinator, context.table, categoryColumn, theme),
+    let promise = context.cache.value(`embedding/category/${dataTable}/${categoryColumn}`, () =>
+      makeCategoryColumn(context.coordinator, dataTable, categoryColumn, theme),
     );
     promise.then((v) => {
       categoryLegend = v;
@@ -105,6 +110,10 @@
     let isOnMount = true;
     let previousValue: RowID[] | null = null;
     return highlightStore.subscribe((v) => {
+      if (!isDefaultTable) {
+        return;
+      }
+
       selection = v;
 
       // Don't animate immediately on mount.
@@ -141,11 +150,11 @@
       // Query for coordinates from ids
       let queryResult = Array.from(
         await context.coordinator.query(
-          SQL.Query.from(context.table)
-            .select({ id: SQL.column(context.id), x: SQL.column(spec.data.x), y: SQL.column(spec.data.y) })
+          SQL.Query.from(dataTable)
+            .select({ id: SQL.column(rowId), x: SQL.column(spec.data.x), y: SQL.column(spec.data.y) })
             .where(
               SQL.isIn(
-                SQL.column(context.id),
+                SQL.column(rowId),
                 ids.map((x) => SQL.literal(x)),
               ),
             ),
@@ -169,18 +178,19 @@
   });
 
   async function animateToPoint(identifier: RowID): Promise<void> {
-    let defaultScale = await context.cache.value(`embedding/default-viewport-scale/${spec.data.x},${spec.data.y}`, () =>
-      defaultViewportScale(context.coordinator, context.table, spec.data.x, spec.data.y),
+    let defaultScale = await context.cache.value(
+      `embedding/default-viewport-scale/${dataTable}/${spec.data.x},${spec.data.y}`,
+      () => defaultViewportScale(context.coordinator, dataTable, spec.data.x, spec.data.y),
     );
     let scale = defaultScale * 2;
     // Query the x, y location.
     let result = await context.coordinator.query(
-      SQL.Query.from(context.table)
+      SQL.Query.from(dataTable)
         .select({
           x: SQL.column(spec.data.x),
           y: SQL.column(spec.data.y),
         })
-        .where(SQL.eq(SQL.column(context.id), SQL.literal(identifier))),
+        .where(SQL.eq(SQL.column(rowId), SQL.literal(identifier))),
     );
     let { x, y } = result.get(0) as { x: number; y: number };
     // Start animation and show tooltip.
@@ -226,9 +236,9 @@
     if (spec.data.neighbors == undefined) {
       return [];
     }
-    let q = SQL.Query.from(context.table)
+    let q = SQL.Query.from(dataTable)
       .select({ knn: SQL.column(spec.data.neighbors) })
-      .where(SQL.eq(SQL.column(context.id), SQL.literal(id)));
+      .where(SQL.eq(SQL.column(rowId), SQL.literal(id)));
     let result = await context.coordinator.query(q);
     let items: any[] = Array.from(result);
     if (items.length != 1) {
@@ -249,10 +259,10 @@
     width={width}
     height={height}
     coordinator={context.coordinator}
-    table={context.table}
-    filter={context.filter}
-    rangeSelection={context.filter}
-    identifier={context.id}
+    table={dataTable}
+    filter={filter}
+    rangeSelection={filter}
+    identifier={rowId}
     x={spec.data.x}
     y={spec.data.y}
     text={spec.data.text}
@@ -271,31 +281,36 @@
     }}
     labels={context.embeddingViewLabels}
     cache={context.persistentCache}
-    additionalFields={Object.fromEntries(context.columns.map((c) => [c.name, c.name]))}
-    customTooltip={{
-      class: CustomTooltip,
-      props: {
-        darkMode: $colorScheme,
-        columnStyles: $columnStyles,
-        onNearestNeighborSearch: spec.data.neighbors
-          ? async (id: any) => {
-              let neighbors = await nearestNeighbors(id);
-              let nids = neighbors.map((x) => x.id);
-              searcher.search(
-                {
-                  label: "Neighbors of #" + id,
-                  items: neighbors,
-                  overlay: {
-                    nodes: [id, ...nids],
-                    edges: nids.map((ni) => ({ start: id, end: ni })),
-                  },
-                },
-                "raw",
-              );
-            }
-          : undefined,
-      },
-    }}
+    additionalFields={isDefaultTable
+      ? Object.fromEntries((context.tables[context.table]?.columns ?? []).map((c) => [c.name, c.name]))
+      : {}}
+    customTooltip={isDefaultTable
+      ? {
+          class: CustomTooltip,
+          props: {
+            context: context,
+            darkMode: $colorScheme,
+            columnStyles: $columnStyles,
+            onNearestNeighborSearch: spec.data.neighbors
+              ? async (id: any) => {
+                  let neighbors = await nearestNeighbors(id);
+                  let nids = neighbors.map((x) => x.id);
+                  searcher.search(
+                    {
+                      label: "Neighbors of #" + id,
+                      items: neighbors,
+                      overlay: {
+                        nodes: [id, ...nids],
+                        edges: nids.map((ni) => ({ start: id, end: ni })),
+                      },
+                    },
+                    "raw",
+                  );
+                }
+              : undefined,
+          },
+        }
+      : undefined}
     customOverlay={{
       class: CustomOverlay,
       props: { ...(overlayProps ?? { nodes: [], edges: [] }) },
@@ -321,7 +336,9 @@
     selection={selection}
     onSelection={(points) => {
       selection = points;
-      highlightStore.set(points?.map((p) => p.identifier) ?? null);
+      if (isDefaultTable) {
+        highlightStore.set(points?.map((p) => p.identifier) ?? null);
+      }
     }}
   />
   <div class="absolute top-0 left-0 right-0 flex flex-wrap justify-between items-start pointer-events-none">
@@ -331,6 +348,7 @@
       >
         <Legend
           context={context}
+          filter={filter}
           spec={{ items: categoryLegend.legend }}
           state={chartState.legend ?? {}}
           mode="view"
@@ -361,7 +379,7 @@
           })}
         options={[
           { value: undefined, label: "--" },
-          ...context.columns
+          ...(context.tables[context.table]?.columns ?? [])
             .filter((c) => c.jsType == "string" || c.jsType == "number" || c.jsType == "Date")
             .map((c) => ({ value: c.name, label: `${c.name} (${c.type})` })),
         ]}

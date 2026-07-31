@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import { deepEquals } from "@embedding-atlas/utils";
-import { type Coordinator, Selection } from "@uwdata/mosaic-core";
+import { type Coordinator, makeClient, Selection } from "@uwdata/mosaic-core";
+import * as SQL from "@uwdata/mosaic-sql";
 import { type Draft, produce } from "immer";
 import { createContext } from "svelte";
 import { get, type Readable, writable, type Writable } from "svelte/store";
@@ -11,6 +12,7 @@ import { type ChartContext, ChartContextCache, type ChartDelegate } from "../cha
 import type { ChartThemeConfig } from "../charts/common/theme.js";
 import { defaultCharts } from "../charts/default_charts.js";
 import { EMBEDDING_ATLAS_VERSION } from "../constants.js";
+import { embeddingHighlightScorer } from "../highlight/embedding-scorer.js";
 import type { ColumnStyle } from "../renderers/types.js";
 import { type ColorScheme, makeColorSchemeStore } from "../utils/color_scheme.js";
 import { type ColumnDesc, columnDescriptions, predicateToString } from "../utils/database.js";
@@ -26,6 +28,7 @@ type InternalState = Required<EmbeddingAtlasState>;
 export class EmbeddingAtlasStore {
   readonly coordinator: Coordinator;
   readonly crossFilter: Selection;
+  readonly auxTableFilters: Map<string, Selection>;
 
   readonly chartContext: ChartContext;
 
@@ -44,6 +47,7 @@ export class EmbeddingAtlasStore {
   readonly currentLayout: Readable<string>;
   readonly columnStyles: Readable<Record<string, ColumnStyle>>;
 
+  readonly tables: Writable<Record<string, { id: string; columns: ColumnDesc[] }>>;
   readonly columns: Writable<ColumnDesc[]>;
   readonly chartTheme: Writable<ChartThemeConfig | undefined>;
 
@@ -64,6 +68,7 @@ export class EmbeddingAtlasStore {
     const { coordinator, data } = options;
     this.coordinator = coordinator;
     this.crossFilter = Selection.crossfilter();
+    this.auxTableFilters = new Map();
 
     // Color scheme
     const { colorScheme, userColorScheme } = makeColorSchemeStore();
@@ -75,6 +80,7 @@ export class EmbeddingAtlasStore {
     this.state = stableWritable(resolveInternalState({}));
 
     this.chartTheme = stableWritable(options.chartTheme ?? undefined);
+    this.tables = writable({});
     this.columns = writable([]);
 
     this.charts = stableDerived([this.state], ([state]) => state.charts);
@@ -95,9 +101,20 @@ export class EmbeddingAtlasStore {
     this.chartContext = {
       coordinator: coordinator,
       filter: this.crossFilter,
+      filterFor: (table) => {
+        if (table == null) {
+          return this.crossFilter;
+        }
+        let f = this.auxTableFilters.get(table);
+        if (f == null) {
+          f = this._makeAuxTableFilter(table);
+          this.auxTableFilters.set(table, f);
+        }
+        return f;
+      },
       table: data.table,
       id: data.id,
-      columns: [], // Later set by initialize
+      tables: { [data.table]: { id: data.id, columns: [] } },
       colorScheme: this.colorScheme,
       theme: this.chartTheme,
       columnStyles: this.columnStyles,
@@ -111,6 +128,8 @@ export class EmbeddingAtlasStore {
       },
       highlight: writable(null),
       overlay: writable(null),
+      textHighlight: writable(null),
+      highlightScorer: writable(embeddingHighlightScorer()),
       embeddingViewConfig: options.embeddingViewConfig,
       embeddingViewLabels: options.embeddingViewLabels,
     };
@@ -138,9 +157,35 @@ export class EmbeddingAtlasStore {
     }
 
     const initialize = async () => {
+      // Get columns for the main table
       let descs = await columnDescriptions(this.coordinator, data.table);
       this.columns.set(descs.filter((x) => !x.name.startsWith("__")));
-      this.chartContext.columns = get(this.columns);
+
+      let tables: Record<string, { id: string; columns: ColumnDesc[] }> = {};
+      tables[data.table] = { id: data.id, columns: get(this.columns) };
+
+      // Initialize each additional table independently: fetch its columns and
+      // build its cross-table mapper (see _makeAuxTableFilter). A failure (e.g. a
+      // bad relation expression or a missing table) logs and drops just that
+      // table, so one broken aux table can't take down the whole viewer.
+      const additionalTables = options.additionalTables ?? {};
+      for (let name in additionalTables) {
+        let info = additionalTables[name];
+        try {
+          let descs = await columnDescriptions(this.coordinator, name);
+          tables[name] = {
+            id: info.id,
+            columns: descs.filter((x) => !x.name.startsWith("__")),
+          };
+          await this._createMapperTable(name, info);
+        } catch (e) {
+          delete tables[name];
+          console.error(`Failed to initialize additional table "${name}"`, e);
+        }
+      }
+
+      this.tables.set(tables);
+      this.chartContext.tables = tables;
 
       let initialState: EmbeddingAtlasState = {};
       if (options.initialState) {
@@ -178,6 +223,99 @@ export class EmbeddingAtlasStore {
     this.ready = initialize();
   }
 
+  /** The DuckDB table name of the id-based mapper for an auxiliary table. */
+  private _mapperTableName(table: string): string {
+    return `__map_${table}`;
+  }
+
+  /**
+   * Create the id-based mapper table `(__main_id, __aux_id)` for an auxiliary table,
+   * derived from its relation. No-op if the table declares no relation.
+   * Built as a hash equi-join on the keys; wrap a key in `UNNEST(...)` (in the
+   * relation's `mainKey`/`key` expression) for a list-valued, many-to-many join.
+   * Pairs are deduplicated (the mapper is only used in `IN (...)` subqueries, so
+   * duplicates don't change filter results but would make the lookups slower).
+   */
+  private async _createMapperTable(
+    table: string,
+    info: NonNullable<EmbeddingAtlasProps["additionalTables"]>[string],
+  ): Promise<void> {
+    const relation = info.relation;
+    if (relation == null) {
+      return;
+    }
+    const mainTable = this.props.data.table;
+    const mainId = this.props.data.id;
+    const mainKey = relation.mainKey ?? mainId;
+    const key = relation.key ?? info.id;
+    const auxId = info.id;
+    await this.coordinator.exec(`
+      CREATE OR REPLACE TABLE ${this._mapperTableName(table)} AS
+      SELECT __main_id, __aux_id FROM (
+        SELECT mk.__main_id, ak.__aux_id
+        FROM (SELECT ${mainId} AS __main_id, (${mainKey}) AS __key FROM ${mainTable}) mk
+        JOIN (SELECT ${auxId} AS __aux_id, (${key}) AS __key FROM ${table}) ak
+          ON mk.__key = ak.__key
+      )
+      GROUP BY __main_id, __aux_id
+    `);
+  }
+
+  private _makeAuxTableFilter(table: string): Selection {
+    const filter = Selection.crossfilter();
+    const info = this.props.additionalTables?.[table];
+    if (info?.relation == null) {
+      // No relation: hand back an inert crossfilter so per-table charts still have
+      // a Selection to attach to (their own brushes/clauses work), there's just no
+      // bridge to the main table.
+      return filter;
+    }
+    const mainTable = this.props.data.table;
+    const mainId = this.props.data.id;
+    const auxId = info.id;
+    const mapper = this._mapperTableName(table);
+
+    const source = {};
+    const client1 = makeClient({
+      coordinator: this.coordinator,
+      selection: this.crossFilter,
+      query: (predicate) => {
+        let localPred = predicateToString(predicate);
+        let pred =
+          localPred != null
+            ? SQL.sql`(${auxId} IN (SELECT __m.__aux_id FROM ${mapper} AS __m JOIN ${mainTable} ON ${mainTable}.${mainId} = __m.__main_id WHERE ${localPred}))`
+            : null;
+        filter.update({
+          source: source,
+          clients: new Set([client1, client2]),
+          value: pred,
+          predicate: pred,
+        });
+        return SQL.sql`SELECT 1` as any;
+      },
+    });
+
+    const client2 = makeClient({
+      coordinator: this.coordinator,
+      selection: filter,
+      query: (predicate) => {
+        let localPred = predicateToString(predicate);
+        let pred =
+          localPred != null
+            ? SQL.sql`(${mainId} IN (SELECT __m.__main_id FROM ${mapper} AS __m JOIN ${table} ON ${table}.${auxId} = __m.__aux_id WHERE ${localPred}))`
+            : null;
+        this.crossFilter.update({
+          source: source,
+          clients: new Set([client1, client2]),
+          value: pred,
+          predicate: pred,
+        });
+        return SQL.sql`SELECT 1` as any;
+      },
+    });
+    return filter;
+  }
+
   private async _defaultCharts() {
     let data = this.props.data;
     return await defaultCharts({
@@ -193,6 +331,7 @@ export class EmbeddingAtlasStore {
             neighbors: data.neighbors ?? undefined,
           }
         : undefined,
+      features: data.features ?? undefined,
       config: this.props.defaultChartsConfig ?? undefined,
     });
   }
@@ -233,6 +372,13 @@ export class EmbeddingAtlasStore {
       let source = item.source;
       source?.reset?.();
       this.crossFilter.update({ ...item, value: null, predicate: null });
+    }
+    for (let filter of this.auxTableFilters.values()) {
+      for (let item of filter.clauses) {
+        let source = item.source;
+        source?.reset?.();
+        filter.update({ ...item, value: null, predicate: null });
+      }
     }
   }
 

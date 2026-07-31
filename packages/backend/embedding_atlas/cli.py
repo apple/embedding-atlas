@@ -23,6 +23,7 @@ from .utils import (
     load_huggingface_data,
     load_pandas_data,
     logger,
+    parse_kv,
 )
 from .version import __version__
 
@@ -160,6 +161,13 @@ def import_modules(names: list[str]):
     "--vector", default=None, help="Column containing pre-computed vector embeddings."
 )
 @click.option(
+    "--features",
+    default=None,
+    help="Column containing features. If specified, a features list view will be created. "
+    "The column should be a list of feature strings, or a list of structs, one per feature, "
+    "each with a 'feature' field and optional 'source' and 'index' fields.",
+)
+@click.option(
     "--split",
     default=[],
     multiple=True,
@@ -272,6 +280,27 @@ def import_modules(names: list[str]):
     "--umap-random-state", type=int, help="Random seed for reproducible UMAP results."
 )
 @click.option(
+    "--table",
+    "extra_tables",
+    type=(str, str),
+    multiple=True,
+    help="Load an additional table. Format: --table NAME PATH (e.g., --table topics topics.parquet). Can be specified multiple times.",
+)
+@click.option(
+    "--table-relation",
+    "table_relations",
+    type=(str, str),
+    multiple=True,
+    help="Declare how an additional table joins to the main table, for cross-table filtering. "
+    "Format: --table-relation NAME 'KV', where KV is semicolon-separated key=value pairs describing "
+    "the relation: mainKey (join expression over the main table), key (join column on this table). "
+    "Wrap an expression in UNNEST(...) when the key is list-valued (e.g. a list/struct-list column). "
+    "NAME must match a --table NAME. "
+    "Example: --table-relation features "
+    "'mainKey=UNNEST(list_transform(features, s -> s.feature));key=feature'. "
+    "Can be specified multiple times.",
+)
+@click.option(
     "--duckdb",
     type=str,
     default="server",
@@ -353,6 +382,7 @@ def main(
     image: str | None,
     audio: str | None,
     vector: str | None,
+    features: str | None,
     split: list[str] | None,
     enable_projection: bool,
     model: str | None,
@@ -373,6 +403,8 @@ def main(
     umap_min_dist: float | None,
     umap_metric: str | None,
     umap_random_state: int | None,
+    extra_tables: list[tuple[str, str]] | None,
+    table_relations: list[tuple[str, str]] | None,
     static: str | None,
     duckdb: str,
     host: str,
@@ -395,6 +427,37 @@ def main(
     df = load_datasets(inputs, splits=split, query=query, sample=sample)
 
     print(df)
+
+    additional_tables = {}
+
+    if extra_tables is not None:
+        for name, path in extra_tables:
+            additional_tables[name] = load_datasets([path])
+
+    # Give every additional table a synthetic row id (mirroring the main table)
+    # so it can be registered in the UI even without a declared relation. Then
+    # attach any --table-relation, whose KV maps directly to the join relation.
+    additional_tables_meta = {}
+    for name, adf in additional_tables.items():
+        aux_id = find_column_name(adf.columns, "__row_index__")
+        adf[aux_id] = range(adf.shape[0])
+        additional_tables_meta[name] = {"id": aux_id}
+    if table_relations is not None:
+        for name, kv in table_relations:
+            if name not in additional_tables:
+                raise click.BadParameter(
+                    f"--table-relation {name!r} has no matching --table {name!r}"
+                )
+            # Validate keys/values in parse_kv so a typo (e.g. `mainkey`) or a
+            # blank value fails loudly instead of silently falling back to the
+            # id-column join (a wrong but non-erroring cross-table filter).
+            try:
+                relation = parse_kv(
+                    kv, allowed_keys={"mainKey", "key"}, allow_empty_values=False
+                )
+            except ValueError as e:
+                raise click.BadParameter(f"--table-relation {name!r}: {e}")
+            additional_tables_meta[name]["relation"] = relation
 
     if enable_projection and (x_column is None or y_column is None):
         # No x, y column selected, first see if text/image/vectors column is specified, if not, ask for it
@@ -516,9 +579,11 @@ def main(
         importance=pagerank_column,
         text=text,
         image=image,
+        features=features,
         point_size=point_size,
         stop_words=stop_words_resolved,
         labels=labels_resolved,
+        additional_tables=additional_tables_meta or None,
     )
 
     metadata = {
@@ -526,7 +591,7 @@ def main(
     }
 
     identifier = sha256_hexdigest([__version__, inputs, metadata], scope="DataSource")
-    dataset = DataSource(identifier, df, metadata)
+    dataset = DataSource(identifier, df, metadata, additional_tables=additional_tables)
 
     if static is None:
         static = (Path(__file__).parent / "static").resolve().as_posix()
@@ -552,7 +617,11 @@ def main(
             ]
 
     app = make_server(
-        dataset, static_path=static, duckdb_uri=duckdb, mcp=enable_mcp, cors=cors_config
+        dataset,
+        static_path=static,
+        duckdb_uri=duckdb,
+        mcp=enable_mcp,
+        cors=cors_config,
     )
 
     if enable_auto_port:

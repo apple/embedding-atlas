@@ -12,6 +12,7 @@
     icon?: any | null;
     placement?: Placement;
     visible?: boolean;
+    class?: string;
     button?: Snippet<[{ visible: boolean; toggle: () => void }]>;
     children?: Snippet;
   }
@@ -22,6 +23,7 @@
     icon = null,
     placement = "bottom",
     visible = $bindable(false),
+    class: className,
     children,
     button,
   }: Props = $props();
@@ -71,7 +73,8 @@
   {/if}
   <div
     bind:this={popoverElement}
-    class="absolute p-4 rounded-md z-20 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 shadow-lg"
+    class="absolute rounded-md z-20 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 shadow-lg {className ??
+      'p-4'}"
     style:width="max-content"
     popover
     ontoggle={(e) => {

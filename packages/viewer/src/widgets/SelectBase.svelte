@@ -4,6 +4,7 @@
     | {
         label: string;
         value: any;
+        disabled?: boolean;
       }
     | "---";
 
@@ -72,7 +73,7 @@
     {#if option === "---"}
       <hr />
     {:else}
-      <option value={toOptionValue(option.value)}>{option.label}</option>
+      <option value={toOptionValue(option.value)} disabled={option.disabled ?? false}>{option.label}</option>
     {/if}
   {/each}
 </select>
