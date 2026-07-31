@@ -6,13 +6,15 @@
 
   import { IconSortDown, IconSortUp, IconSortUpDown } from "../../assets/icons.js";
 
+  import { highlight as highlightText } from "../../highlight/action.js";
   import type { ColumnStyle } from "../../renderers/types.js";
   import type { ColumnDesc } from "../../utils/database.js";
-  import type { RowID } from "../chart.js";
+  import type { ChartContext, RowID } from "../chart.js";
   import { inferColumnFormatters } from "./infer_formatters.js";
   import type { SortOrder } from "./types.js";
 
   interface Props {
+    context: ChartContext;
     data: Record<string, any>[];
     columns: string[];
     columnDescs: ColumnDesc[];
@@ -25,6 +27,7 @@
   }
 
   let {
+    context,
     data,
     columns,
     columnDescs,
@@ -35,6 +38,8 @@
     onRowClick,
     onSortChange,
   }: Props = $props();
+
+  let { textHighlight, highlightScorer } = $derived(context);
 
   let highlightSet = $derived(new Set(highlight));
   let columnFormatters = $derived(inferColumnFormatters(data, columns));
@@ -176,6 +181,11 @@
             e.preventDefault();
           }
         }}
+        use:highlightText={{
+          query: $textHighlight ?? undefined,
+          scorer: $highlightScorer,
+          include: "[data-highlight]",
+        }}
         bind:this={() => idMapper.get(rowId), (v) => idMapper.set(rowId, v)}
       >
         {#each columns as column}
@@ -186,7 +196,7 @@
             onmouseenter={() => (hoveredCell = { row: index, col: column })}
             onmouseleave={() => (hoveredCell = null)}
           >
-            <div class="wrap-anywhere" class:line-clamp-3={!expandedRows.has(index)}>
+            <div class="wrap-anywhere" data-highlight class:line-clamp-3={!expandedRows.has(index)}>
               <ContentRenderer value={row[column]} style={columnStyles[column]} formatter={columnFormatters[column]} />
             </div>
             {#if !expandedRows.has(index) && hoveredCell?.row === index && hoveredCell?.col === column}

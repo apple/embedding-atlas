@@ -24,6 +24,7 @@
   let {
     coordinator,
     data,
+    additionalTables,
     initialState,
     searcher: specifiedSearcher,
     defaultChartsConfig,
@@ -43,6 +44,7 @@
   let store = new EmbeddingAtlasStore({
     coordinator,
     data,
+    additionalTables: additionalTables,
     initialState,
     searcher: specifiedSearcher,
     defaultChartsConfig,
@@ -60,7 +62,7 @@
   // Set the store context
   setStoreContext(store);
 
-  let { colorScheme, userColorScheme, chartContext, activePanel, currentLayout, canUndo, canRedo } = store;
+  let { colorScheme, userColorScheme, activePanel, currentLayout, canUndo, canRedo } = store;
 
   $effect.pre(() => {
     $userColorScheme = colorSchemeProp;

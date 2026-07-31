@@ -20,7 +20,7 @@
   {#each options as opt}
     {@const isSelected = value == opt.value}
     <button
-      class="flex items-center px-1.5 py-1.5 h-[26px] rounded-[3.875px] focus-visible:outline-2 outline-blue-600 -outline-offset-1 {isSelected
+      class="flex items-center px-1.5 py-1.5 h-[26px] text-[13px] rounded-[3.875px] focus-visible:outline-2 outline-blue-600 -outline-offset-1 {isSelected
         ? 'bg-white dark:bg-black shadow-md'
         : 'text-slate-400 dark:text-slate-600'}"
       title={opt.title ?? opt.label}
