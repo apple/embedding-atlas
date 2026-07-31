@@ -7,6 +7,12 @@ export interface EmbeddingSpec {
   title?: string;
 
   data: {
+    /** The data table, leave undefined for the default table. */
+    table?: string;
+
+    /** The row id column, must be set when using a non-default table. */
+    id?: string;
+
     x: string;
     y: string;
     text?: string | null;

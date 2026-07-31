@@ -68,6 +68,7 @@
         // table is loaded with the name "dataset" above.
         table: "dataset",
       }}
+      additionalTables={config.additionalTables}
       embeddingViewConfig={config.embeddingViewConfig}
       embeddingViewLabels={config.embeddingViewLabels}
       defaultChartsConfig={config.defaultChartsConfig}

@@ -3,12 +3,12 @@
 import { Coordinator, restConnector, socketConnector, wasmConnector, type Selection } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 
-import { isFloatingPointDBType, jsTypeFromDBType, type ColumnDesc, type JSType } from "./db_types.js";
+import { isFloatingPointDBType, jsTypeFromDBType, type ColumnDesc, type JSType, type TableDesc } from "./db_types.js";
 import { createDuckDB } from "./duckdb.js";
 
 // Re-export the pure type-classification helpers so existing imports from
 // "./database.js" keep working.
-export { isFloatingPointDBType, jsTypeFromDBType, type ColumnDesc, type JSType };
+export { isFloatingPointDBType, jsTypeFromDBType, type ColumnDesc, type JSType, type TableDesc };
 
 /** Initialize the database connector for a Mosaic coordinator */
 export async function initializeDatabase(

@@ -24,6 +24,8 @@ import type { UIElement } from "./builder/builder_description.js";
 import type { ChartBuilderDescription, ChartViewProps } from "./chart.js";
 import { histogramSpec } from "./default_charts.js";
 import type { EmbeddingSpec, EmbeddingState } from "./embedding/types.js";
+import FeaturesList from "./features/FeaturesList.svelte";
+import type { FeaturesListSpec, FeaturesListState } from "./features/types.js";
 import type { InstancesSpec } from "./instances/types.js";
 import type { ChartSpec, ChartState } from "./spec/spec.js";
 
@@ -90,6 +92,7 @@ registerChartType("builder", Builder);
 registerChartType("count-plot", CountPlot);
 registerChartType("embedding", Embedding);
 registerChartType("instances", Instances);
+registerChartType("features-list", FeaturesList);
 registerChartType("predicates", Predicates);
 registerChartType("markdown", Markdown, { supportsEditMode: true });
 registerChartType("content-viewer", ContentViewer);
@@ -101,11 +104,12 @@ export type BuiltinChartSpec =
   | CountPlotSpec
   | EmbeddingSpec
   | InstancesSpec
+  | FeaturesListSpec
   | MarkdownSpec
   | PredicatesSpec;
 
 // State type for all builtin chart types
-export type BuiltinChartState = ChartState | EmbeddingState | CountPlotState | PredicatesState;
+export type BuiltinChartState = ChartState | EmbeddingState | CountPlotState | FeaturesListState | PredicatesState;
 
 // Chart builders
 
@@ -136,24 +140,27 @@ registerChartBuilder({
   icon: "chart-stacked",
   description: "Create a histogram of a field",
   ui: [
+    { label: "Table", table: { key: "table" } }, //
     { label: "Field", field: { key: "x", types: ["number", "string", "Date"], required: true } }, //
     { label: "Group Field", field: { key: "color", types: ["number", "string", "Date"] } },
   ] as const,
-  create: ({ x, color }): ChartSpec | undefined => histogramSpec(x.name, color?.name),
+  create: ({ x, color, table }): ChartSpec | undefined => histogramSpec(x.name, color?.name, table),
 });
 
 registerChartBuilder({
   icon: "chart-line",
   description: "Create a line chart of two fields",
   ui: [
+    { label: "Table", table: { key: "table" } }, //
     { label: "X Field", field: { key: "x", types: ["number", "string", "Date"], required: true } }, //
     { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
     { label: "Group Field", field: { key: "color", types: ["number", "string", "Date"] } },
   ] as const,
-  create: ({ x, y, color }): ChartSpec | undefined => ({
+  create: ({ x, y, color, table }): ChartSpec | undefined => ({
     title: y.name,
     layers: [
       {
+        ...(table != null ? { from: table } : {}),
         mark: "line",
         filter: "$filter",
         encoding: {
@@ -175,13 +182,15 @@ registerChartBuilder({
   icon: "chart-ecdf",
   description: "Create a chart showing the empirical cumulative distribution (eCDF) of a field",
   ui: [
+    { label: "Table", table: { key: "table" } }, //
     { label: "Field", field: { key: "x", types: ["number"], required: true } }, //
     { label: "Group Field", field: { key: "color", types: ["number", "string", "Date"] } },
   ] as const,
-  create: ({ x, color }): ChartSpec | undefined => ({
+  create: ({ x, color, table }): ChartSpec | undefined => ({
     title: x.name,
     layers: [
       {
+        ...(table != null ? { from: table } : {}),
         mark: "line",
         filter: "$filter",
         encoding: {
@@ -200,13 +209,15 @@ registerChartBuilder({
   icon: "chart-heatmap",
   description: "Create a 2D heatmap of two fields",
   ui: [
+    { label: "Table", table: { key: "table" } }, //
     { label: "X Field", field: { key: "x", types: ["number", "string", "Date"], required: true } }, //
     { label: "Y Field", field: { key: "y", types: ["number", "string", "Date"], required: true } }, //
   ] as const,
-  create: ({ x, y }): ChartSpec | undefined => ({
+  create: ({ x, y, table }): ChartSpec | undefined => ({
     title: `${x.name}, ${y.name}`,
     layers: [
       {
+        ...(table != null ? { from: table } : {}),
         mark: "rect",
         filter: "$filter",
         zIndex: -1,
@@ -217,6 +228,7 @@ registerChartBuilder({
         },
       },
       {
+        ...(table != null ? { from: table } : {}),
         mark: "rect",
         zIndex: -2,
         encoding: {
@@ -239,13 +251,15 @@ registerChartBuilder({
   icon: "chart-boxplot",
   description: "Create a box plot",
   ui: [
+    { label: "Table", table: { key: "table" } }, //
     { label: "X Field", field: { key: "x", types: ["number", "string", "Date"], required: true } }, //
     { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
   ] as const,
-  create: ({ x, y }): ChartSpec | undefined => ({
+  create: ({ x, y, table }): ChartSpec | undefined => ({
     title: x.name,
     layers: [
       {
+        ...(table != null ? { from: table } : {}),
         mark: "rect",
         filter: "$filter",
         width: 1,
@@ -257,6 +271,7 @@ registerChartBuilder({
         },
       },
       {
+        ...(table != null ? { from: table } : {}),
         mark: "rect",
         filter: "$filter",
         width: { gap: 1, clampToRatio: 0.1 },
@@ -267,6 +282,7 @@ registerChartBuilder({
         },
       },
       {
+        ...(table != null ? { from: table } : {}),
         mark: "rect",
         filter: "$filter",
         height: 1,
@@ -293,15 +309,17 @@ registerChartBuilder({
   icon: "chart-bubble",
   description: "Create a bubble chart",
   ui: [
+    { label: "Table", table: { key: "table" } }, //
     { label: "X Field", field: { key: "x", types: ["number"], required: true } }, //
     { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
     { label: "Color Field", field: { key: "color", types: ["number", "string", "Date"] } }, //
     { label: "Group Field", field: { key: "group", types: ["number", "string", "Date"] } }, //
   ] as const,
-  create: ({ x, y, color, group }): ChartSpec | undefined => ({
+  create: ({ x, y, color, group, table }): ChartSpec | undefined => ({
     title: x.name,
     layers: [
       {
+        ...(table != null ? { from: table } : {}),
         mark: "point",
         filter: "$filter",
         style: {
@@ -330,16 +348,21 @@ registerChartBuilder({
   icon: "chart-embedding",
   description: "Create an embedding view",
   ui: [
+    { label: "Table", table: { key: "table" } }, //
     { label: "X Field", field: { key: "x", types: ["number"], required: true } }, //
     { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
     { label: "Text Field", field: { key: "text", types: ["string"] } }, //
     { label: "Category Field", field: { key: "category", types: ["string", "number", "Date"] } }, //
   ] as const,
   preview: false,
-  create: ({ x, y, text, category }, context): EmbeddingSpec | undefined => ({
+  create: ({ x, y, text, category, table }, context): EmbeddingSpec | undefined => ({
     type: "embedding",
     title: "Embedding",
     data: {
+      // The builder passes undefined for the main table, so single-table specs stay
+      // clean (and filterFor(mainTable) is not accidentally triggered). When a
+      // non-default table is set, its id column must be set too, since it differs per table.
+      ...(table != null ? { table, id: context.tables[table]?.id } : {}),
       x: x.name,
       y: y.name,
       text: text?.name,

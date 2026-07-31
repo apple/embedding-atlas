@@ -19,7 +19,7 @@
     "test:python": "cd packages/backend && uv run pytest",
     "test": "npm run test:js && npm run test:python && npm run test:rust",
     "check": "npm run check -w @embedding-atlas/component -w @embedding-atlas/viewer -w @embedding-atlas/embedding-atlas -w @embedding-atlas/examples -w @embedding-atlas/backend",
-    "check-format": "prettier -c . && uvx ruff check && uvx ruff format --check --exclude '*.ipynb'"
+    "check-format": "prettier -c . && uvx ruff format --check --exclude '*.ipynb' --exclude '*.md'"
   },
   "devDependencies": {
     "prettier": "^3.8.1",

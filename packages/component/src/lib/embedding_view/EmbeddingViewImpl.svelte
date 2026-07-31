@@ -30,6 +30,7 @@
     onSelection: ((value: Selection[] | null) => void) | null;
     onRangeSelection: ((value: Rectangle | Point[] | null) => void) | null;
     cache: Cache | null;
+    cacheIdentifier?: any | null;
   }
 
   interface Cluster {
@@ -90,7 +91,7 @@
 </script>
 
 <script lang="ts">
-  import { interactionHandler, type CursorValue } from "@embedding-atlas/utils";
+  import { deepEquals, interactionHandler, objectHash, type CursorValue } from "@embedding-atlas/utils";
   import { onDestroy, onMount } from "svelte";
 
   import EditableRectangle from "./EditableRectangle.svelte";
@@ -100,15 +101,7 @@
 
   import { defaultCategoryColors } from "../colors.js";
   import type { EmbeddingRenderer } from "../renderer_interface.js";
-  import {
-    cacheKeyForObject,
-    deepEquals,
-    pointDistance,
-    throttleTooltip,
-    type Point,
-    type Rectangle,
-    type ViewportState,
-  } from "../utils.js";
+  import { pointDistance, throttleTooltip, type Point, type Rectangle, type ViewportState } from "../utils.js";
   import { Viewport } from "../viewport_utils.js";
   import { EmbeddingRendererWebGL2 } from "../webgl2_renderer/renderer.js";
   import { EmbeddingRendererWebGPU } from "../webgpu_renderer/renderer.js";
@@ -156,6 +149,7 @@
     onSelection = null,
     onRangeSelection = null,
     cache = null,
+    cacheIdentifier = undefined,
   }: Props<Selection> = $props();
 
   let showClusterLabels = true;
@@ -630,9 +624,10 @@
       return [];
     }
 
-    let cacheKey = await cacheKeyForObject({
+    let cacheKey = await objectHash({
       autoLabel: {
         version: 3,
+        identifier: cacheIdentifier,
         viewport,
         stopWords: config?.autoLabelStopWords,
         densityThreshold: config?.autoLabelDensityThreshold,
