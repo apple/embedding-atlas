@@ -558,6 +558,8 @@
       }
     },
     () => tooltip != null,
+    () => config?.tooltipDelay ?? 300,
+    () => config?.tooltipRecentThreshold ?? 300,
   );
 
   function onHover(e: CursorValue | null) {
