@@ -7,6 +7,14 @@ export interface EmbeddingViewConfig {
   /** View mode. */
   mode?: "points" | "density" | null;
 
+  /** Whether to draw the individual points. Default: true.
+   * Set to false in "density" mode to show the density map without the points. */
+  showPoints?: boolean | null;
+
+  /** Whether to display labels, both automatically generated and explicitly provided ones.
+   * Default: true. */
+  showLabels?: boolean | null;
+
   /** Minimum average density for density contours to show up.
    * The density is measured as number of points per square points (aka., px in CSS units). */
   minimumDensity?: number | null;
