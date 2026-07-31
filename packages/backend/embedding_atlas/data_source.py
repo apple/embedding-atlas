@@ -3,6 +3,7 @@
 import json
 import os
 import pathlib
+import re
 import shutil
 import zipfile
 from io import BytesIO
@@ -24,16 +25,32 @@ def _deep_merge(base: dict, overrides: dict) -> dict:
     return result
 
 
+_TABLE_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _validate_additional_tables(additional_tables: dict | None):
+    if not additional_tables:
+        return
+    for name in additional_tables:
+        if not _TABLE_NAME_RE.fullmatch(name):
+            raise ValueError(f"invalid table name: {name!r}")
+        if name == "dataset":
+            raise ValueError("table name 'dataset' is reserved")
+
+
 class DataSource:
     def __init__(
         self,
         identifier: str,
         dataset: pd.DataFrame,
         metadata: dict,
+        additional_tables: dict | None = None,
     ):
+        _validate_additional_tables(additional_tables)
         self.identifier = identifier
         self.dataset = dataset
         self.metadata = metadata
+        self.additional_tables = additional_tables or {}
         self._cache_index: set[str] = set(self._cache_index_load())
 
     def _cache_index_key(self):
@@ -74,16 +91,29 @@ class DataSource:
                 result[name] = value
         return result
 
-    def _build_metadata(self, metadata_overrides: dict | None = None) -> dict:
+    def _build_metadata(
+        self,
+        metadata_overrides: dict | None = None,
+    ) -> dict:
+        db_meta: dict = {"type": "wasm", "load": True}
+        if self.additional_tables:
+            db_meta["additionalTables"] = [
+                {"name": name, "url": f"tables/{name}.parquet"}
+                for name in self.additional_tables
+            ]
         metadata = self.metadata | {
             "isStatic": True,
-            "database": {"type": "wasm", "load": True},
+            "database": db_meta,
         }
         if metadata_overrides:
             metadata = _deep_merge(metadata, metadata_overrides)
         return metadata
 
-    def make_archive(self, static_path: str, metadata_overrides: dict | None = None):
+    def make_archive(
+        self,
+        static_path: str,
+        metadata_overrides: dict | None = None,
+    ):
         io = BytesIO()
         with zipfile.ZipFile(io, "w", zipfile.ZIP_DEFLATED) as zip:
             zip.writestr(
@@ -91,6 +121,8 @@ class DataSource:
                 json.dumps(self._build_metadata(metadata_overrides)),
             )
             zip.writestr("data/dataset.parquet", to_parquet_bytes(self.dataset))
+            for name, df in self.additional_tables.items():
+                zip.writestr(f"data/tables/{name}.parquet", to_parquet_bytes(df))
             for root, _, files in os.walk(static_path):
                 for fn in files:
                     p = os.path.relpath(os.path.join(root, fn), static_path)
@@ -118,6 +150,11 @@ class DataSource:
             json.dumps(self._build_metadata(metadata_overrides))
         )
         (data_dir / "dataset.parquet").write_bytes(to_parquet_bytes(self.dataset))
+        if self.additional_tables:
+            tables_dir = data_dir / "tables"
+            tables_dir.mkdir(exist_ok=True)
+            for name, df in self.additional_tables.items():
+                (tables_dir / f"{name}.parquet").write_bytes(to_parquet_bytes(df))
 
         # Copy static frontend files
         for root, _, files in os.walk(static_path):

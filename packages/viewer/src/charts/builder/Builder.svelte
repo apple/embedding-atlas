@@ -19,7 +19,7 @@
   let { context, width, height, onSpecChange, onStateChange }: ChartViewProps<{}, {}> = $props();
 
   // svelte-ignore state_referenced_locally
-  let { columns, colorScheme } = context;
+  let { colorScheme } = context;
 
   let chartBuilders = chartBuilderDescriptions();
 
@@ -30,19 +30,33 @@
   let localChartState = $state.raw<any>(null);
   let localChartSpec = $state.raw<any>(null);
 
-  // If builder change, refresh the values.
+  // The table the new chart targets, selected via a "table" UI element (if the
+  // builder declares one). Defaults to the main table. Field options are sourced
+  // from this table's columns.
+  let tableKey = $derived((builder.ui.find((e) => "table" in e) as { table: { key: string } } | undefined)?.table.key);
+  let tableNames = $derived(Object.keys(context.tables));
+  let selectedTable = $derived((tableKey != null ? values[tableKey] : undefined) ?? context.table);
+  let columns = $derived(context.tables[selectedTable]?.columns ?? []);
+
+  // Refresh the values when the builder or the selected table changes. Field
+  // selections are kept when their key/type still apply, and pruned otherwise
+  // (e.g. a field that doesn't exist in a newly selected table).
   $effect.pre(() => {
     let _ = builder;
-    // Update values so we keep the fields selected if the keys are the same.
+    // Track columns so pruning also runs when the table dropdown changes.
+    let currentColumns = columns;
     let currentValues = untrack(() => values);
     let newValues: Record<string, any> = {};
     for (let item of builder.ui) {
       if ("field" in item) {
-        let allowedColumns = filteredColumns(columns, item.field.types);
+        let allowedColumns = filteredColumns(currentColumns, item.field.types);
         let current = currentValues[item.field.key];
         if (current != null && allowedColumns.findIndex(({ name }) => name == current) >= 0) {
           newValues[item.field.key] = current;
         }
+      } else if ("table" in item) {
+        // Preserve the table selection so re-running on a table change doesn't wipe it.
+        newValues[item.table.key] = currentValues[item.table.key];
       }
     }
     // Setting values should trigger validation and update the spec.
@@ -58,7 +72,7 @@
         localChartState = null;
         return;
       }
-      let r = builder.create(input, { table: context.table, id: context.id });
+      let r = builder.create(input, { tables: context.tables });
       validateResult = r != null;
       localChartSpec = r;
       localChartState = null;
@@ -83,6 +97,12 @@
           return undefined;
         }
         input[item.field.key] = value;
+      }
+      if ("table" in item) {
+        // Pass undefined for the main table so builders only record non-default tables.
+        if (input[item.table.key] === context.table) {
+          input[item.table.key] = undefined;
+        }
       }
     }
     return input;
@@ -158,7 +178,7 @@
 
   <div class="select-none">{builder.description}</div>
 
-  {#each builder.ui as elem}
+  {#each builder.ui.filter((x) => !("table" in x && tableNames.length <= 1)) as elem}
     {#if "label" in elem}
       <div class="text-slate-500 dark:text-slate-400 select-none">{elem.label}</div>
     {/if}
@@ -203,6 +223,15 @@
           colorScheme={$colorScheme}
         />
       </div>
+    {/if}
+    {#if "table" in elem}
+      {@const key = elem.table.key}
+      <Select
+        value={values[key] ?? context.table}
+        onChange={valueUpdater(key)}
+        class="w-full"
+        options={tableNames.map((t) => ({ value: t, label: t }))}
+      />
     {/if}
   {/each}
   {#if localChartSpec != null && builder.preview !== false}

@@ -46,7 +46,13 @@ export interface EmbeddingAtlasProps {
 
     /** The column for importance scores (e.g., PageRank, centrality). Used with `image` to select representative images for cluster labels. */
     importance?: string | null;
+
+    /** The column for features. If available, a features list view will be created by default. */
+    features?: string | null;
   };
+
+  /** Additional data tables. */
+  additionalTables?: Record<string, AdditionalTable>;
 
   /** The color scheme. */
   colorScheme?: "light" | "dark" | null;
@@ -122,6 +128,26 @@ export interface EmbeddingAtlasState {
 
   /** Column display and rendering styles. */
   columnStyles?: Record<string, ColumnStyle>;
+}
+
+export interface AdditionalTable {
+  /** The row id column of this table. */
+  id: string;
+
+  /** How this table joins to the main (primary) table, used for cross-table filtering. */
+  relation?: {
+    /**
+     * Join-key expression over the MAIN table's columns. Defaults to the main table's `id`.
+     * Wrap in `UNNEST(...)` when the key is list-valued (e.g. a list/struct-list column → many-to-many).
+     */
+    mainKey?: string;
+
+    /**
+     * Join-key expression over THIS table's columns. Defaults to this table's `id`.
+     * Wrap in `UNNEST(...)` when the key is list-valued.
+     */
+    key?: string;
+  };
 }
 
 export interface Cache {

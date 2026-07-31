@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { imageToDataUrl } from "@embedding-atlas/utils";
+  import { deepEquals, imageToDataUrl } from "@embedding-atlas/utils";
   import { coordinator as defaultCoordinator, isSelection, makeClient, type MosaicClient } from "@uwdata/mosaic-core";
   import * as SQL from "@uwdata/mosaic-sql";
   import { untrack } from "svelte";
@@ -8,7 +8,7 @@
   import EmbeddingViewImpl from "./EmbeddingViewImpl.svelte";
 
   import { ImageSummarizer } from "../image_summarizer/image_summarizer.js";
-  import { deepEquals, type Point, type Rectangle, type ViewportState } from "../utils.js";
+  import { type Point, type Rectangle, type ViewportState } from "../utils.js";
   import type { EmbeddingViewMosaicProps } from "./embedding_view_mosaic_api.js";
   import { IMAGE_LABEL_SIZE } from "./labels.js";
   import {
@@ -514,4 +514,5 @@
     onRangeSelection?.(v);
   }}
   cache={cache}
+  cacheIdentifier={{ table, x, y, text }}
 />

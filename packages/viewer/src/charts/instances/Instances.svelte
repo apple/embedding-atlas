@@ -28,7 +28,7 @@
   }: ChartViewProps<InstancesSpec, InstancesState> = $props();
 
   // svelte-ignore state_referenced_locally
-  let { columnStyles: contextColumnStyles } = context;
+  let { columnStyles: contextColumnStyles, textHighlight } = context;
 
   // Merge spec columnStyles with global ones (spec takes precedence)
   let columnStyles = $derived({ ...$contextColumnStyles, ...spec.columnStyles });
@@ -373,9 +373,10 @@
       {#if viewMode === "table"}
         <Table
           bind:this={contentView}
+          context={context}
           data={data.data}
           columns={data.columns}
-          columnDescs={context.columns}
+          columnDescs={context.tables[context.table]?.columns ?? []}
           columnStyles={columnStyles}
           defaultColumnWidths={defaultColumnWidths}
           highlight={$highlight}
@@ -398,6 +399,7 @@
       {:else}
         <Cards
           bind:this={contentView}
+          context={context}
           data={data.data}
           columns={data.columns}
           columnStyles={columnStyles}

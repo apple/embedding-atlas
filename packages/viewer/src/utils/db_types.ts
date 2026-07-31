@@ -3,6 +3,12 @@
 // Pure helpers for classifying DuckDB column types. Kept free of any database
 // or browser dependencies so the logic can be reused and unit tested directly.
 
+/** Table description */
+export interface TableDesc {
+  name: string;
+  columns: ColumnDesc[];
+}
+
 /** Column description */
 export interface ColumnDesc {
   name: string;
