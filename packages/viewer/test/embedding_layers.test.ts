@@ -58,6 +58,48 @@ describe("effectiveLayers", () => {
   });
 });
 
+describe("effectiveLayers edge cases", () => {
+  it("lets a full layers object turn every layer off despite legacy density mode", () => {
+    expect(effectiveLayers({ mode: "density", layers: { points: false, density: false, labels: false } })).toEqual({
+      points: false,
+      density: false,
+      labels: false,
+    });
+  });
+
+  it("treats an unrecognized legacy mode value like the default base", () => {
+    expect(effectiveLayers({ mode: "densityy" as any })).toEqual({ points: true, density: false, labels: true });
+  });
+
+  it("falls back to defaults for null layer values from hand-edited specs", () => {
+    expect(effectiveLayers({ layers: { points: null, density: null, labels: null } as any })).toEqual({
+      points: true,
+      density: false,
+      labels: true,
+    });
+  });
+
+  it("falls back to the mode base for undefined layer values", () => {
+    expect(effectiveLayers({ mode: "density", layers: { density: undefined } })).toEqual({
+      points: true,
+      density: true,
+      labels: true,
+    });
+  });
+
+  it("returns exactly the three known layer keys, dropping unknown ones", () => {
+    const result = effectiveLayers({ layers: { points: false, glow: true } as any });
+    expect(result).toEqual({ points: false, density: false, labels: true });
+    expect(Object.keys(result).sort()).toEqual(["density", "labels", "points"]);
+  });
+
+  it("does not touch spec.mode when resolving", () => {
+    const spec = { mode: "density" as const };
+    effectiveLayers(spec);
+    expect(spec.mode).toBe("density");
+  });
+});
+
 describe("updateLayers", () => {
   it("replaces a legacy mode with a complete layers object and deletes mode", () => {
     const spec: { mode?: "points" | "density"; layers?: Partial<EmbeddingLayers> } = { mode: "density" };
@@ -87,5 +129,23 @@ describe("updateLayers", () => {
     const first = { ...spec.layers };
     updateLayers(spec, { points: false });
     expect(spec.layers).toEqual(first);
+  });
+
+  it("normalizes null layer values and persists a complete object for an empty patch", () => {
+    const spec: { mode?: "points" | "density"; layers?: Partial<EmbeddingLayers> } = {
+      mode: "density",
+      layers: { labels: null } as any,
+    };
+    updateLayers(spec, {});
+    expect(spec.layers).toEqual({ points: true, density: true, labels: true });
+    expect("mode" in spec).toBe(false);
+  });
+
+  it("can turn every layer off and back on again", () => {
+    const spec: { mode?: "points" | "density"; layers?: Partial<EmbeddingLayers> } = { mode: "density" };
+    updateLayers(spec, { points: false, density: false, labels: false });
+    expect(spec.layers).toEqual({ points: false, density: false, labels: false });
+    updateLayers(spec, { points: true, density: true, labels: true });
+    expect(spec.layers).toEqual({ points: true, density: true, labels: true });
   });
 });
