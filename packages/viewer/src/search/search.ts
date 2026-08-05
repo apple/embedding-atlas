@@ -5,7 +5,11 @@ import type { Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 
 import type { Searcher } from "../api.js";
+import { escapeLikePattern, parseQuery } from "./query_parser.js";
 import type { SearchIndex } from "./search.worker.js";
+
+/** A bound large enough to stand in for "every match" in a flexsearch query. */
+const UNLIMITED_SEARCH_RESULTS = 1e9;
 
 async function createSearchIndex(): Promise<WorkerProxy<SearchIndex>> {
   let worker = new Worker(new URL("./search.worker.js", import.meta.url), { type: "module" });
@@ -18,8 +22,15 @@ export class FullTextSearcher implements Searcher {
   table: string;
   columns: { text: string; id: string };
 
-  backend: Promise<WorkerProxy<SearchIndex>>;
+  // Created on first use. A query made entirely of exact phrases is answered by
+  // the database, so it never needs the fuzzy index or the worker hosting it.
+  private backendPromise: Promise<WorkerProxy<SearchIndex>> | null = null;
   currentIndex: { predicate: string | null; promise: Promise<void> } | null = null;
+
+  get backend(): Promise<WorkerProxy<SearchIndex>> {
+    this.backendPromise ??= createSearchIndex();
+    return this.backendPromise;
+  }
 
   constructor(
     coordinator: Coordinator,
@@ -33,7 +44,6 @@ export class FullTextSearcher implements Searcher {
     this.table = table;
     this.columns = columns;
     this.currentIndex = null;
-    this.backend = createSearchIndex();
   }
 
   predicateString(predicate: any | null): string | null {
@@ -81,17 +91,87 @@ export class FullTextSearcher implements Searcher {
     return this.currentIndex.promise;
   }
 
+  /**
+   * Run the exact-phrase part of a query against the database.
+   *
+   * Every phrase must appear as a case-insensitive substring of the text
+   * column. This runs as SQL rather than in the worker so the phrases are
+   * matched against the text already in the database, instead of keeping a
+   * second copy of every text in memory alongside the fuzzy index.
+   *
+   * When `candidateIDs` is given, the match is restricted to those rows, which
+   * is how a mixed query like `"aldi" store` narrows the fuzzy hits for `store`
+   * down to the ones that also contain the exact phrase.
+   */
+  private async queryPhrases(
+    phrases: string[],
+    predicate: string | null,
+    candidateIDs: (string | number)[] | null,
+    limit: number,
+  ): Promise<any[]> {
+    let idColumn = SQL.column(this.columns.id);
+    let textColumn = SQL.column(this.columns.text);
+
+    let conditions = phrases.map(
+      (phrase) =>
+        `lower(${textColumn}) LIKE ${SQL.literal(`%${escapeLikePattern(phrase.toLowerCase())}%`)} ESCAPE '\\'`,
+    );
+    if (predicate != null) {
+      conditions.push(`(${predicate})`);
+    }
+    if (candidateIDs != null) {
+      if (candidateIDs.length == 0) {
+        return [];
+      }
+      conditions.push(`${idColumn} IN [${candidateIDs.map((x) => SQL.literal(x)).join(", ")}]`);
+    }
+
+    let result = await this.coordinator.query(`
+      SELECT ${idColumn} AS id
+      FROM ${this.table}
+      WHERE ${conditions.join(" AND ")}
+      LIMIT ${limit}
+    `);
+    return Array.from(result).map((row: any) => row.id);
+  }
+
   async fullTextSearch(
     query: string,
     options: { limit?: number; predicate?: any; onStatus?: (status: string) => void } = {},
   ): Promise<{ id: any }[]> {
     let limit = options.limit ?? 100;
     let predicate = options.predicate;
+    let { phrases, freeText } = parseQuery(query);
+
+    // Phrases only: the database can answer this on its own, so skip building
+    // the fuzzy index entirely.
+    if (phrases.length > 0 && freeText.length == 0) {
+      options?.onStatus?.("Searching...");
+      let resultIDs = await this.queryPhrases(phrases, this.predicateString(predicate), null, limit);
+      return resultIDs.map((id) => ({ id: id }));
+    }
+
     options?.onStatus?.("Indexing...");
     await this.buildIndexIfNeeded(predicate);
     options?.onStatus?.("Searching...");
     let backend = await this.backend;
-    let resultIDs = await backend.query(query, limit);
+
+    // No phrases: the original fuzzy path, unchanged.
+    if (phrases.length == 0) {
+      let resultIDs = await backend.query(freeText, limit);
+      return resultIDs.map((id) => ({ id: id }));
+    }
+
+    // Mixed query: rank by the fuzzy hits for the free text, then keep only the
+    // ones that also contain every phrase. The candidate search is uncapped so
+    // the phrase filter does not run against an already-truncated list. Note
+    // that flexsearch treats a limit of 0 as "use the default of 100" rather
+    // than "no limit", so this passes an explicit large bound instead.
+    let candidateIDs = await backend.query(freeText, UNLIMITED_SEARCH_RESULTS);
+    let matched = new Set(
+      await this.queryPhrases(phrases, this.predicateString(predicate), candidateIDs, candidateIDs.length),
+    );
+    let resultIDs = candidateIDs.filter((id) => matched.has(id)).slice(0, limit);
     return resultIDs.map((id) => ({ id: id }));
   }
 }
