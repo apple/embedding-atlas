@@ -1,4 +1,5 @@
 import lsdb
+import pandas as pd
 
 print("1. Connecting to LSDB Gaia DR3 remote server...")
 # We load the raw catalog (no server-side filters to avoid bugs)
@@ -43,12 +44,15 @@ def get_star_class(mag):
 
 df["star_class"] = df["brightness_magnitude"].apply(get_star_class)
 
-# LSDB adds an internal `_healpix_29` spatial-partitioning index column whose int64 values
-# exceed JavaScript's safe integer range (2^53), which crashes the viewer's Arrow/BigInt-to-
-# Number conversion when rendering the data table. It's an internal index, not meaningful
-# application data, so drop it rather than carry it through to the frontend.
-df = df.drop(columns=["_healpix_29"], errors="ignore")
+# LSDB sets `_healpix_29` (an internal spatial-partitioning index) as the DataFrame's *index*,
+# not a column - `df.drop(columns=[...])` silently no-ops on it, and `to_parquet()` then
+# serializes the named index back as a real column. Its int64 values exceed JavaScript's safe
+# integer range (2^53), which crashes the viewer's Arrow/BigInt-to-Number conversion when
+# rendering the data table. Reset the index and convert to a plain pandas DataFrame (`cone.
+# compute()` returns an LSDB `NestedFrame`, whose `to_parquet` override doesn't accept
+# `index=False`) to guarantee no index column reaches the frontend.
+df = pd.DataFrame(df.drop(columns=["_healpix_29"], errors="ignore").reset_index(drop=True))
 
 # Save the dataset to a Parquet file
-df.to_parquet("real_stars.parquet")
+df.to_parquet("real_stars.parquet", index=False)
 print(f"5. Success! Saved {len(df)} real stars to 'real_stars.parquet'!")

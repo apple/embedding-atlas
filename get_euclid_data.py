@@ -3,6 +3,7 @@ LSDB, covering part of the EDF-North deep field. A second, genuinely different L
 alongside the Gaia DR3 star field, for comparing two real catalogs in the same viewer."""
 
 import lsdb
+import pandas as pd
 
 print("1. Connecting to LSDB Euclid Q1 remote server...")
 euclid_cat = lsdb.open_catalog(  # type: ignore
@@ -27,11 +28,14 @@ df = df.rename(
     }
 )
 
-# LSDB adds an internal `_healpix_29` spatial-partitioning index column; for this catalog its
-# int64 values exceed JavaScript's safe integer range (2^53), which crashes the viewer's
-# Arrow/BigInt-to-Number conversion when rendering the data table. It's an internal index, not
-# meaningful application data, so drop it rather than carry it through to the frontend.
-df = df.drop(columns=["_healpix_29"], errors="ignore")
+# LSDB sets `_healpix_29` (an internal spatial-partitioning index) as the DataFrame's *index*,
+# not a column - `df.drop(columns=[...])` silently no-ops on it, and `to_parquet()` then
+# serializes the named index back as a real column. Its int64 values exceed JavaScript's safe
+# integer range (2^53), which crashes the viewer's Arrow/BigInt-to-Number conversion when
+# rendering the data table. Reset the index and convert to a plain pandas DataFrame (`cone.
+# compute()` returns an LSDB `NestedFrame`, whose `to_parquet` override doesn't accept
+# `index=False`) to guarantee no index column reaches the frontend.
+df = pd.DataFrame(df.drop(columns=["_healpix_29"], errors="ignore").reset_index(drop=True))
 
-df.to_parquet("real_euclid.parquet")
+df.to_parquet("real_euclid.parquet", index=False)
 print(f"5. Success! Saved {len(df)} real Euclid Q1 objects to 'real_euclid.parquet'!")

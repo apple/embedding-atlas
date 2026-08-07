@@ -58,7 +58,7 @@ df["y"] = (kept_y + jitter_y).round(4)
 df["z"] = (kept_z + jitter_z).round(4)
 print(f"{len(df)} stars after 3D ellipsoidal thinning + jitter (sigma={sigma_x},{sigma_y},{sigma_z}, density_scale={density_scale})")
 
-df.to_parquet("real_stars_xyz.parquet")
+df.to_parquet("real_stars_xyz.parquet", index=False)
 print(f"Wrote {len(df)} rows to real_stars_xyz.parquet")
 print(df[["x", "y", "z", "distance_pc", "star_class"]].head())
 print(f"x range: [{df['x'].min():.3f}, {df['x'].max():.3f}]")
