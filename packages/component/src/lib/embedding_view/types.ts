@@ -5,6 +5,8 @@ export type DataPointID = string | number | bigint;
 export interface DataPoint {
   x: number;
   y: number;
+  /** The Z coordinate, present only for points from a 3D embedding view. */
+  z?: number;
   category?: number;
   text?: string;
   identifier?: DataPointID;

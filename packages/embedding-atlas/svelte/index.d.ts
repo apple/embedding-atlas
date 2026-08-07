@@ -2,7 +2,9 @@
 
 import EmbeddingAtlas from "./EmbeddingAtlas.svelte";
 import EmbeddingView from "./EmbeddingView.svelte";
+import EmbeddingView3D from "./EmbeddingView3D.svelte";
+import EmbeddingView3DMosaic from "./EmbeddingView3DMosaic.svelte";
 import EmbeddingViewMosaic from "./EmbeddingViewMosaic.svelte";
 
 export * from "../dist/index.js";
-export { EmbeddingAtlas, EmbeddingView, EmbeddingViewMosaic };
+export { EmbeddingAtlas, EmbeddingView, EmbeddingView3D, EmbeddingView3DMosaic, EmbeddingViewMosaic };

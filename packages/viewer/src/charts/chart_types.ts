@@ -351,11 +351,12 @@ registerChartBuilder({
     { label: "Table", table: { key: "table" } }, //
     { label: "X Field", field: { key: "x", types: ["number"], required: true } }, //
     { label: "Y Field", field: { key: "y", types: ["number"], required: true } }, //
+    { label: "Z Field (optional)", field: { key: "z", types: ["number"] } }, //
     { label: "Text Field", field: { key: "text", types: ["string"] } }, //
     { label: "Category Field", field: { key: "category", types: ["string", "number", "Date"] } }, //
   ] as const,
   preview: false,
-  create: ({ x, y, text, category, table }, context): EmbeddingSpec | undefined => ({
+  create: ({ x, y, z, text, category, table }, context): EmbeddingSpec | undefined => ({
     type: "embedding",
     title: "Embedding",
     data: {
@@ -365,6 +366,7 @@ registerChartBuilder({
       ...(table != null ? { table, id: context.tables[table]?.id } : {}),
       x: x.name,
       y: y.name,
+      z: z?.name,
       text: text?.name,
       category: category?.name,
     },
