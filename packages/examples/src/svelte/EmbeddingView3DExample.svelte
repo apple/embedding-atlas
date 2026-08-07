@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import EmbeddingView3D from "../../../component/src/lib/embedding_view/EmbeddingView3D.svelte";
+  import { EmbeddingView3D } from "embedding-atlas/svelte";
 
   interface StarData {
     x: number[];
@@ -15,16 +15,16 @@
   let stars: StarData | null = $state.raw(null);
   let error: string | null = $state.raw(null);
 
-  let data = $derived(
-    stars != null
-      ? {
-          x: new Float32Array(stars.x),
-          y: new Float32Array(stars.y),
-          z: new Float32Array(stars.z),
-          category: new Uint8Array(stars.category),
-        }
-      : null,
-  );
+  let data = $derived.by(() => {
+    let s = stars;
+    if (s == null) return null;
+    return {
+      x: new Float32Array(s.x),
+      y: new Float32Array(s.y),
+      z: new Float32Array(s.z),
+      category: new Uint8Array(s.category),
+    };
+  });
 
   let categoryColors = ["#f2c744", "#7ea8f9", "#8891a3"]; // bright / medium / dim
 
