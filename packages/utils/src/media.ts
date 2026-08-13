@@ -1,14 +1,14 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 export function imageToDataUrl(value: any): string | null {
-  return mediaToDataUrl(value, detectImageType);
+  return mediaToDataUrl(value, detectImageMimeType);
 }
 
 export function audioToDataUrl(value: any): string | null {
-  return mediaToDataUrl(value, detectAudioType);
+  return mediaToDataUrl(value, detectAudioMimeType);
 }
 
-function mediaToDataUrl(value: any, detectType: (bytes: Uint8Array, path?: string) => string): string | null {
+function mediaToDataUrl(value: any, detectType: (bytes: Uint8Array, path?: string) => string | null): string | null {
   if (value == null) {
     return null;
   }
@@ -16,9 +16,11 @@ function mediaToDataUrl(value: any, detectType: (bytes: Uint8Array, path?: strin
     if (typeof value == "string") {
       if (value.startsWith("data:") || value.startsWith("http://") || value.startsWith("https://")) {
         return value;
-      } else {
-        let type = detectType(base64Decode(value));
+      } else if (looksLikeBase64(value)) {
+        let type = detectType(base64DecodePrefix(value)) ?? "application/octet-stream";
         return `data:${type};base64,` + value;
+      } else {
+        return null;
       }
     } else {
       let bytes: Uint8Array<ArrayBuffer> | null = null;
@@ -33,7 +35,7 @@ function mediaToDataUrl(value: any, detectType: (bytes: Uint8Array, path?: strin
         bytes = value as any;
       }
       if (bytes != null) {
-        let type = detectType(bytes, path);
+        let type = detectType(bytes, path) ?? "application/octet-stream";
         return `data:${type};base64,` + base64Encode(bytes);
       }
     }
@@ -55,14 +57,24 @@ function startsWith(data: Uint8Array, prefix: number[]): boolean {
   return true;
 }
 
-function detectImageType(data: Uint8Array): string {
+/** Detect the image MIME type from magic bytes. Returns null for unrecognized data. */
+export function detectImageMimeType(data: Uint8Array): string | null {
   if (startsWith(data, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
     return "image/png";
   } else if (startsWith(data, [0xff, 0xd8, 0xff])) {
     return "image/jpeg";
   } else if (startsWith(data, [0x49, 0x49, 0x2a, 0x00])) {
     return "image/tiff";
-  } else if (startsWith(data, [0x42, 0x4d])) {
+  } else if (
+    // Require the header's reserved
+    // bytes (offset 6-9) to be zero so arbitrary binary doesn't misdetect.
+    startsWith(data, [0x42, 0x4d]) &&
+    data.length >= 10 &&
+    data[6] === 0 &&
+    data[7] === 0 &&
+    data[8] === 0 &&
+    data[9] === 0
+  ) {
     return "image/bmp";
   } else if (
     startsWith(data, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) ||
@@ -70,12 +82,14 @@ function detectImageType(data: Uint8Array): string {
   ) {
     return "image/gif";
   }
-  // Unknown, fallback to generic type
-  return "application/octet-stream";
+  return null;
 }
 
-function detectAudioType(data: Uint8Array, path?: string): string {
-  // Check for MP3 (ID3 tag)
+/** Detect the audio MIME type from magic bytes, falling back to the file
+ * extension of `path` when the content is unrecognized. Returns null if
+ * neither matches. */
+export function detectAudioMimeType(data: Uint8Array, path?: string): string | null {
+  // Check for MP3
   if (startsWith(data, [0x49, 0x44, 0x33])) {
     return "audio/mpeg";
   }
@@ -108,7 +122,7 @@ function detectAudioType(data: Uint8Array, path?: string): string {
   if (data.length >= 8 && data[4] === 0x66 && data[5] === 0x74 && data[6] === 0x79 && data[7] === 0x70) {
     return "audio/mp4";
   }
-  // Fallback: try to infer from path extension
+  // Attempt to infering from path extension
   if (path) {
     const ext = path.split(".").pop()?.toLowerCase();
     switch (ext) {
@@ -128,19 +142,46 @@ function detectAudioType(data: Uint8Array, path?: string): string {
         return "audio/webm";
     }
   }
-  // Unknown, fallback to generic type
-  return "application/octet-stream";
+  return null;
+}
+
+/** Detect the MIME type of a raw base64-encoded string (no `data:` prefix) by
+ * seeking  magic bytes of its decoded prefix. Returns null if the string
+ * is not base64-shaped or the decoded content is unrecognized.*/
+export function detectBase64MimeType(value: string): string | null {
+  if (!looksLikeBase64(value)) {
+    return null;
+  }
+  try {
+    let bytes = base64DecodePrefix(value);
+    return detectImageMimeType(bytes) ?? detectAudioMimeType(bytes);
+  } catch (_) {
+    return null;
+  }
+}
+
+const BASE64_SHAPE = /^[A-Za-z0-9+/]+={0,2}$/;
+
+function looksLikeBase64(value: string): boolean {
+  return value.length >= 8 && value.length % 4 != 1 && BASE64_SHAPE.test(value);
+}
+
+/** Decode only the first few bytes of a base64 string — enough for magic-byte
+ * sniffing without materializing multi-megabyte payloads. */
+function base64DecodePrefix(base64: string): Uint8Array {
+  const binaryString = atob(base64.length > 32 ? base64.slice(0, 32) : base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function base64Encode(data: Uint8Array): string {
+  const chunkSize = 0x8000; // 32kb chunk
   let binary = "";
-  for (let i = 0; i < data.length; i++) {
-    binary += String.fromCharCode(data[i]);
+  for (let i = 0; i < data.length; i += chunkSize) {
+    binary += String.fromCharCode(...data.subarray(i, i + chunkSize));
   }
   return btoa(binary);
-}
-
-function base64Decode(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  return new Uint8Array([...binaryString].map((char) => char.charCodeAt(0)));
 }

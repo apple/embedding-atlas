@@ -6,7 +6,13 @@ export { delay } from "./delay.js";
 export { deepEquals, deepMemo } from "./equals.js";
 export { objectHash, stringHash } from "./hash.js";
 export { interactionHandler, type CursorValue, type DragHandler } from "./interaction_handler.js";
-export { audioToDataUrl, imageToDataUrl } from "./media.js";
+export {
+  audioToDataUrl,
+  detectAudioMimeType,
+  detectBase64MimeType,
+  detectImageMimeType,
+  imageToDataUrl,
+} from "./media.js";
 export { mergeUpdates } from "./merge_updates.js";
 export {
   connectWorker,
