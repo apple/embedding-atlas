@@ -89,38 +89,14 @@ export function detectImageMimeType(data: Uint8Array): string | null {
  * extension of `path` when the content is unrecognized. Returns null if
  * neither matches. */
 export function detectAudioMimeType(data: Uint8Array, path?: string): string | null {
-  // Check for MP3
-  if (startsWith(data, [0x49, 0x44, 0x33])) {
-    return "audio/mpeg";
-  }
+  let container = detectAudioContainer(data);
+  if (container != null) return container;
   // Check for MPEG audio / AAC ADTS frames (both share the 0xff sync byte).
   // Top 11 bits = sync word (0xffe0 mask). Layer bits (bits 1-2 of second byte):
   //   00 = AAC (ADTS), non-zero = MPEG audio (MP3/MP2/MP1).
   if (data.length >= 2 && data[0] === 0xff && (data[1] & 0xe0) === 0xe0) {
     const layer = (data[1] >> 1) & 0x03;
     return layer === 0 ? "audio/aac" : "audio/mpeg";
-  }
-  // Check for WAV (RIFF....WAVE)
-  if (startsWith(data, [0x52, 0x49, 0x46, 0x46]) && data.length >= 12) {
-    if (data[8] === 0x57 && data[9] === 0x41 && data[10] === 0x56 && data[11] === 0x45) {
-      return "audio/wav";
-    }
-  }
-  // Check for OGG
-  if (startsWith(data, [0x4f, 0x67, 0x67, 0x53])) {
-    return "audio/ogg";
-  }
-  // Check for FLAC
-  if (startsWith(data, [0x66, 0x4c, 0x61, 0x43])) {
-    return "audio/flac";
-  }
-  // Check for WebM/Matroska (can contain audio)
-  if (startsWith(data, [0x1a, 0x45, 0xdf, 0xa3])) {
-    return "audio/webm";
-  }
-  // Check for M4A/MP4 audio (ftyp box)
-  if (data.length >= 8 && data[4] === 0x66 && data[5] === 0x74 && data[6] === 0x79 && data[7] === 0x70) {
-    return "audio/mp4";
   }
   // Attempt to infering from path extension
   if (path) {
@@ -145,19 +121,66 @@ export function detectAudioMimeType(data: Uint8Array, path?: string): string | n
   return null;
 }
 
+function detectAudioContainer(data: Uint8Array): string | null {
+  // Check for MP3 with an ID3v2 .
+  if (
+    startsWith(data, [0x49, 0x44, 0x33]) &&
+    data.length >= 10 &&
+    (data[3] === 2 || data[3] === 3 || data[3] === 4) &&
+    data[6] < 0x80 &&
+    data[7] < 0x80 &&
+    data[8] < 0x80 &&
+    data[9] < 0x80
+  ) {
+    return "audio/mpeg";
+  }
+  // Check for WAV (RIFF....WAVE)
+  if (startsWith(data, [0x52, 0x49, 0x46, 0x46]) && data.length >= 12) {
+    if (data[8] === 0x57 && data[9] === 0x41 && data[10] === 0x56 && data[11] === 0x45) {
+      return "audio/wav";
+    }
+  }
+  // Check for OGG
+  if (startsWith(data, [0x4f, 0x67, 0x67, 0x53])) {
+    return "audio/ogg";
+  }
+  // Check for FLAC
+  if (startsWith(data, [0x66, 0x4c, 0x61, 0x43])) {
+    return "audio/flac";
+  }
+  // Check for WebM/Matroska
+  if (startsWith(data, [0x1a, 0x45, 0xdf, 0xa3])) {
+    return "audio/webm";
+  }
+  // Check for M4A/MP4 audio
+  // High bytes of 32bit size is 0
+  if (
+    data.length >= 8 &&
+    data[0] === 0 &&
+    data[1] === 0 &&
+    data[2] === 0 &&
+    data[4] === 0x66 &&
+    data[5] === 0x74 &&
+    data[6] === 0x79 &&
+    data[7] === 0x70
+  ) {
+    return "audio/mp4";
+  }
+  return null;
+}
+
+// Real base64-encoded media is far longer,
+// so we omit short base-64 shaped strings entirely
+const MIN_BASE64_DETECT_LENGTH = 64;
+
 /** Detect the MIME type of a raw base64-encoded string (no `data:` prefix) by
- * seeking  magic bytes of its decoded prefix. Returns null if the string
- * is not base64-shaped or the decoded content is unrecognized.*/
+ * sniffing the magic bytes of its decoded prefix. Used to detect
+ * media in string columns. Returns null unless the string is base64-shaped,
+ * at least 64 characters long, and decodes to a multi-byte media signature */
 export function detectBase64MimeType(value: string): string | null {
-  if (!looksLikeBase64(value)) {
-    return null;
-  }
-  try {
-    let bytes = base64DecodePrefix(value);
-    return detectImageMimeType(bytes) ?? detectAudioMimeType(bytes);
-  } catch (_) {
-    return null;
-  }
+  if (value.length < MIN_BASE64_DETECT_LENGTH || !looksLikeBase64(value)) return null;
+  let bytes = base64DecodePrefix(value);
+  return detectImageMimeType(bytes) ?? detectAudioContainer(bytes);
 }
 
 const BASE64_SHAPE = /^[A-Za-z0-9+/]+={0,2}$/;
