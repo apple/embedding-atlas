@@ -454,7 +454,9 @@ function makeRenderCommand(
           downsample(encoder, downsampleConfig);
 
           // Draw downsampled points
-          drawPointsDownsampled(encoder, count);
+          if (props.pointAlpha > 0 && props.pointsAlpha > 0) {
+            drawPointsDownsampled(encoder, count);
+          }
 
           // If in density mode, also draw density overlay (using all points, already computed)
           if (props.mode == "density") {
@@ -464,7 +466,9 @@ function makeRenderCommand(
           }
         } else {
           // No downsampling needed - use original path
-          drawPoints(encoder);
+          if (props.pointAlpha > 0 && props.pointsAlpha > 0) {
+            drawPoints(encoder);
+          }
 
           if (props.mode == "density") {
             if (props.densityAlpha > 0 || props.contoursAlpha > 0) {
