@@ -11,6 +11,8 @@ interface Example {
   state?: Omit<EmbeddingAtlasState, "charts"> & { charts: Record<string, BuiltinChartSpec> };
 }
 
+const VERSION = "0.23.0";
+
 const examples: Record<string, Example[]> = {
   embedding: [
     {
@@ -23,7 +25,7 @@ const examples: Record<string, Example[]> = {
         embedding: { precomputed: { x: "projection_x", y: "projection_y", neighbors: "neighbors" } },
       },
       state: {
-        version: "0.22.0",
+        version: VERSION,
         charts: {
           1: {
             type: "embedding",
@@ -153,7 +155,7 @@ const examples: Record<string, Example[]> = {
         embedding: { precomputed: { x: "projection_x", y: "projection_y", neighbors: "neighbors" } },
       },
       state: {
-        version: "0.22.0",
+        version: VERSION,
         charts: {
           1: {
             type: "embedding",
@@ -257,7 +259,7 @@ const examples: Record<string, Example[]> = {
         embedding: { precomputed: { x: "projection_x", y: "projection_y", neighbors: "neighbors" } },
       },
       state: {
-        version: "0.22.0",
+        version: VERSION,
         charts: {
           1: {
             type: "embedding",
@@ -300,7 +302,7 @@ const examples: Record<string, Example[]> = {
         embedding: { precomputed: { x: "projection_x", y: "projection_y", neighbors: "neighbors" } },
       },
       state: {
-        version: "0.22.0",
+        version: VERSION,
         charts: {
           1: {
             type: "embedding",
@@ -397,7 +399,7 @@ const examples: Record<string, Example[]> = {
         embedding: { precomputed: { x: "projection_x", y: "projection_y", neighbors: "neighbors" } },
       },
       state: {
-        version: "0.22.0",
+        version: VERSION,
         charts: {
           "1": {
             type: "embedding",
@@ -445,7 +447,7 @@ const examples: Record<string, Example[]> = {
       data: "example://movies",
       settings: {},
       state: {
-        version: "0.22.0",
+        version: VERSION,
         charts: {
           1: {
             title: "IMDB Rating vs. Rotten Tomatos Rating",
@@ -680,7 +682,7 @@ const examples: Record<string, Example[]> = {
       data: "example://ScienceQA",
       settings: {},
       state: {
-        version: "0.22.0",
+        version: VERSION,
         charts: {
           1: { type: "predicates", title: "SQL Predicates" },
           2: { type: "instances", title: "Table" },
@@ -742,7 +744,7 @@ const examples: Record<string, Example[]> = {
       data: "example://census-income",
       settings: {},
       state: {
-        version: "0.22.0",
+        version: VERSION,
         charts: {
           1: {
             title: "Age by Marital Status",
@@ -852,7 +854,7 @@ const examples: Record<string, Example[]> = {
       data: "example://california-housing",
       settings: {},
       state: {
-        version: "0.22.0",
+        version: VERSION,
         charts: {
           1: {
             title: "MedHouseVal",
