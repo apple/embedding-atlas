@@ -1,18 +1,11 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-export function isWebGPUAvailable(): boolean {
+export async function requestWebGPUDevice(): Promise<GPUDevice | null> {
   if (
     navigator.gpu == undefined ||
     navigator.gpu.requestAdapter == undefined ||
     navigator.gpu.wgslLanguageFeatures == undefined
   ) {
-    return false;
-  }
-  return true;
-}
-
-export async function requestWebGPUDevice(): Promise<GPUDevice | null> {
-  if (!isWebGPUAvailable()) {
     return null;
   }
 

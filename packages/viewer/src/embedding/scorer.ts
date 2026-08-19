@@ -217,10 +217,7 @@ function l2NormalizeRows(data: Float32Array, dim: number): void {
 }
 
 let _segmenter: Intl.Segmenter | null = null;
-function wordSegmenter(): Intl.Segmenter | null {
-  if (typeof Intl === "undefined" || typeof Intl.Segmenter === "undefined") {
-    return null;
-  }
+function wordSegmenter(): Intl.Segmenter {
   if (_segmenter == null) {
     _segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
   }
@@ -230,24 +227,14 @@ function wordSegmenter(): Intl.Segmenter | null {
 /**
  * Split `text` into word ranges (`[start, end)` character offsets), skipping
  * whitespace and punctuation. Uses `Intl.Segmenter` for locale-aware word
- * boundaries (including languages without spaces), falling back to a
- * whitespace split where it is unavailable.
+ * boundaries (including languages without spaces).
  */
 export function segmentWords(text: string): WindowRange[] {
   const words: WindowRange[] = [];
   if (text.length === 0) {
     return words;
   }
-  const segmenter = wordSegmenter();
-  if (segmenter == null) {
-    const re = /\S+/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(text)) != null) {
-      words.push({ start: m.index, end: m.index + m[0].length });
-    }
-    return words;
-  }
-  for (const seg of segmenter.segment(text)) {
+  for (const seg of wordSegmenter().segment(text)) {
     if (seg.isWordLike) {
       words.push({ start: seg.index, end: seg.index + seg.segment.length });
     }
