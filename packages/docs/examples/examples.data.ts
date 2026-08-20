@@ -11,7 +11,7 @@ interface Example {
   state?: Omit<EmbeddingAtlasState, "charts"> & { charts: Record<string, BuiltinChartSpec> };
 }
 
-const VERSION = "0.23.0";
+const VERSION = "0.24.0";
 
 const examples: Record<string, Example[]> = {
   embedding: [
