@@ -1,6 +1,6 @@
 [project]
 name = "embedding-atlas"
-version = "0.23.0"
+version = "0.24.0"
 license = "MIT"
 description = "A tool for visualizing embeddings"
 keywords = ["embedding", "visualization"]
@@ -41,7 +41,7 @@ homepage = "https://apple.github.io/embedding-atlas"
 source = "https://github.com/apple/embedding-atlas"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
