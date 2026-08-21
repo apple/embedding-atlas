@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import type { EmbeddingViewConfig, Label } from "@embedding-atlas/component";
+import type { EmbeddingViewConfig, Label, LabelWithBounds } from "@embedding-atlas/component";
 import type { Coordinator, Selection } from "@uwdata/mosaic-core";
 import type { Draft } from "immer";
 import type { Readable, Writable } from "svelte/store";
@@ -117,6 +117,9 @@ export interface ChartContext {
 
   /** Labels for the embedding view. */
   embeddingViewLabels?: Label[] | null;
+
+  /** Callback when embedding cluster labels change. */
+  onLabelsChange?: ((labels: LabelWithBounds[]) => void) | null;
 }
 
 /** Props passed into a chart view. */

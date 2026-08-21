@@ -2,7 +2,7 @@
 
 // The component API for embedding viewer.
 
-import type { EmbeddingViewConfig, Label } from "@embedding-atlas/component";
+import type { EmbeddingViewConfig, Label, LabelWithBounds } from "@embedding-atlas/component";
 import type { Coordinator } from "@uwdata/mosaic-core";
 import { createClassComponent } from "svelte/legacy";
 
@@ -99,6 +99,10 @@ export interface EmbeddingAtlasProps {
 
   /** A callback when the current filter predicate changes (e.g., due to brush or click interactions). */
   onPredicateChange?: ((predicate: string | null) => void) | null;
+
+  /** A callback when embedding cluster labels are generated or change.
+   *  Fires after label recomputation when the label set materially changes. */
+  onLabelsChange?: ((labels: LabelWithBounds[]) => void) | null;
 
   /** Model context API where the component will register its tools to. */
   modelContext?: ModelContextAPI | null;
