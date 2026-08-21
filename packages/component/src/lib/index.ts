@@ -19,6 +19,7 @@ export type {
   DataPointID,
   Label,
   LabelContent,
+  LabelWithBounds,
   OverlayProxy,
 } from "./embedding_view/types.js";
 export type { Point, Rectangle, ViewportState } from "./utils.js";

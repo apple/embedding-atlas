@@ -26,6 +26,7 @@
     onTooltip = null,
     onSelection = null,
     onRangeSelection = null,
+    onLabelsChange = null,
     cache = null,
   }: EmbeddingViewProps = $props();
 
@@ -94,5 +95,6 @@
   onViewportState={onViewportState}
   rangeSelection={rangeSelection}
   onRangeSelection={onRangeSelection}
+  onLabelsChange={onLabelsChange}
   cache={cache}
 />

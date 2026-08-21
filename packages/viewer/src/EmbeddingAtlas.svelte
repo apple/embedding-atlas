@@ -36,6 +36,7 @@
     onExportSelection,
     onStateChange,
     onPredicateChange,
+    onLabelsChange,
     modelContext,
     cache,
   }: EmbeddingAtlasProps = $props();
@@ -55,6 +56,7 @@
     onExportSelection,
     onStateChange,
     onPredicateChange,
+    onLabelsChange,
     modelContext,
     cache,
   });
