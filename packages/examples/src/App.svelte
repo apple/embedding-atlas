@@ -7,6 +7,7 @@
   import Home from "./Home.svelte";
   import ReactWrapper from "./react/ReactWrapper.svelte";
   import EmbeddingAtlasExample from "./svelte/EmbeddingAtlasExample.svelte";
+  import EmbeddingView3DExample from "./svelte/EmbeddingView3DExample.svelte";
   import EmbeddingViewExample from "./svelte/EmbeddingViewExample.svelte";
   import EmbeddingViewMosaicExample from "./svelte/EmbeddingViewMosaicExample.svelte";
   import FindClustersExample from "./svelte/FindClustersExample.svelte";
@@ -22,6 +23,7 @@
     "/": Home,
     "/svelte/embedding-atlas": EmbeddingAtlasExample,
     "/svelte/embedding-view": EmbeddingViewExample,
+    "/svelte/embedding-view-3d": EmbeddingView3DExample,
     "/svelte/embedding-view-mosaic": EmbeddingViewMosaicExample,
     "/svelte/find-clusters": FindClustersExample,
     "/react/embedding-view": reactWrap(ReactEmbeddingViewExample),
@@ -33,6 +35,7 @@
       title: "Svelte Examples",
       items: [
         { title: "EmbeddingView", href: "/svelte/embedding-view" },
+        { title: "EmbeddingView3D (Real Stars)", href: "/svelte/embedding-view-3d" },
         { title: "EmbeddingViewMosaic", href: "/svelte/embedding-view-mosaic" },
         { title: "EmbeddingAtlas", href: "/svelte/embedding-atlas" },
         { title: "findClusters", href: "/svelte/find-clusters" },
