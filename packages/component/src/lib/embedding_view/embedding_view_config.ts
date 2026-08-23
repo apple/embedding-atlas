@@ -41,12 +41,12 @@ export interface EmbeddingViewConfig {
    * Default: 5 */
   downsampleDensityWeight?: number | null;
 
-  /** Delay in ms before showing tooltip on hover. Default: 300 */
+  /** Delay in milliseconds before showing a hover tooltip. Default: 300. */
   tooltipDelay?: number | null;
 
-  /** Threshold in ms for "recently visible" fast-path for tooltips. Default: 300 */
+  /** Recently-visible threshold in milliseconds for immediate tooltip updates. Default: 300. */
   tooltipRecentThreshold?: number | null;
 
-  /** Search radius multiplier for hit detection. Default: 12 */
+  /** Multiplier for the hover hit-detection radius. Default: 12. */
   hoverRadius?: number | null;
 }
