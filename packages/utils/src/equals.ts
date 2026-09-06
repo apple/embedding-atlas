@@ -23,7 +23,7 @@ export function deepEquals(a: any, b: any): boolean {
     return false;
   }
   for (let key in a) {
-    if (b.hasOwnProperty(key)) {
+    if (Object.prototype.hasOwnProperty.call(b, key)) {
       if (!deepEquals(a[key], b[key])) {
         return false;
       }

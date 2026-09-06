@@ -47,6 +47,20 @@ describe("deepEquals", () => {
   });
 
   describe("objects", () => {
+    it("should compare objects with a shadowed hasOwnProperty", () => {
+      expect(deepEquals({ hasOwnProperty: "value" }, { hasOwnProperty: "value" })).toBe(true);
+      expect(deepEquals({ hasOwnProperty: "value" }, { hasOwnProperty: "other" })).toBe(false);
+    });
+
+    it("should compare objects with a null prototype", () => {
+      const a = Object.assign(Object.create(null), { a: 1 });
+      const b = Object.assign(Object.create(null), { a: 1 });
+      expect(deepEquals({ value: a }, { value: b })).toBe(true);
+      b.a = 2;
+      expect(deepEquals(a, b)).toBe(false);
+      expect(deepEquals({ b: 2 }, b)).toBe(false);
+    });
+
     it("should return true for empty objects", () => {
       expect(deepEquals({}, {})).toBe(true);
     });
