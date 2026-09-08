@@ -2,15 +2,15 @@
 
 use std::f64::consts::PI;
 
-pub fn smooth_polygon(polygon: &Vec<(f64, f64)>) -> Vec<(f64, f64)> {
+pub fn smooth_polygon(polygon: &[(f64, f64)]) -> Vec<(f64, f64)> {
     let coeffs = lowpass_fir_filter(1.0, 0.05, 59);
     let mut result = vec![(0.0, 0.0); polygon.len()];
 
-    for j in 0..coeffs.len() {
-        for i in 0..result.len() {
+    for (j, &c) in coeffs.iter().enumerate() {
+        for (i, &pt) in polygon.iter().enumerate() {
             let p = (i + j) % result.len();
-            result[p].0 += polygon[i].0 * coeffs[j];
-            result[p].1 += polygon[i].1 * coeffs[j];
+            result[p].0 += pt.0 * c;
+            result[p].1 += pt.1 * c;
         }
     }
 

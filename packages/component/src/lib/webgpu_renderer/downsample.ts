@@ -69,14 +69,8 @@ export function makeDownsampleResources(
   // points so the over-accept guard in the shader cannot overflow it.
   // indirect_args is the 16-byte drawIndirect descriptor; we re-zero
   // instanceCount each frame and the compact_accepted shader fills it.
-  const compactBufferSize = df.derive(
-    [count, downsampleMaxPoints],
-    (c, m) => Math.max(4, Math.min(c, m ?? c) * 4),
-  );
-  const compactIndicesBuffer = df.statefulDerive(
-    [device, compactBufferSize, GPUBufferUsage.STORAGE],
-    gpuBuffer,
-  );
+  const compactBufferSize = df.derive([count, downsampleMaxPoints], (c, m) => Math.max(4, Math.min(c, m ?? c) * 4));
+  const compactIndicesBuffer = df.statefulDerive([device, compactBufferSize, GPUBufferUsage.STORAGE], gpuBuffer);
   const indirectArgsBuffer = df.statefulDerive(
     [device, df.value(16), GPUBufferUsage.STORAGE | GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST],
     gpuBuffer,
@@ -256,7 +250,7 @@ export function makeDownsampleCommand(
       compactPipeline,
       group0,
       group1,
-      group2Blur,
+      blurOnlyGroup,
       emptyGroup,
       group3,
       uniformBuffer,
@@ -274,11 +268,7 @@ export function makeDownsampleCommand(
           return 0;
         }
 
-        const [workgroupsX, workgroupsY] = computeDispatch(
-          count,
-          wgConfig.downsampleCull,
-          wgConfig.downsampleStride,
-        );
+        const [workgroupsX, workgroupsY] = computeDispatch(count, wgConfig.downsampleCull, wgConfig.downsampleStride);
 
         // Chunked dispatch: each compute pass is split into K
         // command-buffer-sized chunks of (workgroupsX, ~workgroupsY/K)
@@ -305,10 +295,7 @@ export function makeDownsampleCommand(
         // sandwiches).
         const CHUNK_TARGET_THREADS = 16_000_000;
         const threadsPerWorkgroupY = workgroupsX * wgConfig.downsampleCull;
-        const targetWorkgroupsPerChunk = Math.max(
-          1,
-          Math.floor(CHUNK_TARGET_THREADS / threadsPerWorkgroupY),
-        );
+        const targetWorkgroupsPerChunk = Math.max(1, Math.floor(CHUNK_TARGET_THREADS / threadsPerWorkgroupY));
         const numChunks = Math.max(1, Math.ceil(workgroupsY / targetWorkgroupsPerChunk));
         const chunkSizeY = Math.ceil(workgroupsY / numChunks);
 
@@ -322,11 +309,7 @@ export function makeDownsampleCommand(
           device.queue.writeBuffer(uniformBuffer, 0, uniformData);
         };
 
-        const dispatchPass = (
-          pipeline: GPUComputePipeline,
-          group2: GPUBindGroup,
-          isFirstSubmit: boolean,
-        ) => {
+        const dispatchPass = (pipeline: GPUComputePipeline, group2: GPUBindGroup, isFirstSubmit: boolean) => {
           for (let chunk = 0; chunk < numChunks; chunk++) {
             const offsetY = chunk * chunkSizeY;
             const remaining = Math.min(chunkSizeY, workgroupsY - offsetY);
@@ -360,7 +343,7 @@ export function makeDownsampleCommand(
             `[atlas-downsample-diag] count=${count} workgroupsX=${workgroupsX} workgroupsY=${workgroupsY} chunkSizeY=${chunkSizeY} numChunks=${numChunks} (${numChunks * 3} cmd-bufs total)`,
           );
         }
-        dispatchPass(viewportCullPipeline, group2Blur, true);
+        dispatchPass(viewportCullPipeline, blurOnlyGroup, true);
         dispatchPass(densitySamplePipeline, emptyGroup, false);
         dispatchPass(compactPipeline, emptyGroup, false);
       },

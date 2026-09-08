@@ -14,7 +14,7 @@
   import type { LayoutProps } from "../layout.js";
   import { type Grid } from "./placement.js";
 
-  const RESIZER_OFFSET = -2;
+  const RESIZER_OFFSET = 0;
   const RESIZER_SIZE = 10;
 
   interface Props {
@@ -26,6 +26,7 @@
 
     grid: Grid;
     placement: { x: number; y: number; width: number; height: number };
+    hasBorder?: boolean;
 
     onRemove?: () => void;
 
@@ -35,7 +36,7 @@
 
     onSpecChange?: (spec: any) => void;
 
-    chartView: LayoutProps<unknown>["chartView"];
+    chartView: LayoutProps["chartView"];
   }
 
   let {
@@ -45,6 +46,7 @@
     order,
     placement,
     grid,
+    hasBorder,
     onBringToFront,
     onIsPlacementChanging,
     onPlacementChange,
@@ -120,7 +122,7 @@
   }
 
   export function scrollIntoView() {
-    container?.scrollIntoView({ block: "nearest" });
+    container?.scrollIntoView({ behavior: "smooth", block: "center", container: "nearest" } as any);
   }
 </script>
 
@@ -140,11 +142,13 @@
   }}
 >
   <div
-    class="absolute left-0 right-0 top-0 bottom-0 bg-white dark:bg-black rounded-md overflow-hidden flex flex-col shadow-md border border-slate-300 dark:border-slate-700 group"
+    class="absolute left-0 right-0 top-0 bottom-0 bg-white dark:bg-black rounded-md overflow-hidden flex flex-col border-slate-300 dark:border-slate-700 group"
+    class:border={hasBorder}
+    class:shadow-lg={hasBorder}
   >
-    <div class="p-2 bg-slate-100 dark:bg-slate-900 flex cursor-move select-none">
+    <div class="px-2 py-1 bg-slate-100 dark:bg-slate-900 flex cursor-move select-none items-center">
       <div
-        class="flex-1 font-mono font-medium whitespace-nowrap overflow-hidden text-ellipsis"
+        class="flex-1 text-sm whitespace-nowrap overflow-hidden text-ellipsis"
         use:interactionHandler={{
           click: () => {
             onBringToFront?.();

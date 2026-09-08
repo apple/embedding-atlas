@@ -6,8 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import inquirer
+import narwhals as nw
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
+from narwhals.typing import IntoDataFrame
 
 logger = logging.getLogger("embedding-atlas")
 
@@ -28,14 +31,24 @@ def load_pandas_data(url: str) -> pd.DataFrame:
 
 def load_huggingface_data(filename: str, splits: list[str] | None) -> pd.DataFrame:
     try:
-        from datasets import load_dataset
+        from datasets import load_dataset, load_from_disk
     except ImportError:
         print(
             "⚠️ Loading Hugging Face datasets requires the `datasets` package to be installed. Please run `pip install datasets`, then try again."
         )
         exit(-1)
 
-    ds: Any = load_dataset(filename)
+    if Path(filename).is_dir():
+        ds: Any = load_from_disk(filename)
+    else:
+        ds: Any = load_dataset(filename)
+
+    if not hasattr(ds, "keys"):
+        if splits is not None and len(splits) > 0:
+            raise ValueError(
+                "Cannot select splits for a single Hugging Face Dataset loaded from disk."
+            )
+        return ds.to_pandas()
 
     if splits is None or len(splits) == 0:
         ds_split_options = []
@@ -127,7 +140,9 @@ def arrow_to_bytes(arrow: pa.Table | pa.RecordBatchReader):
     return sink.getvalue().to_pybytes()
 
 
-def stream_arrow_ipc(reader: pa.RecordBatchReader, *, batch_chunk_bytes: int = 4 * 1024 * 1024):
+def stream_arrow_ipc(
+    reader: pa.RecordBatchReader, *, batch_chunk_bytes: int = 4 * 1024 * 1024
+):
     """Yield Arrow IPC stream bytes incrementally as the cursor produces
     record batches. Lets uvicorn start sending the response while DuckDB
     is still computing later batches, so the wire and the engine overlap.
@@ -154,19 +169,11 @@ def stream_arrow_ipc(reader: pa.RecordBatchReader, *, batch_chunk_bytes: int = 4
         yield tail
 
 
-def to_parquet_bytes(df: pd.DataFrame) -> bytes:
-    class NoCloseBytesIO(BytesIO):
-        def close(self):
-            pass
-
-        def actually_close(self):
-            super().close()
-
-    bytes_io = NoCloseBytesIO()
-    df.to_parquet(bytes_io)
-    result = bytes_io.getvalue()
-    bytes_io.actually_close()
-    return result
+def to_parquet_bytes(df: IntoDataFrame) -> bytes:
+    arrow_table = nw.from_native(df, eager_only=True).to_arrow()
+    sink = pa.BufferOutputStream()
+    pq.write_table(arrow_table, sink)
+    return sink.getvalue().to_pybytes()
 
 
 def apply_logging_config():
@@ -176,3 +183,39 @@ def apply_logging_config():
     )
 
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+def parse_kv(
+    text: str,
+    allowed_keys: set[str] | None = None,
+    allow_empty_values: bool = True,
+) -> dict[str, str]:
+    """Parse a semicolon-separated `key=value` string into a dict.
+
+    Keys and values are stripped of surrounding whitespace; values may contain
+    `=` (only the first `=` of each pair is treated as the separator). Empty
+    segments are ignored.
+
+    Raises ValueError on a segment without `=`, on a key outside `allowed_keys`
+    (when provided — catches typos like `mainkey`), or on an empty value when
+    `allow_empty_values` is False.
+
+    Example: parse_kv("a=1;b=x = y") -> {"a": "1", "b": "x = y"}
+    """
+    result: dict[str, str] = {}
+    for part in text.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        if "=" not in part:
+            raise ValueError(f"invalid key=value pair: {part!r}")
+        key, value = part.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if allowed_keys is not None and key not in allowed_keys:
+            allowed = ", ".join(repr(k) for k in sorted(allowed_keys))
+            raise ValueError(f"unknown key {key!r}; allowed keys are {allowed}")
+        if not allow_empty_values and value == "":
+            raise ValueError(f"empty value for key {key!r}")
+        result[key] = value
+    return result

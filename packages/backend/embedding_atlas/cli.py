@@ -24,6 +24,7 @@ from .utils import (
     load_huggingface_data,
     load_pandas_data,
     logger,
+    parse_kv,
 )
 from .version import __version__
 
@@ -60,20 +61,27 @@ def find_column_name(existing_names, candidate):
 
 
 def determine_and_load_data(filename: str, splits: list[str] | None = None):
-    suffix = Path(filename).suffix.lower()
     hf_prefix = "hf://datasets/"
-
-    # Override Hugging Face data if given full url
     if filename.startswith(hf_prefix):
-        filename = filename.split(hf_prefix)[-1]
+        return load_huggingface_data(filename[len(hf_prefix) :], splits)
 
-    # Hugging Face data
-    if (len(filename.split("/")) <= 2) and (suffix == ""):
-        df = load_huggingface_data(filename, splits)
-    else:
-        df = load_pandas_data(filename)
+    # Remote URLs (http://, s3://, ...), pandas handle these.
+    if "://" in filename:
+        return load_pandas_data(filename)
 
-    return df
+    p = Path(filename).expanduser()
+    if p.is_file():
+        return load_pandas_data(filename)
+    if p.is_dir():
+        return load_huggingface_data(filename, splits)
+
+    # Not on disk. Only fall through to HF if the input looks like a Hub
+    # name (no extension and contains at most one '/'); otherwise surface the missing-file
+    # error so typos don't quietly hit the network.
+    if Path(filename).suffix == "" and len(filename.split("/")) <= 2:
+        return load_huggingface_data(filename, splits)
+
+    raise FileNotFoundError(f"No such file or directory: {filename!r}")
 
 
 def query_dataframe(query: str, data: pd.DataFrame) -> pd.DataFrame:
@@ -238,9 +246,7 @@ def extract_coordinates_from_geometry(df, geom_column):
     valid = df[lon_col].notna() & df[lat_col].notna()
     if not valid.all():
         n_dropped = (~valid).sum()
-        logger.warning(
-            f"Dropped {n_dropped} rows with non-point or invalid geometries"
-        )
+        logger.warning(f"Dropped {n_dropped} rows with non-point or invalid geometries")
         df = df[valid].reset_index(drop=True)
 
     return df, lon_col, lat_col
@@ -537,7 +543,7 @@ def _run_fast_path(
         x_scale = U32_MAX / (x_max - x_min)
         y_scale = U32_MAX / (y_max - y_min)
         prewarm_sql = (
-            f'SELECT '
+            f"SELECT "
             f'((COALESCE("{x_col}", {x_min}) - {x_min}) * {x_scale})::UINTEGER AS "x", '
             f'((COALESCE("{y_col}", {y_min}) - {y_min}) * {y_scale})::UINTEGER AS "y" '
             f'FROM "{fast_connection.table}"'
@@ -610,6 +616,13 @@ def _run_fast_path(
 @click.option("--audio", default=None, help="Column containing audio data.")
 @click.option(
     "--vector", default=None, help="Column containing pre-computed vector embeddings."
+)
+@click.option(
+    "--features",
+    default=None,
+    help="Column containing features. If specified, a features list view will be created. "
+    "The column should be a list of feature strings, or a list of structs, one per feature, "
+    "each with a 'feature' field and optional 'source' and 'index' fields.",
 )
 @click.option(
     "--split",
@@ -724,6 +737,27 @@ def _run_fast_path(
     "--umap-random-state", type=int, help="Random seed for reproducible UMAP results."
 )
 @click.option(
+    "--table",
+    "extra_tables",
+    type=(str, str),
+    multiple=True,
+    help="Load an additional table. Format: --table NAME PATH (e.g., --table topics topics.parquet). Can be specified multiple times.",
+)
+@click.option(
+    "--table-relation",
+    "table_relations",
+    type=(str, str),
+    multiple=True,
+    help="Declare how an additional table joins to the main table, for cross-table filtering. "
+    "Format: --table-relation NAME 'KV', where KV is semicolon-separated key=value pairs describing "
+    "the relation: mainKey (join expression over the main table), key (join column on this table). "
+    "Wrap an expression in UNNEST(...) when the key is list-valued (e.g. a list/struct-list column). "
+    "NAME must match a --table NAME. "
+    "Example: --table-relation features "
+    "'mainKey=UNNEST(list_transform(features, s -> s.feature));key=feature'. "
+    "Can be specified multiple times.",
+)
+@click.option(
     "--duckdb",
     type=str,
     default="server",
@@ -805,6 +839,7 @@ def main(
     image: str | None,
     audio: str | None,
     vector: str | None,
+    features: str | None,
     split: list[str] | None,
     enable_projection: bool,
     model: str | None,
@@ -825,6 +860,8 @@ def main(
     umap_min_dist: float | None,
     umap_metric: str | None,
     umap_random_state: int | None,
+    extra_tables: list[tuple[str, str]] | None,
+    table_relations: list[tuple[str, str]] | None,
     static: str | None,
     duckdb: str,
     host: str,
@@ -901,6 +938,37 @@ def main(
                     y_column = extracted_y
                 is_gis = True
                 print(f"Extracted GIS coordinates: x={x_column}, y={y_column}")
+
+    additional_tables = {}
+
+    if extra_tables is not None:
+        for name, path in extra_tables:
+            additional_tables[name] = load_datasets([path])
+
+    # Give every additional table a synthetic row id (mirroring the main table)
+    # so it can be registered in the UI even without a declared relation. Then
+    # attach any --table-relation, whose KV maps directly to the join relation.
+    additional_tables_meta = {}
+    for name, adf in additional_tables.items():
+        aux_id = find_column_name(adf.columns, "__row_index__")
+        adf[aux_id] = range(adf.shape[0])
+        additional_tables_meta[name] = {"id": aux_id}
+    if table_relations is not None:
+        for name, kv in table_relations:
+            if name not in additional_tables:
+                raise click.BadParameter(
+                    f"--table-relation {name!r} has no matching --table {name!r}"
+                )
+            # Validate keys/values in parse_kv so a typo (e.g. `mainkey`) or a
+            # blank value fails loudly instead of silently falling back to the
+            # id-column join (a wrong but non-erroring cross-table filter).
+            try:
+                relation = parse_kv(
+                    kv, allowed_keys={"mainKey", "key"}, allow_empty_values=False
+                )
+            except ValueError as e:
+                raise click.BadParameter(f"--table-relation {name!r}: {e}")
+            additional_tables_meta[name]["relation"] = relation
 
     if enable_projection and (x_column is None or y_column is None):
         # No x, y column selected, first see if text/image/vectors column is specified, if not, ask for it
@@ -1022,10 +1090,12 @@ def main(
         importance=pagerank_column,
         text=text,
         image=image,
+        features=features,
         point_size=point_size,
         stop_words=stop_words_resolved,
         labels=labels_resolved,
         is_gis=is_gis,
+        additional_tables=additional_tables_meta or None,
     )
 
     metadata = {
@@ -1033,10 +1103,10 @@ def main(
     }
 
     identifier = sha256_hexdigest([__version__, inputs, metadata], scope="DataSource")
-    dataset = DataSource(identifier, df, metadata)
+    dataset = DataSource(identifier, df, metadata, additional_tables=additional_tables)
 
     if static is None:
-        static = str((pathlib.Path(__file__).parent / "static").resolve())
+        static = (Path(__file__).parent / "static").resolve().as_posix()
 
     if export_application is not None:
         if export_application.endswith(".zip"):
@@ -1044,7 +1114,7 @@ def main(
                 f.write(dataset.make_archive(static, export_metadata))
         else:
             dataset.export_to_folder(static, export_application, export_metadata)
-        exit(0)
+        return
 
     # Parse CORS configuration
     cors_config = False
@@ -1059,7 +1129,11 @@ def main(
             ]
 
     app = make_server(
-        dataset, static_path=static, duckdb_uri=duckdb, mcp=enable_mcp, cors=cors_config
+        dataset,
+        static_path=static,
+        duckdb_uri=duckdb,
+        mcp=enable_mcp,
+        cors=cors_config,
     )
 
     if enable_auto_port:

@@ -8,7 +8,6 @@ invalidate so subsequent reads see the new state.
 
 from __future__ import annotations
 
-import pyarrow as pa
 import pytest
 
 from embedding_atlas.server import _ArrowResultCache, _READONLY_RE
@@ -91,6 +90,7 @@ def test_readonly_pattern(sql, readonly):
 def test_thread_safe_concurrent_access():
     """Two threads slamming the cache shouldn't corrupt the byte total."""
     import threading
+
     cache = _ArrowResultCache(max_bytes=1000)
     payload = b"x" * 50
 

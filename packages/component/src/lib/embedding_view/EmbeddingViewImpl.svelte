@@ -40,6 +40,7 @@
     onSelection: ((value: Selection[] | null) => void) | null;
     onRangeSelection: ((value: Rectangle | Point[] | null) => void) | null;
     cache: Cache | null;
+    cacheIdentifier?: any | null;
   }
 
   interface Cluster {
@@ -100,7 +101,7 @@
 </script>
 
 <script lang="ts">
-  import { interactionHandler, type CursorValue } from "@embedding-atlas/utils";
+  import { deepEquals, interactionHandler, objectHash, type CursorValue } from "@embedding-atlas/utils";
   import { onDestroy, onMount } from "svelte";
 
   import EditableRectangle from "./EditableRectangle.svelte";
@@ -116,20 +117,10 @@
   maplibregl.addProtocol("pmtiles", pmtilesProtocol.tile);
 
   import { defaultCategoryColors } from "../colors.js";
-  import type { EmbeddingRenderer } from "../renderer_interface.js";
   import { isPerfEnabled, record as perfRecord, setPointCount as perfSetPointCount } from "./perf_recorder.js";
-  import {
-    cacheKeyForObject,
-    deepEquals,
-    pointDistance,
-    throttleTooltip,
-    type Point,
-    type Rectangle,
-    type ViewportState,
-  } from "../utils.js";
+  import { pointDistance, throttleTooltip, type Point, type Rectangle, type ViewportState } from "../utils.js";
   import { Viewport } from "../viewport_utils.js";
-  import { EmbeddingRendererWebGL2 } from "../webgl2_renderer/renderer.js";
-  import { EmbeddingRendererWebGPU } from "../webgpu_renderer/renderer.js";
+  import { EmbeddingRenderer } from "../webgpu_renderer/renderer.js";
   import { requestWebGPUDevice } from "../webgpu_renderer/utils.js";
   import { customComponentAction, customComponentProps } from "./custom_component_helper.js";
   import type { EmbeddingViewConfig } from "./embedding_view_config.js";
@@ -175,6 +166,7 @@
     onSelection = null,
     onRangeSelection = null,
     cache = null,
+    cacheIdentifier = undefined,
   }: Props<Selection> = $props();
 
   let showClusterLabels = true;
@@ -203,7 +195,7 @@
       const RAD_DEG = 180 / Math.PI;
       const log = Math.log;
       const tan = Math.tan;
-      const __t0 = (typeof performance !== "undefined") ? performance.now() : 0;
+      const __t0 = typeof performance !== "undefined" ? performance.now() : 0;
       for (let i = 0; i < n; i++) {
         const latRad = inY[i] * PI180;
         y[i] = log(tan(PI4 + latRad * 0.5)) * RAD_DEG;
@@ -222,7 +214,7 @@
 
   // In GIS mode, the minimum scale corresponds to MapLibre zoom level 1.
   // Below this, MapLibre's jumpTo can't keep up and the map/point layers diverge.
-  let gisMinScale = $derived(1024 * 2 / (360 * width));
+  let gisMinScale = $derived((1024 * 2) / (360 * width));
 
   let resolvedViewportState = $derived.by(() => {
     let state = viewportState ?? defaultViewportState ?? { x: 0, y: 0, scale: 1 };
@@ -236,13 +228,19 @@
       }
       // Clamp Y so the view stays within Mercator bounds (±85.05° lat → ±180 projected)
       const mercatorMax = 180;
-      const sy = width >= height ? scale * width / height : scale;
+      const sy = width >= height ? (scale * width) / height : scale;
       const visibleHalfY = 1 / sy;
       const yMin = -mercatorMax + visibleHalfY;
       const yMax = mercatorMax - visibleHalfY;
       if (yMin < yMax) {
-        if (y < yMin) { y = yMin; clamped = true; }
-        if (y > yMax) { y = yMax; clamped = true; }
+        if (y < yMin) {
+          y = yMin;
+          clamped = true;
+        }
+        if (y > yMax) {
+          y = yMax;
+          clamped = true;
+        }
       }
       if (clamped) {
         return { ...state, scale, y };
@@ -366,7 +364,7 @@
 
   let canvas: HTMLCanvasElement | null = $state(null);
   let renderer: EmbeddingRenderer | null = $state(null);
-  let webGPUPrompt: string | null = $state(null);
+  let webGPUError: string | null = $state(null);
 
   let mapContainer: HTMLElement | undefined = $state();
   let map: maplibregl.Map | undefined = $state();
@@ -379,7 +377,9 @@
   let mode = $derived(perfOverrides?.renderMode ?? config?.mode ?? "points");
   let autoLabelEnabled = $derived(config?.autoLabelEnabled);
   let downsampleMaxPoints = $derived(perfOverrides?.downsampleMaxPoints ?? config?.downsampleMaxPoints ?? 4000000);
-  let downsampleDensityWeight = $derived(perfOverrides?.downsampleDensityWeight ?? config?.downsampleDensityWeight ?? 5);
+  let downsampleDensityWeight = $derived(
+    perfOverrides?.downsampleDensityWeight ?? config?.downsampleDensityWeight ?? 5,
+  );
   // Cap to use during active drag/wheel. Defaults to a value that keeps
   // 75M-row Overture parquets at >20fps on Apple Silicon WebGPU; opt-out
   // via downsampleMaxPointsInteractive=null in config or ?interactiveCap=0
@@ -391,7 +391,7 @@
     // having to know the configured `downsampleMaxPoints`.
     perfOverrides && "downsampleMaxPointsInteractive" in perfOverrides
       ? perfOverrides.downsampleMaxPointsInteractive
-      : config?.downsampleMaxPointsInteractive ?? 200_000,
+      : (config?.downsampleMaxPointsInteractive ?? 200_000),
   );
   let effectiveDownsampleMaxPoints = $derived.by(() => {
     // Once we have an initial frame, ``skipDownsampleCompute`` is true
@@ -411,11 +411,7 @@
     // (drawIndirect over the prior compact set is ~2-3 ms), so the
     // interactive cap buys us nothing — keep the buffer at its full
     // allocated size for the entire gesture lifetime.
-    if (
-      isInteracting &&
-      downsampleMaxPointsInteractive != null &&
-      Number.isFinite(downsampleMaxPointsInteractive)
-    ) {
+    if (isInteracting && downsampleMaxPointsInteractive != null && Number.isFinite(downsampleMaxPointsInteractive)) {
       if (hasInitialFrame) {
         return downsampleMaxPoints;
       }
@@ -468,6 +464,7 @@
   let pointSize = $derived(viewingParams.pointSize);
 
   let needsUpdateLabels = true;
+  let previousLabels: Label[] | null = null;
 
   // The viewport at time of the last actual WebGPU render. When a gesture
   // is a pure pan (scale unchanged), we skip the compute+draw pipeline
@@ -525,6 +522,11 @@
   }
 
   $effect.pre(() => {
+    if (labels !== previousLabels) {
+      previousLabels = labels;
+      needsUpdateLabels = true;
+    }
+
     // Wheel-zoom suppression: mid-gesture, every tick changes scale
     // and would otherwise queue a 25-90 s render at 322 M points. We
     // hide the canvas in ``bumpWheel`` and short-circuit here. The
@@ -546,11 +548,7 @@
       bumpDbg("cssPanSkipped_noRendered");
     } else if (Math.abs(resolvedViewportState.scale - renderedViewport.scale) >= 1e-9) {
       bumpDbg("cssPanSkipped_scaleChanged");
-    } else if (
-      isInteracting &&
-      renderedViewport != null &&
-      canvas != null
-    ) {
+    } else if (isInteracting && renderedViewport != null && canvas != null) {
       const d = cssPanDelta();
       if (d != null) {
         // Always apply CSS-pan during interaction — never fall through
@@ -611,7 +609,8 @@
       // appear until release. Acceptable — the release re-render
       // catches up.
       skipDownsampleCompute:
-        isInteracting && hasInitialFrame &&
+        isInteracting &&
+        hasInitialFrame &&
         // When cap is 0 the stale indirect-args from the last non-zero compute
         // would replay the previous frame's draw count — force compute so the
         // downsample early-return clears the args to zero.
@@ -640,17 +639,18 @@
 
     if (needsRender) {
       setNeedsRender();
-      if (
-        (autoLabelEnabled !== false || labels != null) &&
-        needsUpdateLabels &&
-        renderer != null &&
-        data.x != null &&
-        data.x.length > 0 &&
-        defaultViewportState != null
-      ) {
-        needsUpdateLabels = false;
-        updateLabels(defaultViewportState);
-      }
+    }
+
+    if (
+      (autoLabelEnabled !== false || labels != null) &&
+      needsUpdateLabels &&
+      renderer != null &&
+      data.x != null &&
+      data.x.length > 0 &&
+      defaultViewportState != null
+    ) {
+      needsUpdateLabels = false;
+      updateLabels(defaultViewportState);
     }
   });
 
@@ -768,14 +768,16 @@
     // panel — gating it on perf mode meant the panel only appeared with
     // ``?perf=1`` (or after a 60 s safety net). One observer per render
     // until the flag flips, then this branch is dead.
-    if (dev && count > 0 && !((window as any).__atlasFirstBigRenderGpuLogged)) {
+    if (dev && count > 0 && !(window as any).__atlasFirstBigRenderGpuLogged) {
       dev.queue.onSubmittedWorkDone().then(() => {
         const w: any = window as any;
         if (!w.__atlasFirstBigRenderGpuLogged) {
           w.__atlasFirstBigRenderGpuLogged = true;
           if (perfOn && count > 1_000_000) {
             const dur = performance.now() - t0;
-            console.log(`[atlas-stage] first-big-render-gpu-done ${performance.now().toFixed(0)} took=${dur.toFixed(0)}ms`);
+            console.log(
+              `[atlas-stage] first-big-render-gpu-done ${performance.now().toFixed(0)} took=${dur.toFixed(0)}ms`,
+            );
           }
         }
       });
@@ -785,9 +787,7 @@
       const cap = renderer.props.downsampleMaxPoints;
       const downsampled = cap != null && Number.isFinite(cap) && cap > 0 && count > cap;
       perfSetPointCount(count);
-      const whenGpuDone = dev
-        ? dev.queue.onSubmittedWorkDone().then(() => performance.now() - t0)
-        : undefined;
+      const whenGpuDone = dev ? dev.queue.onSubmittedWorkDone().then(() => performance.now() - t0) : undefined;
       perfRecord({ cpuMs: dt, downsampled, whenGpuDone });
     }
     // Clear the CSS-pan transform after the GPU has finished presenting
@@ -877,46 +877,12 @@
     }
   });
 
-  function setupWebGLRenderer(canvas: HTMLCanvasElement) {
-    webGPUPrompt = "WebGPU is unavailable. Falling back to WebGL.";
-
-    let context: WebGL2RenderingContext | null;
-
-    function createRenderer() {
-      context = canvas.getContext("webgl2", { antialias: false });
-      if (context == null) {
-        console.error("Could not get WebGL 2 context");
-        return;
-      }
-      context.getExtension("EXT_color_buffer_float");
-      context.getExtension("EXT_float_blend");
-      context.getExtension("OES_texture_float_linear");
-      renderer = new EmbeddingRendererWebGL2(context, pixelWidth, pixelHeight);
-    }
-
-    createRenderer();
-
-    canvas.addEventListener("webglcontextlost", () => {
-      renderer?.destroy();
-      renderer = null;
-      context = null;
-    });
-
-    canvas.addEventListener("webglcontextrestored", () => {
-      createRenderer();
-    });
-  }
-
   function setupWebGPURenderer(canvas: HTMLCanvasElement) {
-    let canFallbackToWebGL = true;
-
     async function createRenderer() {
       let result = await requestWebGPUDevice();
       if (result == null) {
         console.error("Could not get WebGPU device");
-        if (canFallbackToWebGL) {
-          setupWebGLRenderer(canvas);
-        }
+        webGPUError = "WebGPU is unavailable. This view requires a browser with WebGPU support.";
         return;
       }
       const { device, useF16 } = result;
@@ -924,14 +890,15 @@
       let context = canvas.getContext("webgpu");
       if (context == null) {
         console.error("Could not get WebGPU canvas context");
-        if (canFallbackToWebGL) {
-          setupWebGLRenderer(canvas);
-        }
+        webGPUError = "WebGPU is unavailable. This view requires a browser with WebGPU support.";
         return;
       }
 
-      // Once we get the context, we can't fallback to setupWebGLRenderer.
-      canFallbackToWebGL = false;
+      // Surface any WebGPU validation / shader errors that aren't captured by an
+      // explicit error scope, so failures don't manifest as a silently blank canvas.
+      device.addEventListener("uncapturederror", (event) => {
+        console.error("WebGPU uncaptured error:", (event as GPUUncapturedErrorEvent).error);
+      });
 
       device.lost.then(async (info) => {
         console.info(`WebGPU device was lost: ${info.message}`);
@@ -951,7 +918,7 @@
         alphaMode: "premultiplied",
       });
 
-      renderer = new EmbeddingRendererWebGPU(context, device, format, pixelWidth, pixelHeight, useF16);
+      renderer = new EmbeddingRenderer(context, device, format, pixelWidth, pixelHeight, useF16);
     }
 
     createRenderer();
@@ -1006,7 +973,7 @@
           // based capture) includes the rendered basemap tiles. Without
           // this, the WebGL drawing buffer is cleared after each frame
           // and the screenshot shows only the overlay.
-          preserveDrawingBuffer: true,
+          canvasContextAttributes: { preserveDrawingBuffer: true },
         });
         // Expose map instance for E2E testing (no-op in production bundles via tree-shaking)
         if (typeof window !== "undefined") {
@@ -1025,7 +992,7 @@
     if (canvas == null) {
       return;
     }
-    // Setup WebGPU renderer (with fallback to WebGL)
+    // Setup WebGPU renderer
     setupWebGPURenderer(canvas);
 
     // Override toDataURL. This is because we must submit the render commands before
@@ -1285,9 +1252,10 @@
       return [];
     }
 
-    let cacheKey = await cacheKeyForObject({
+    let cacheKey = await objectHash({
       autoLabel: {
         version: 3,
+        identifier: cacheIdentifier,
         viewport,
         stopWords: config?.autoLabelStopWords,
         densityThreshold: config?.autoLabelDensityThreshold,
@@ -1381,9 +1349,14 @@
       content.innerText = props.tooltip.text ?? JSON.stringify(props.tooltip);
     }
   }
+
+  /** Apply a workaround to fix a bug where onwheel does not fire on empty SVG areas in Safari */
+  function onWheelWorkaround(element: HTMLElement) {
+    element.addEventListener("wheel", () => {}, { passive: true });
+  }
 </script>
 
-<div style:width="{width}px" style:height="{height}px" style:position="relative">
+<div style:width="{width}px" style:height="{height}px" style:position="relative" use:onWheelWorkaround>
   <div
     bind:this={mapContainer}
     style:width="100%"
@@ -1545,7 +1518,7 @@
   {#if resolvedTheme.statusBar}
     <StatusBar
       resolvedTheme={resolvedTheme}
-      statusMessage={statusMessage ?? webGPUPrompt}
+      statusMessage={statusMessage ?? webGPUError}
       distancePerPoint={1 / (pointLocation(1, 0).x - pointLocation(0, 0).x)}
       pointCount={data.x.length}
       selectionMode={selectionMode}

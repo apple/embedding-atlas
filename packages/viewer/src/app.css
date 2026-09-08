@@ -11,8 +11,17 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
+  *,
+  *::before,
+  *::after {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
   :root,
   :host {
+    --scrollbar-thumb: rgba(0, 0, 0, 0.25);
+
     font-family:
       system-ui,
       -apple-system,
@@ -28,6 +37,11 @@
     font-size: 13px;
 
     overscroll-behavior: none;
+  }
+
+  .dark,
+  .dark * {
+    --scrollbar-thumb: rgba(255, 255, 255, 0.25);
   }
 
   /* Workaround a tailwind issue that variables are not exported to :host

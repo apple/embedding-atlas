@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script>
-  import { onDestroy, onMount } from "svelte";
+  import { onMount } from "svelte";
 
   import { EmbeddingViewMosaic as Component } from "../dist/index.js";
 
@@ -17,9 +17,9 @@
       component.update(props);
     });
 
-    onDestroy(() => {
+    return () => {
       component.destroy();
-    });
+    };
   });
 </script>
 

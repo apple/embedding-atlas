@@ -14,17 +14,17 @@
   ],
   "scripts": {
     "build": "./scripts/build.sh",
-    "test:js": "npm run test -w @embedding-atlas/density-clustering -w @embedding-atlas/umap-wasm -w @embedding-atlas/utils",
-    "test:rust": "(cd packages/density-clustering && cargo test) && (cd packages/umap && cargo test)",
+    "test:js": "npm run test -w @embedding-atlas/density-clustering -w @embedding-atlas/umap-wasm -w @embedding-atlas/utils -w @embedding-atlas/viewer",
+    "test:rust": "cargo test --workspace",
     "test:python": "cd packages/backend && uv run pytest",
     "test": "npm run test:js && npm run test:python && npm run test:rust",
-    "check": "npm run check -w @embedding-atlas/component -w @embedding-atlas/viewer -w @embedding-atlas/embedding-atlas -w @embedding-atlas/examples -w @embedding-atlas/backend",
-    "check-format": "prettier -c . && uvx ruff check && uvx ruff format --check --exclude '*.ipynb'"
+    "check": "npm run check -w @embedding-atlas/component -w @embedding-atlas/viewer -w embedding-atlas -w @embedding-atlas/examples -w @embedding-atlas/backend",
+    "check-format": "prettier -c . && uvx ruff format --check --exclude '*.ipynb' --exclude '*.md'"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "prettier": "^3.8.1",
-    "prettier-plugin-svelte": "^3.5.1"
+    "prettier-plugin-svelte": "^4.0.0"
   },
   "dependencies": {
     "svelte": "^5.54.1"

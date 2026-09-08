@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { MosaicClient } from "@uwdata/mosaic-core";
+  import { MosaicClient, type Selection } from "@uwdata/mosaic-core";
   import * as SQL from "@uwdata/mosaic-sql";
 
   import type { ChartViewProps } from "../chart.js";
@@ -21,11 +21,11 @@
   }
 
   let {
-    context,
+    filter,
     spec,
     state: chartState,
     onStateChange,
-  }: Omit<ChartViewProps<Props, State>, "width" | "height"> = $props();
+  }: Omit<ChartViewProps<Props, State>, "width" | "height"> & { filter: Selection } = $props();
 
   let selectedItems = $derived.by(() => {
     let set = new Set(chartState.selection ?? []);
@@ -34,7 +34,9 @@
 
   class Client extends MosaicClient {
     reset() {
-      onStateChange({ selection: undefined });
+      onStateChange((draft) => {
+        delete draft.selection;
+      });
     }
   }
 
@@ -48,17 +50,25 @@
       } else {
         newSelection.add(item.label);
       }
-      onStateChange({ selection: Array.from(newSelection) });
+      onStateChange((draft) => {
+        draft.selection = Array.from(newSelection);
+      });
     } else {
       if (newSelection.has(item.label) && newSelection.size == 1) {
-        onStateChange({ selection: undefined });
+        onStateChange((draft) => {
+          delete draft.selection;
+        });
       } else {
-        onStateChange({ selection: [item.label] });
+        onStateChange((draft) => {
+          draft.selection = [item.label];
+        });
       }
     }
   }
 
   $effect.pre(() => {
+    let f = filter;
+
     $effect.pre(() => {
       let set = new Set(chartState.selection ?? []);
       let items = spec.items.filter((x) => set.has(x.label));
@@ -70,11 +80,11 @@
         value: items.length == 0 ? null : items,
         predicate: predicate,
       };
-      context.filter.update(clause);
+      f.update(clause);
     });
 
     return () => {
-      context.filter.update({ source: client, clients: new Set([client]), value: null, predicate: null });
+      f.update({ source: client, clients: new Set([client]), value: null, predicate: null });
     };
   });
 </script>

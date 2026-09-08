@@ -1,9 +1,15 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
+  import type { UMAPOptions } from "@embedding-atlas/umap-wasm";
   import { untrack } from "svelte";
+  import { get } from "svelte/store";
 
+  import ModelNameInput from "../../views/ModelNameInput.svelte";
+  import ProviderConfigForm from "../../views/ProviderConfigForm.svelte";
   import Button from "../../widgets/Button.svelte";
-  import ComboBox from "../../widgets/ComboBox.svelte";
+  import CheckBox from "../../widgets/CheckBox.svelte";
+  import DisclosureButton from "../../widgets/DisclosureButton.svelte";
+  import NumberInput from "../../widgets/NumberInput.svelte";
   import SegmentedControl from "../../widgets/SegmentedControl.svelte";
   import Select from "../../widgets/Select.svelte";
   import Switch from "../../widgets/Switch.svelte";
@@ -11,24 +17,12 @@
   import { EMBEDDING_ATLAS_VERSION } from "../../constants.js";
   import { formatColumnType, jsTypeFromDBType } from "../../utils/database.js";
   import { detectGisColumns, type GisDetectionResult } from "../../utils/gis_detection.js";
+  import { defaultModels } from "../../inference/model_config_store.js";
+  import { inferProvider } from "../../inference/resolve.js";
 
-  // Predefined embedding models. The default is the first model.
-  const textModels = [
-    "Xenova/all-MiniLM-L6-v2",
-    "Xenova/paraphrase-multilingual-mpnet-base-v2",
-    "Xenova/multilingual-e5-small",
-    "Xenova/multilingual-e5-base",
-    "Xenova/multilingual-e5-large",
-  ];
-  const imageModels = [
-    "Xenova/dinov2-small",
-    "Xenova/dinov2-base",
-    "Xenova/dinov2-large",
-    "Xenova/dino-vitb8",
-    "Xenova/dino-vits8",
-    "Xenova/dino-vitb16",
-    "Xenova/dino-vits16",
-  ];
+  // Fallbacks when the user clears the model field on confirm.
+  const DEFAULT_TEXT_MODEL = "Xenova/all-MiniLM-L6-v2";
+  const DEFAULT_IMAGE_MODEL = "Xenova/dinov2-small";
 
   export interface Settings {
     version: string;
@@ -37,7 +31,14 @@
       | {
           precomputed: { x: string; y: string; neighbors?: string; isGis?: boolean; geometryColumn?: string };
         }
-      | { compute: { column: string; type: "text" | "image"; model: string } };
+      | {
+          compute: {
+            column: string;
+            type: "text" | "image";
+            model: string;
+            umapOptions?: UMAPOptions;
+          };
+        };
   }
 
   interface Props {
@@ -56,9 +57,22 @@
   let embeddingNeighborsColumn: string | undefined = $state(undefined);
   let embeddingIsGis: boolean = $state(false);
   let embeddingTextColumn: string | undefined = $state(undefined);
-  let embeddingTextModel: string | undefined = $state(undefined);
   let embeddingImageColumn: string | undefined = $state(undefined);
-  let embeddingImageModel: string | undefined = $state(undefined);
+
+  // Per-file model picks. Initialised once from the global default; edits stay local —
+  // we don't want a per-file pick to silently overwrite the user's saved default.
+  let embeddingTextModel: string = $state(get(defaultModels).embedding);
+  let embeddingImageModel: string = $state(DEFAULT_IMAGE_MODEL);
+
+  let umapMinDist = $state(0.1);
+  let umapNNeighbors = $state(15);
+  let umapGpu = $state(true);
+
+  let umapOptions = $derived<UMAPOptions>({
+    minDist: umapMinDist,
+    nNeighbors: umapNNeighbors,
+    gpu: umapGpu,
+  });
 
   let numericalColumns = $derived(columns.filter((x) => jsTypeFromDBType(x.column_type) == "number"));
   let stringColumns = $derived(columns.filter((x) => jsTypeFromDBType(x.column_type) == "string"));
@@ -84,6 +98,11 @@
     }
   });
 
+  // Provider that the currently selected embedding model routes to, so we can surface
+  // the relevant connection settings (e.g. OpenAI endpoint / API key) inline.
+  let activeModel = $derived(embeddingMode === "from-image" ? embeddingImageModel : embeddingTextModel);
+  let activeProvider = $derived(activeModel.trim() === "" ? null : inferProvider(activeModel.trim()));
+
   $effect.pre(() => {
     let c = textColumn;
     if (untrack(() => embeddingTextColumn == undefined)) {
@@ -105,18 +124,18 @@
       };
     }
     if (embeddingMode == "from-text" && embeddingTextColumn != undefined) {
-      let model = embeddingTextModel?.trim() ?? "";
-      if (model == undefined || model == "") {
-        model = textModels[0];
+      let model = embeddingTextModel.trim();
+      if (model == "") {
+        model = DEFAULT_TEXT_MODEL;
       }
-      value.embedding = { compute: { column: embeddingTextColumn, type: "text", model: model } };
+      value.embedding = { compute: { column: embeddingTextColumn, type: "text", model: model, umapOptions } };
     }
     if (embeddingMode == "from-image" && embeddingImageColumn != undefined) {
-      let model = embeddingImageModel?.trim() ?? "";
-      if (model == undefined || model == "") {
-        model = imageModels[0];
+      let model = embeddingImageModel.trim();
+      if (model == "") {
+        model = DEFAULT_IMAGE_MODEL;
       }
-      value.embedding = { compute: { column: embeddingImageColumn, type: "image", model: model } };
+      value.embedding = { compute: { column: embeddingImageColumn, type: "image", model: model, umapOptions } };
     }
     onConfirm?.(value);
   }
@@ -140,19 +159,25 @@
         onChange={(v) => (textColumn = v)}
         options={[
           { value: undefined, label: "(none)" },
-          ...stringColumns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${formatColumnType(x.column_type)})` })),
+          ...stringColumns.map((x) => ({
+            value: x.column_name,
+            label: `${x.column_name} (${formatColumnType(x.column_type)})`,
+          })),
         ]}
       />
     </div>
     <div class="my-2"></div>
     <!-- Auto GIS detection banner -->
     {#if gisDetection}
-      <div class="p-3 rounded-md bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 text-sm text-blue-800 dark:text-blue-200">
+      <div
+        class="p-3 rounded-md bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 text-sm text-blue-800 dark:text-blue-200"
+      >
         {#if gisDetection.type === "geometry"}
-          Auto-detected GIS geometry column <strong>{gisDetection.geometryColumn}</strong>.
-          Coordinates will be extracted to <strong>{gisDetection.xColumn}</strong> / <strong>{gisDetection.yColumn}</strong>.
+          Auto-detected GIS geometry column <strong>{gisDetection.geometryColumn}</strong>. Coordinates will be
+          extracted to <strong>{gisDetection.xColumn}</strong> / <strong>{gisDetection.yColumn}</strong>.
         {:else}
-          Auto-detected GIS columns: <strong>{gisDetection.xColumn}</strong> (longitude) and <strong>{gisDetection.yColumn}</strong> (latitude).
+          Auto-detected GIS columns: <strong>{gisDetection.xColumn}</strong> (longitude) and
+          <strong>{gisDetection.yColumn}</strong> (latitude).
         {/if}
         Settings have been pre-filled — review and confirm below.
       </div>
@@ -185,7 +210,10 @@
           onChange={(v) => (embeddingXColumn = v)}
           options={[
             { value: undefined, label: "(none)" },
-            ...numericalColumns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${formatColumnType(x.column_type)})` })),
+            ...numericalColumns.map((x) => ({
+              value: x.column_name,
+              label: `${x.column_name} (${formatColumnType(x.column_type)})`,
+            })),
           ]}
         />
       </div>
@@ -197,14 +225,19 @@
           onChange={(v) => (embeddingYColumn = v)}
           options={[
             { value: undefined, label: "(none)" },
-            ...numericalColumns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${formatColumnType(x.column_type)})` })),
+            ...numericalColumns.map((x) => ({
+              value: x.column_name,
+              label: `${x.column_name} (${formatColumnType(x.column_type)})`,
+            })),
           ]}
         />
       </div>
       <div class="w-full flex flex-row items-center justify-between">
         <div class="w-[6rem] dark:text-slate-400">GIS</div>
         <div class="flex-1 min-w-0 flex items-center justify-between">
-          <div class="text-sm text-slate-400 dark:text-slate-600 select-none">Treat X/Y as lon/lat and enable basemap</div>
+          <div class="text-sm text-slate-400 dark:text-slate-600 select-none">
+            Treat X/Y as lon/lat and enable basemap
+          </div>
           <Switch label="Enable" value={embeddingIsGis} onChange={(v) => (embeddingIsGis = v)} />
         </div>
       </div>
@@ -216,7 +249,10 @@
           onChange={(v) => (embeddingNeighborsColumn = v)}
           options={[
             { value: undefined, label: "(none)" },
-            ...columns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${formatColumnType(x.column_type)})` })),
+            ...columns.map((x) => ({
+              value: x.column_name,
+              label: `${x.column_name} (${formatColumnType(x.column_type)})`,
+            })),
           ]}
         />
       </div>
@@ -234,24 +270,13 @@
           onChange={(v) => (embeddingTextColumn = v)}
           options={[
             { value: undefined, label: "(none)" },
-            ...stringColumns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${formatColumnType(x.column_type)})` })),
+            ...stringColumns.map((x) => ({
+              value: x.column_name,
+              label: `${x.column_name} (${formatColumnType(x.column_type)})`,
+            })),
           ]}
         />
       </div>
-      <div class="w-full flex flex-row items-center">
-        <div class="w-[6rem] dark:text-slate-400">Model</div>
-        <ComboBox
-          className="flex-1"
-          value={embeddingTextModel}
-          placeholder="(default {textModels[0]})"
-          onChange={(v) => (embeddingTextModel = v)}
-          options={textModels}
-        />
-      </div>
-      <p class="text-sm text-slate-400 dark:text-slate-600">
-        Computing the embedding and 2D projection in browser may take a while. The model will be loaded with
-        Transformers.js.
-      </p>
     {:else if embeddingMode == "from-image"}
       <div class="w-full flex flex-row items-center">
         <div class="w-[6rem] dark:text-slate-400">Image</div>
@@ -261,24 +286,45 @@
           onChange={(v) => (embeddingImageColumn = v)}
           options={[
             { value: undefined, label: "(none)" },
-            ...columns.map((x) => ({ value: x.column_name, label: `${x.column_name} (${formatColumnType(x.column_type)})` })),
+            ...columns.map((x) => ({
+              value: x.column_name,
+              label: `${x.column_name} (${formatColumnType(x.column_type)})`,
+            })),
           ]}
         />
       </div>
-      <div class="w-full flex flex-row items-center">
-        <div class="w-[6rem] dark:text-slate-400">Model</div>
-        <ComboBox
-          className="flex-1"
-          value={embeddingImageModel}
-          placeholder="(default {imageModels[0]})"
-          onChange={(v) => (embeddingImageModel = v)}
-          options={imageModels}
-        />
+    {/if}
+    {#if embeddingMode == "from-text" || embeddingMode == "from-image"}
+      <!-- Model -->
+      <div class="w-full flex flex-row items-start">
+        <div class="w-[6rem] dark:text-slate-400 mt-1">Model</div>
+        <div class="flex-1 min-w-0">
+          {#if embeddingMode == "from-text"}
+            <ModelNameInput bind:value={embeddingTextModel} modality="text" />
+          {:else}
+            <ModelNameInput bind:value={embeddingImageModel} modality="image" />
+          {/if}
+        </div>
       </div>
-      <p class="text-sm text-slate-400 dark:text-slate-600">
-        Computing the embedding and 2D projection in browser may take a while. The model will be loaded with
-        Transformers.js.
-      </p>
+      <!-- Provider connection / inference settings for the selected model -->
+      {#if activeProvider != null}
+        <ProviderConfigForm providerType={activeProvider} />
+      {/if}
+      <!-- UMAP settings -->
+      <DisclosureButton label="UMAP Settings" class="mt-1">
+        <div class="w-full flex flex-row items-center">
+          <div class="w-[6rem] dark:text-slate-400">Min Dist</div>
+          <NumberInput className="flex-1 min-w-0" bind:value={umapMinDist} min={0} max={1} step={0.01} />
+        </div>
+        <div class="w-full flex flex-row items-center">
+          <div class="w-[6rem] dark:text-slate-400">Neighbors</div>
+          <NumberInput className="flex-1 min-w-0" bind:value={umapNNeighbors} min={2} max={200} step={1} />
+        </div>
+        <div class="w-full flex flex-row items-center">
+          <div class="w-[6rem] dark:text-slate-400">GPU</div>
+          <CheckBox bind:checked={umapGpu} label="Use WebGPU if available" />
+        </div>
+      </DisclosureButton>
     {/if}
   </div>
   <div class="w-full flex flex-row items-center mt-4">

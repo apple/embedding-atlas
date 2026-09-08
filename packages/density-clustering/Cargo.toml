@@ -1,7 +1,0 @@
-[workspace]
-resolver = "2"
-
-members = [
-    "density_clustering", "density_clustering_bin",
-    "density_clustering_wasm",
-]

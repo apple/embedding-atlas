@@ -1,3 +1,5 @@
+# Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 from collections.abc import Sequence
 
 import numpy as np
@@ -171,29 +173,54 @@ def knn_to_edges(
         >>> distances = np.array([[0.1, 0.2], [0.1, 0.3], [0.2, 0.3]])
         >>> edges = knn_to_edges(indices, distances)
     """
-    from umap.umap_ import compute_membership_strengths, smooth_knn_dist
+    import sys
+
+    import numba
+    from umap.umap_ import smooth_knn_dist
 
     n_neighbors = knn_distances.shape[1]
 
-    # Compute sigmas and rhos
-    sigmas, rhos = smooth_knn_dist(
-        knn_distances,
-        k=n_neighbors,
-        local_connectivity=local_connectivity,
-    )
+    # Numba's parallel scheduler can segfault in this kernel on macOS with
+    # CPython 3.12. Limit only this call to one worker and restore the process
+    # setting immediately afterwards; other UMAP work remains parallel.
+    previous_numba_threads: int | None = None
+    if sys.platform == "darwin" and sys.version_info[:2] == (3, 12):
+        previous_numba_threads = numba.get_num_threads()
+        numba.set_num_threads(1)
+    try:
+        sigmas, rhos = smooth_knn_dist(
+            knn_distances,
+            k=n_neighbors,
+            local_connectivity=local_connectivity,
+        )
+    finally:
+        if previous_numba_threads is not None:
+            numba.set_num_threads(previous_numba_threads)
 
-    # Compute membership strengths (edge weights)
-    result = compute_membership_strengths(
-        knn_indices.astype(np.int32),
-        knn_distances.astype(np.float32),
-        sigmas.astype(np.float32),
-        rhos.astype(np.float32),
-        return_dists=False,
-    )
-    rows, cols, vals = result[0], result[1], result[2]
+    # Apply the same membership-strength formula as UMAP's
+    # compute_membership_strengths kernel. The Numba-parallel implementation
+    # in umap-learn 0.5.12 can segfault on macOS with Python 3.12, so keep this
+    # small conversion vectorized in NumPy instead.
+    indices = np.asarray(knn_indices, dtype=np.int32)
+    distances = np.asarray(knn_distances, dtype=np.float32)
+    sigmas = np.asarray(sigmas, dtype=np.float32)
+    rhos = np.asarray(rhos, dtype=np.float32)
+    deltas = distances - rhos[:, None]
+    sigma_grid = np.broadcast_to(sigmas[:, None], distances.shape)
+    vals = np.ones(distances.shape, dtype=np.float32)
+    decays = (deltas > 0.0) & (sigma_grid != 0.0)
+    vals[decays] = np.exp(-(deltas[decays] / sigma_grid[decays]))
 
-    # Convert to edge list, filtering out self-loops
-    edges = [(int(r), int(c), float(v)) for r, c, v in zip(rows, cols, vals) if r != c]
+    rows = np.broadcast_to(
+        np.arange(indices.shape[0], dtype=np.int32)[:, None], indices.shape
+    )
+    valid = (indices != -1) & (indices != rows)
+
+    # Convert to edge list, filtering missing neighbors and self-loops.
+    edges = [
+        (int(r), int(c), float(v))
+        for r, c, v in zip(rows[valid], indices[valid], vals[valid])
+    ]
 
     return edges
 

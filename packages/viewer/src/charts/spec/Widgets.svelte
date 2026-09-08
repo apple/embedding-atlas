@@ -24,7 +24,11 @@
         bind:value={
           () => outputs.scale[widget.channel].type ?? "linear",
           (v) => {
-            onSpecChange({ scale: { [widget.channel]: { type: v } } });
+            onSpecChange((draft) => {
+              draft.scale ??= {};
+              draft.scale[widget.channel] ??= {};
+              draft.scale[widget.channel]!.type = v;
+            });
           }
         }
       />
@@ -46,7 +50,7 @@
                 encoding.normalize = v ?? undefined;
               }
             }
-            onSpecChange(newSpec, "replace");
+            onSpecChange(newSpec);
           }}
         />
       </span>

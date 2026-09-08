@@ -80,10 +80,8 @@ pub fn checked_heap_push(priorities: &mut [f32], indices: &mut [i32], p: f32, n:
     let size = priorities.len();
 
     // Check for duplicate
-    for i in 0..size {
-        if n == indices[i] {
-            return 0;
-        }
+    if indices.iter().take(size).any(|&idx| idx == n) {
+        return 0;
     }
 
     priorities[0] = p;
@@ -144,10 +142,8 @@ pub fn checked_flagged_heap_push(
     let size = priorities.len();
 
     // Check for duplicate
-    for i in 0..size {
-        if n == indices[i] {
-            return 0;
-        }
+    if indices.iter().take(size).any(|&idx| idx == n) {
+        return 0;
     }
 
     priorities[0] = p;

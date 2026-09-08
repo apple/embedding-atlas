@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { applyUpdatesIfNeeded } from "@embedding-atlas/utils";
+  import { produce } from "immer";
   import { untrack } from "svelte";
 
   import CodeEditor from "../../widgets/CodeEditor.svelte";
@@ -20,26 +20,37 @@
   let { context, width, height, onSpecChange, onStateChange }: ChartViewProps<{}, {}> = $props();
 
   // svelte-ignore state_referenced_locally
-  let { columns, colorScheme } = context;
+  let { colorScheme } = context;
 
   let chartBuilders = chartBuilderDescriptions();
 
   let builder: ChartBuilderDescription<any, UIElement[]> = $state.raw(chartBuilders[0]);
 
-  let values: Record<string, any> = $state({});
-  let validateResult: string | boolean = $state(false);
+  let values: Record<string, any> = $state.raw({});
+  let validateResult: string | boolean = $state.raw(false);
   let localChartState = $state.raw<any>(null);
   let localChartSpec = $state.raw<any>(null);
 
-  // If builder change, refresh the values.
+  // The table the new chart targets, selected via a "table" UI element (if the
+  // builder declares one). Defaults to the main table. Field options are sourced
+  // from this table's columns.
+  let tableKey = $derived((builder.ui.find((e) => "table" in e) as { table: { key: string } } | undefined)?.table.key);
+  let tableNames = $derived(Object.keys(context.tables));
+  let selectedTable = $derived((tableKey != null ? values[tableKey] : undefined) ?? context.table);
+  let columns = $derived(context.tables[selectedTable]?.columns ?? []);
+
+  // Refresh the values when the builder or the selected table changes. Field
+  // selections are kept when their key/type still apply, and pruned otherwise
+  // (e.g. a field that doesn't exist in a newly selected table).
   $effect.pre(() => {
     let _ = builder;
-    // Update values so we keep the fields selected if the keys are the same.
+    // Track columns so pruning also runs when the table dropdown changes.
+    let currentColumns = columns;
     let currentValues = untrack(() => values);
     let newValues: Record<string, any> = {};
     for (let item of builder.ui) {
       if ("field" in item) {
-        let allowedColumns = filteredColumns(columns, item.field.types);
+        let allowedColumns = filteredColumns(currentColumns, item.field.types);
         let current = currentValues[item.field.key];
         if (current != null && allowedColumns.findIndex(({ name }) => name == current) >= 0) {
           newValues[item.field.key] = current;
@@ -54,6 +65,9 @@
         newValues[item.code.key] = currentValues[item.code.key] ?? "";
       } else if ("spec" in item) {
         newValues[item.spec.key] = currentValues[item.spec.key] ?? {};
+      } else if ("table" in item) {
+        // Preserve the table selection so re-running on a table change doesn't wipe it.
+        newValues[item.table.key] = currentValues[item.table.key];
       }
     }
     // Setting values should trigger validation and update the spec.
@@ -69,7 +83,7 @@
         localChartState = null;
         return;
       }
-      let r = builder.create(input, { table: context.table, id: context.id });
+      let r = builder.create(input, { tables: context.tables });
       validateResult = r != null;
       localChartSpec = r;
       localChartState = null;
@@ -80,8 +94,8 @@
 
   function confirm() {
     if (localChartSpec != null) {
-      onSpecChange(localChartSpec, "replace");
-      onStateChange(localChartState ?? {}, "replace");
+      onSpecChange(localChartSpec);
+      onStateChange(localChartState ?? {});
     }
   }
 
@@ -94,6 +108,12 @@
           return undefined;
         }
         input[item.field.key] = value;
+      }
+      if ("table" in item) {
+        // Pass undefined for the main table so builders only record non-default tables.
+        if (input[item.table.key] === context.table) {
+          input[item.table.key] = undefined;
+        }
       }
     }
     return input;
@@ -139,6 +159,12 @@
     }
     return columns.filter((c) => c.jsType != null && types.indexOf(c.jsType) >= 0);
   }
+
+  function valueUpdater(key: string): (v: any) => void {
+    return (v) => {
+      values = { ...values, [key]: v };
+    };
+  }
 </script>
 
 <Container width={width} height={height} scrollY={true} class="flex flex-col gap-2">
@@ -163,7 +189,7 @@
 
   <div class="select-none">{builder.description}</div>
 
-  {#each builder.ui as elem}
+  {#each builder.ui.filter((x) => !("table" in x && tableNames.length <= 1)) as elem}
     {#if "label" in elem}
       <div class="text-slate-500 dark:text-slate-400 select-none">{elem.label}</div>
     {/if}
@@ -180,7 +206,7 @@
       )}
       <Select
         value={values[key]}
-        onChange={(v) => (values[key] = v)}
+        onChange={valueUpdater(key)}
         placeholder="(select field)"
         class="w-full"
         options={options}
@@ -192,7 +218,7 @@
         <CodeEditor
           class="w-full h-full"
           value={values[key]}
-          onChange={(v) => (values[key] = v)}
+          onChange={valueUpdater(key)}
           colorScheme={$colorScheme}
           language={elem.code.language ?? "plain"}
         />
@@ -204,7 +230,7 @@
         <SpecEditor
           class="w-full h-full"
           initialValue={{ title: "Chart" }}
-          onChange={(v) => (values[key] = v)}
+          onChange={valueUpdater(key)}
           colorScheme={$colorScheme}
         />
       </div>
@@ -212,6 +238,15 @@
     {#if "boolean" in elem}
       {@const key = elem.boolean.key}
       <Switch label={elem.boolean.label} value={values[key]} onChange={(v) => (values[key] = v)} />
+    {/if}
+    {#if "table" in elem}
+      {@const key = elem.table.key}
+      <Select
+        value={values[key] ?? context.table}
+        onChange={valueUpdater(key)}
+        class="w-full"
+        options={tableNames.map((t) => ({ value: t, label: t }))}
+      />
     {/if}
   {/each}
   {#if localChartSpec != null && builder.preview !== false}
@@ -224,11 +259,19 @@
             state={localChartState ?? {}}
             width={"container"}
             mode="view"
-            onStateChange={(update, mode = "merge") => {
-              applyUpdatesIfNeeded(localChartState ?? {}, update, mode, (r) => (localChartState = r));
+            onStateChange={(update) => {
+              if (typeof update === "function") {
+                localChartState = produce(localChartState ?? {}, update);
+              } else {
+                localChartState = update;
+              }
             }}
-            onSpecChange={(update, mode = "merge") => {
-              applyUpdatesIfNeeded(localChartSpec ?? {}, update, mode, (r) => (localChartSpec = r));
+            onSpecChange={(update) => {
+              if (typeof update === "function") {
+                localChartSpec = produce(localChartSpec ?? {}, update);
+              } else {
+                localChartSpec = update;
+              }
             }}
           />
         </div>

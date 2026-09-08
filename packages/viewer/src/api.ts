@@ -56,11 +56,11 @@ export interface EmbeddingAtlasProps {
       } | null;
     } | null;
 
-    /** The column for pre-computed nearest neighbors.
-     *  Each value in the column should be a dictionary with the format: `{ "ids": [id1, id2, ...], "distances": [distance1, distance2, ...] }`.
-     *  `"ids"` should be an array of row ids (as given by the `idColumn`) of the neighbors, sorted by distance.
-     *  `"distances"` should contain the corresponding distances to each neighbor.
-     *  Note that if `searcher.nearestNeighbors` is specified, the UI will use the searcher instead.
+    /**
+     * The column for pre-computed nearest neighbors.
+     * Each value in the column should be a dictionary with the format: `{ "ids": [id1, id2, ...], "distances": [distance1, distance2, ...] }`.
+     * `"ids"` should be an array of row ids (as given by the `idColumn`) of the neighbors, sorted by distance.
+     * `"distances"` should contain the corresponding distances to each neighbor.
      */
     neighbors?: string | null;
 
@@ -72,7 +72,13 @@ export interface EmbeddingAtlasProps {
 
     /** The column for importance scores (e.g., PageRank, centrality). Used with `image` to select representative images for cluster labels. */
     importance?: string | null;
+
+    /** The column for features. If available, a features list view will be created by default. */
+    features?: string | null;
   };
+
+  /** Additional data tables. */
+  additionalTables?: Record<string, AdditionalTable>;
 
   /** The color scheme. */
   colorScheme?: "light" | "dark" | null;
@@ -99,9 +105,11 @@ export interface EmbeddingAtlasProps {
   /** Custom CSS stylesheet to apply at the root of the component. */
   stylesheet?: string | null;
 
-  /** An object that provides search functionalities, including full text search, vector search, and nearest neighbor queries.
-   *  If not specified (undefined), a default full-text search with the text column will be used.
-   *  If set to null, search will be disabled. */
+  /**
+   * An object that provides search functionalities, including full text search, vector search, and nearest neighbor queries.
+   * If not specified (undefined), a default full-text search with the text column will be used.
+   * If set to null, search will be disabled.
+   */
   searcher?: Searcher | null;
 
   /** A callback to export the currently selected points. */
@@ -115,6 +123,9 @@ export interface EmbeddingAtlasProps {
   /** A callback when the state of the viewer changes. You may serialize the state to JSON and load it back. */
   onStateChange?: ((state: EmbeddingAtlasState) => void) | null;
 
+  /** A callback when the current filter predicate changes (e.g., due to brush or click interactions). */
+  onPredicateChange?: ((predicate: string | null) => void) | null;
+
   /** Model context API where the component will register its tools to. */
   modelContext?: ModelContextAPI | null;
 
@@ -126,27 +137,43 @@ export interface EmbeddingAtlasState {
   /** The version of Embedding Atlas that created this state. If omitted, assume the current version. */
   version?: string;
 
-  /** UNIX timestamp when this was created. */
-  timestamp?: number;
-
   /** The list of charts. */
   charts?: Record<string, any>;
 
   /** The state of all charts, stored as a map of id to chart state. */
   chartStates?: Record<string, any>;
 
-  /** The current layout */
-  layout?: string;
+  /** The current layout, if undefined, use the default layout. */
+  currentLayout?: string;
 
-  /** The state of all layouts. */
-  layoutStates?: Record<string, any>;
+  /** The layouts, stored as a map of layout id to layout spec. */
+  layouts?: Record<string, any>;
+
+  /** The order of the layouts. */
+  layoutOrder?: string[];
 
   /** Column display and rendering styles. */
   columnStyles?: Record<string, ColumnStyle>;
+}
 
-  /** The selection predicate (SQL expression).
-   *  This property is derived from chart states, changing this directly has no effect. */
-  predicate?: string | null;
+export interface AdditionalTable {
+  /** The row id column of this table. */
+  id: string;
+
+  /** How this table joins to the main (primary) table, used for cross-table filtering. */
+  relation?: {
+    /**
+     * Join-key expression over the MAIN table's columns. Defaults to the main table's `id`.
+     * Wrap in `UNNEST(...)` when the key is list-valued (e.g. a list/struct-list column → many-to-many).
+     */
+    mainKey?: string;
+
+    /**
+     * Join-key expression over THIS table's columns. Defaults to this table's `id`.
+     * Wrap in `UNNEST(...)` when the key is list-valued.
+     */
+    key?: string;
+  };
 }
 
 export interface Cache {
@@ -167,12 +194,6 @@ export interface Searcher {
   /** Perform a vector search with the given query */
   vectorSearch?(
     query: string,
-    options?: { limit?: number; predicate?: string | null; onStatus?: (status: string) => void },
-  ): Promise<{ id: any; distance?: number }[]>;
-
-  /** Find nearest neighbors of the row of the given id */
-  nearestNeighbors?(
-    id: any,
     options?: { limit?: number; predicate?: string | null; onStatus?: (status: string) => void },
   ): Promise<{ id: any; distance?: number }[]>;
 }

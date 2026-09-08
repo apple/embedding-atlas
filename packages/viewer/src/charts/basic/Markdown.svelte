@@ -17,13 +17,23 @@
   </Container>
 {:else}
   <Container width={width} height={height} class="flex flex-col gap-2">
-    <Input bind:value={() => spec.title ?? "", (value) => onSpecChange({ title: value })} />
+    <Input
+      bind:value={
+        () => spec.title ?? "",
+        (value) =>
+          onSpecChange((draft) => {
+            draft.title = value;
+          })
+      }
+    />
     <CodeEditor
       value={spec.content}
       class={height == null ? "h-64" : "flex-1"}
       language="markdown"
       onChange={(value) => {
-        onSpecChange({ content: value });
+        onSpecChange((draft) => {
+          draft.content = value;
+        });
       }}
     />
   </Container>

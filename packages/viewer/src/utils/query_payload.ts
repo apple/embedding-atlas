@@ -4,14 +4,14 @@ import { base64Decode, base64Encode, compress, decompress } from "@embedding-atl
 
 const format: CompressionFormat = "deflate-raw";
 
-async function serializePayload(object: any) {
+export async function serializePayload(object: any) {
   let encoder = new TextEncoder();
   let data = encoder.encode(JSON.stringify(object));
   let compressed = await compress(data, format);
   return base64Encode(compressed);
 }
 
-async function deserializePayload(data: string) {
+export async function deserializePayload(data: string) {
   let buffer = base64Decode(data);
   let result = await decompress(buffer, format);
   let decoder = new TextDecoder();

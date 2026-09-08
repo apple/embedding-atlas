@@ -70,9 +70,14 @@
   }: ChartViewProps<EmbeddingSpec, EmbeddingState> = $props();
 
   // svelte-ignore state_referenced_locally
-  let { colorScheme, columnStyles, searchResult, theme: themeConfig } = context;
+  let { colorScheme, columnStyles, searcher, theme: themeConfig } = context;
 
   let theme = $derived(resolveChartTheme($colorScheme, $themeConfig));
+
+  let dataTable = $derived(spec.data.table ?? context.table);
+  let rowId = $derived(spec.data.id ?? context.id);
+  let filter = $derived(context.filterFor(spec.data.table) ?? context.filter);
+  let isDefaultTable = $derived(dataTable === context.table);
 
   // svelte-ignore state_referenced_locally
   let highlightStore = isolatedWritable(context.highlight);
@@ -85,7 +90,7 @@
   // Query total point count for render limit slider
   $effect.pre(() => {
     context.coordinator
-      .query(SQL.Query.from(context.table).select({ count: SQL.sql`COUNT(*)::INT` }))
+      .query(SQL.Query.from(dataTable).select({ count: SQL.sql`COUNT(*)::INT` }))
       .then((result: any) => {
         totalPointCount = result.get(0).count;
       });
@@ -93,8 +98,9 @@
 
   let tooltip = $state.raw<DataPoint | null>(null);
   let selection = $state.raw<DataPoint[] | null>(null);
-  let overlayProps = $state.raw<{ center: DataPoint | null; points: DataPoint[] } | null>(null);
+  let overlayProps = $state.raw<{ nodes?: DataPoint[]; edges?: { start: DataPoint; end: DataPoint }[] } | null>(null);
 
+  // svelte-ignore state_referenced_locally
   let mapStyleInput = $state(spec.mapStyle ?? defaultMapStyle);
   $effect(() => {
     mapStyleInput = spec.mapStyle ?? defaultMapStyle;
@@ -102,13 +108,15 @@
 
   // Update the category mapping and legend.
   $effect.pre(() => {
-    let promise = context.cache.value(`embedding/category/${categoryColumn}`, () =>
-      makeCategoryColumn(context.coordinator, context.table, categoryColumn, theme),
+    let promise = context.cache.value(`embedding/category/${dataTable}/${categoryColumn}`, () =>
+      makeCategoryColumn(context.coordinator, dataTable, categoryColumn, theme),
     );
     promise.then((v) => {
       categoryLegend = v;
       if ((categoryLegend?.legend.length ?? 0) > maxCategories) {
-        onSpecChange({ mode: "points" });
+        onSpecChange((draft) => {
+          draft.mode = "points";
+        });
       }
     });
   });
@@ -117,6 +125,10 @@
     let isOnMount = true;
     let previousValue: RowID[] | null = null;
     return highlightStore.subscribe((v) => {
+      if (!isDefaultTable) {
+        return;
+      }
+
       selection = v;
 
       // Don't animate immediately on mount.
@@ -139,48 +151,61 @@
     });
   });
 
-  $effect.pre(() =>
-    searchResult.subscribe(async (result) => {
-      if (result == null || result.ids.length == 0) {
+  $effect.pre(() => {
+    return context.overlay.subscribe(async (overlay) => {
+      if (overlay == null) {
         overlayProps = null;
         return;
       }
-      let centerId: RowID | null = null;
-      if (result.mode == "neighbors") {
-        centerId = result.query;
-      }
-      let r = Array.from(
+      // Collect all ids
+      let ids: RowID[] = [
+        ...(overlay.nodes ?? []), // all nodes
+        ...(overlay.edges?.flatMap((e) => [e.start, e.end]) ?? []), // all points in edges
+      ];
+      // Query for coordinates from ids
+      let queryResult = Array.from(
         await context.coordinator.query(
-          SQL.Query.from(context.table)
-            .select({ identifier: SQL.column(context.id), x: SQL.column(spec.data.x), y: SQL.column(spec.data.y) })
+          SQL.Query.from(dataTable)
+            .select({ id: SQL.column(rowId), x: SQL.column(spec.data.x), y: SQL.column(spec.data.y) })
             .where(
               SQL.isIn(
-                context.id,
-                result.ids.concat(centerId != null ? [centerId] : []).map((x) => SQL.literal(x)),
+                SQL.column(rowId),
+                ids.map((x) => SQL.literal(x)),
               ),
             ),
         ),
-      ) as DataPoint[];
+      );
+      let mapper = new Map(queryResult.map((p) => [p.id, { identifier: p.id, x: p.x, y: p.y }]));
       overlayProps = {
-        center: r.filter((p) => p.identifier === centerId)[0] ?? null,
-        points: r.filter((p) => p.identifier !== centerId),
+        nodes: overlay.nodes?.map((n) => mapper.get(n)).filter((x) => x != undefined),
+        edges: overlay.edges
+          ?.map((n) => {
+            let start = mapper.get(n.start);
+            let end = mapper.get(n.end);
+            if (start == undefined || end == undefined) {
+              return undefined;
+            }
+            return { start, end };
+          })
+          .filter((x) => x != undefined),
       };
-    }),
-  );
+    });
+  });
 
   async function animateToPoint(identifier: RowID): Promise<void> {
-    let defaultScale = await context.cache.value(`embedding/default-viewport-scale/${spec.data.x},${spec.data.y}`, () =>
-      defaultViewportScale(context.coordinator, context.table, spec.data.x, spec.data.y),
+    let defaultScale = await context.cache.value(
+      `embedding/default-viewport-scale/${dataTable}/${spec.data.x},${spec.data.y}`,
+      () => defaultViewportScale(context.coordinator, dataTable, spec.data.x, spec.data.y),
     );
     let scale = defaultScale * 2;
     // Query the x, y location.
     let result = await context.coordinator.query(
-      SQL.Query.from(context.table)
+      SQL.Query.from(dataTable)
         .select({
           x: SQL.column(spec.data.x),
           y: SQL.column(spec.data.y),
         })
-        .where(SQL.eq(SQL.column(context.id), SQL.literal(identifier))),
+        .where(SQL.eq(SQL.column(rowId), SQL.literal(identifier))),
     );
     let { x, y } = result.get(0) as { x: number; y: number };
     // Start animation and show tooltip.
@@ -189,12 +214,14 @@
   }
 
   let currentViewportAnimation: number | null;
-  let animatingViewport = $state.raw<ViewportState | null>(null);
+  let animatingViewport = $state.raw<ViewportState | undefined>(undefined);
   function startViewportAnimation(newState: ViewportState) {
     tooltip = null;
     let start = animatingViewport ?? chartState.viewport;
     if (start == null) {
-      onStateChange({ viewport: newState });
+      onStateChange((draft) => {
+        draft.viewport = newState;
+      });
       return;
     }
     animatingViewport = start;
@@ -209,7 +236,9 @@
       if (t < 1) {
         currentViewportAnimation = requestAnimationFrame(callback);
       } else {
-        onStateChange({ viewport: animatingViewport });
+        onStateChange((draft) => {
+          draft.viewport = animatingViewport;
+        });
       }
     };
     if (currentViewportAnimation) {
@@ -218,18 +247,37 @@
     currentViewportAnimation = requestAnimationFrame(callback);
   }
 
-
+  async function nearestNeighbors(id: any): Promise<{ id: any; distance: number }[]> {
+    if (spec.data.neighbors == undefined) {
+      return [];
+    }
+    let q = SQL.Query.from(dataTable)
+      .select({ knn: SQL.column(spec.data.neighbors) })
+      .where(SQL.eq(SQL.column(rowId), SQL.literal(id)));
+    let result = await context.coordinator.query(q);
+    let items: any[] = Array.from(result);
+    if (items.length != 1) {
+      return [];
+    }
+    let { distances, ids } = items[0].knn;
+    let r = Array.from(ids)
+      .map((nid, i) => {
+        return { id: nid, distance: distances[i] };
+      })
+      .filter((x) => x.id != id);
+    return r;
+  }
 </script>
 
-<div class="relative">
+<div class="relative bg-white dark:bg-black">
   <EmbeddingViewMosaic
     width={width}
     height={height}
     coordinator={context.coordinator}
-    table={context.table}
-    filter={context.filter}
-    rangeSelection={context.filter}
-    identifier={context.id}
+    table={dataTable}
+    filter={filter}
+    rangeSelection={filter}
+    identifier={rowId}
     x={spec.data.x}
     y={spec.data.y}
     bounds={spec.data.bounds}
@@ -240,6 +288,7 @@
     importance={spec.data.importance}
     category={categoryLegend?.indexColumn}
     categoryColors={categoryLegend?.legend.map((x) => x.color) ?? [theme.embeddingColor]}
+    theme={{ brandingLink: null }}
     config={{
       colorScheme: $colorScheme,
       ...context.embeddingViewConfig,
@@ -249,29 +298,58 @@
       ...(spec.minimumDensity != null ? { minimumDensity: spec.minimumDensity } : {}),
       pointSize: spec.pointSize ?? 2,
       downsampleMaxPoints: spec.downsampleMaxPoints ?? defaultDownsampleMaxPoints,
-      downsampleMaxPointsInteractive:
-        spec.downsampleMaxPointsInteractive ?? defaultDownsampleMaxPointsInteractive,
+      downsampleMaxPointsInteractive: spec.downsampleMaxPointsInteractive ?? defaultDownsampleMaxPointsInteractive,
     }}
     labels={context.embeddingViewLabels}
     cache={context.persistentCache}
-    additionalFields={Object.fromEntries(context.columns.map((c) => [c.name, c.name]))}
-    customTooltip={{
-      class: CustomTooltip,
-      props: {
-        darkMode: $colorScheme,
-        columnStyles: $columnStyles,
-        onNearestNeighborSearch:
-          (context.searchModes ?? []).indexOf("neighbors") >= 0 ? (id: any) => context.search?.(id, "neighbors") : null,
-      },
-    }}
+    additionalFields={isDefaultTable
+      ? Object.fromEntries((context.tables[context.table]?.columns ?? []).map((c) => [c.name, c.name]))
+      : {}}
+    customTooltip={isDefaultTable
+      ? {
+          class: CustomTooltip,
+          props: {
+            context: context,
+            darkMode: $colorScheme,
+            columnStyles: $columnStyles,
+            onNearestNeighborSearch: spec.data.neighbors
+              ? async (id: any) => {
+                  let neighbors = await nearestNeighbors(id);
+                  let nids = neighbors.map((x) => x.id);
+                  searcher.search(
+                    {
+                      label: "Neighbors of #" + id,
+                      items: neighbors,
+                      overlay: {
+                        nodes: [id, ...nids],
+                        edges: nids.map((ni) => ({ start: id, end: ni })),
+                      },
+                    },
+                    "raw",
+                  );
+                }
+              : undefined,
+          },
+        }
+      : undefined}
     customOverlay={{
       class: CustomOverlay,
-      props: { ...(overlayProps ?? { points: [], center: null }) },
+      props: { ...(overlayProps ?? { nodes: [], edges: [] }) },
     }}
     viewportState={animatingViewport ?? chartState.viewport}
-    onViewportState={(v) => onStateChange({ viewport: v })}
+    onViewportState={(v) =>
+      onStateChange((draft) => {
+        draft.viewport = v;
+      })}
     rangeSelectionValue={chartState.brush}
-    onRangeSelection={(v) => onStateChange({ brush: v ?? undefined })}
+    onRangeSelection={(v) =>
+      onStateChange((draft) => {
+        if (v) {
+          draft.brush = v;
+        } else {
+          delete draft.brush;
+        }
+      })}
     tooltip={tooltip}
     onTooltip={(v) => {
       tooltip = v;
@@ -279,7 +357,9 @@
     selection={selection}
     onSelection={(points) => {
       selection = points;
-      highlightStore.set(points?.map((p) => p.identifier) ?? null);
+      if (isDefaultTable) {
+        highlightStore.set(points?.map((p) => p.identifier) ?? null);
+      }
     }}
   />
   <div class="absolute top-0 left-0 right-0 flex flex-wrap justify-between items-start pointer-events-none z-10">
@@ -289,27 +369,38 @@
       >
         <Legend
           context={context}
+          filter={filter}
           spec={{ items: categoryLegend.legend }}
           state={chartState.legend ?? {}}
           mode="view"
           onSpecChange={() => {}}
-          onStateChange={(update, mode) => {
-            onStateChange({ legend: update });
+          onStateChange={(update) => {
+            onStateChange((draft) => {
+              if (typeof update == "function") {
+                draft.legend ??= {};
+                update(draft.legend);
+              } else {
+                draft.legend = update;
+              }
+            });
           }}
         />
       </div>
     {/if}
     <div
-      class="flex-none p-2 rounded-ss-md rounded-ee-md bg-white/75 dark:bg-black/75 backdrop-blur-sm flex items-center gap-2 pointer-events-auto order-1"
+      class="flex-none p-2 rounded-ee-md bg-white/75 dark:bg-black/75 backdrop-blur-sm flex items-center gap-2 pointer-events-auto order-1"
     >
       <Select
         class="max-w-64"
         label="Color"
         value={categoryColumn}
-        onChange={(v) => onSpecChange({ data: { ...spec.data, category: v } })}
+        onChange={(v) =>
+          onSpecChange((draft) => {
+            draft.data.category = v;
+          })}
         options={[
           { value: undefined, label: "--" },
-          ...context.columns
+          ...(context.tables[context.table]?.columns ?? [])
             .filter((c) => c.jsType == "string" || c.jsType == "number" || c.jsType == "Date")
             .map((c) => ({ value: c.name, label: `${c.name} (${formatColumnType(c.type)})` })),
         ]}
@@ -323,11 +414,9 @@
                 label="Show"
                 value={spec.mapStyle !== null}
                 onChange={(v) => {
-                  if (v) {
-                    onSpecChange({ mapStyle: mapStyleInput || defaultMapStyle });
-                  } else {
-                    onSpecChange({ mapStyle: null });
-                  }
+                  onSpecChange((draft) => {
+                    draft.mapStyle = v ? mapStyleInput || defaultMapStyle : null;
+                  });
                 }}
               />
             </div>
@@ -336,12 +425,18 @@
                 className="w-full"
                 disabled={spec.mapStyle === null}
                 bind:value={mapStyleInput}
-                onEnter={() => onSpecChange({ mapStyle: mapStyleInput })}
+                onEnter={() =>
+                  onSpecChange((draft) => {
+                    draft.mapStyle = mapStyleInput;
+                  })}
               />
               <Button
                 label="Set"
                 disabled={spec.mapStyle === null}
-                onClick={() => onSpecChange({ mapStyle: mapStyleInput })}
+                onClick={() =>
+                  onSpecChange((draft) => {
+                    draft.mapStyle = mapStyleInput;
+                  })}
               />
             </div>
           {/if}
@@ -349,7 +444,10 @@
           <div class="flex gap-2 items-center">
             <Select
               value={spec.mode ?? "points"}
-              onChange={(v) => onSpecChange({ mode: v })}
+              onChange={(v) =>
+                onSpecChange((draft) => {
+                  draft.mode = v;
+                })}
               disabled={categoryLegend != null && categoryLegend.legend.length > maxCategories}
               options={[
                 { value: "points", label: "Points" },
@@ -360,7 +458,10 @@
               <Slider
                 bind:value={
                   () => Math.log((spec.minimumDensity ?? defaultMinimumDensity) / defaultMinimumDensity),
-                  (v) => onSpecChange({ minimumDensity: defaultMinimumDensity * Math.exp(v) })
+                  (v) =>
+                    onSpecChange((draft) => {
+                      draft.minimumDensity = defaultMinimumDensity * Math.exp(v);
+                    })
                 }
                 min={-4}
                 max={4}
@@ -371,12 +472,24 @@
           <div class="text-slate-500 dark:text-slate-400 select-none">Point Size</div>
           <div class="flex gap-2 items-center">
             <Slider
-              bind:value={() => spec.pointSize ?? 2, (v) => onSpecChange({ pointSize: v })}
+              bind:value={
+                () => spec.pointSize ?? 2,
+                (v) =>
+                  onSpecChange((draft) => {
+                    draft.pointSize = v;
+                  })
+              }
               min={0.05}
               max={10}
               step={0.05}
             />
-            <Button label="Auto" onClick={() => onSpecChange({ pointSize: 2 })} />
+            <Button
+              label="Auto"
+              onClick={() =>
+                onSpecChange((draft) => {
+                  draft.pointSize = 2;
+                })}
+            />
           </div>
           {#if totalPointCount != null && totalPointCount > minDownsampleMaxPoints}
             {@const effectiveLimit = spec.downsampleMaxPoints ?? Math.min(defaultDownsampleMaxPoints, totalPointCount)}
@@ -401,7 +514,10 @@
                   () =>
                     spec.downsampleMaxPoints ??
                     Math.min(defaultDownsampleMaxPoints, totalPointCount ?? defaultDownsampleMaxPoints),
-                  (v) => onSpecChange({ downsampleMaxPoints: v })
+                  (v) =>
+                    onSpecChange((draft) => {
+                      draft.downsampleMaxPoints = v;
+                    })
                 }
                 min={minDownsampleMaxPoints}
                 max={totalPointCount}
@@ -423,8 +539,8 @@
                       spec.downsampleMaxPointsInteractive ?? defaultDownsampleMaxPointsInteractive,
                     ),
                   (v) =>
-                    onSpecChange({
-                      downsampleMaxPointsInteractive: Math.max(minDownsampleMaxPointsInteractive, v),
+                    onSpecChange((draft) => {
+                      draft.downsampleMaxPointsInteractive = Math.max(minDownsampleMaxPointsInteractive, v);
                     })
                 }
                 min={minDownsampleMaxPointsInteractive}
@@ -433,7 +549,10 @@
               />
               <Button
                 label="Reset"
-                onClick={() => onSpecChange({ downsampleMaxPointsInteractive: defaultDownsampleMaxPointsInteractive })}
+                onClick={() =>
+                  onSpecChange((draft) => {
+                    draft.downsampleMaxPointsInteractive = defaultDownsampleMaxPointsInteractive;
+                  })}
               />
             </div>
           {/if}

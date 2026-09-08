@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import Mark from "mark.js";
+  import { fuzzyHighlightScorer, highlight as highlightText } from "../highlight/index.js";
 
   import Paginator from "../widgets/Paginator.svelte";
   import TooltipContent from "./TooltipContent.svelte";
@@ -11,7 +11,7 @@
 
   interface Props {
     items: SearchResultItem[];
-    label: string;
+    label?: string;
     highlight: string;
     limit?: number;
     columnStyles?: Record<string, ColumnStyle>;
@@ -21,10 +21,8 @@
 
   let { items, label, highlight, limit = 100, columnStyles, onClick, onClose }: Props = $props();
 
-  function markHighlight(element: HTMLElement, highlight: string) {
-    let m = new Mark(element);
-    m.mark(highlight);
-  }
+  // Shared scorer so every result item coalesces into one batched match call.
+  const fuzzyScorer = fuzzyHighlightScorer();
 
   let resultCountText = $derived(
     items.length == 0
@@ -37,13 +35,17 @@
   );
 </script>
 
-<div class="flex flex-col w-full h-full">
-  <div class="ml-3 mr-2 my-1 flex items-center text-slate-400 dark:text-slate-500 items-start">
-    <div class="flex-1">
-      <div>{label}</div>
-      <div>{resultCountText}</div>
+<div class="flex-1 flex flex-col gap-2 w-full overflow-y-hidden">
+  <div class="flex items-center items-start">
+    <div class="flex-1 flex flex-col">
+      <div class="text-slate-500 dark:text-slate-400">
+        {label}
+      </div>
+      <div class="text-slate-400 dark:text-slate-500">
+        {resultCountText}
+      </div>
     </div>
-    <div class="flex-none mt-1">
+    <div class="flex-none">
       <button
         class="block hover:text-slate-500 dark:hover:text-slate-400"
         onclick={() => {
@@ -54,13 +56,13 @@
       </button>
     </div>
   </div>
-  <hr class="border-slate-300 dark:border-slate-600" />
-  <div class="flex flex-col overflow-x-hidden overflow-y-scroll">
-    <Paginator count={items.length}>
-      {#snippet children({ start, end })}
+
+  <Paginator count={items.length}>
+    {#snippet children({ start, end })}
+      <div class="flex flex-col gap-2 overflow-x-hidden overflow-y-scroll">
         {#each items.slice(start, end) as item (item)}
           <button
-            class="m-1 p-2 text-left rounded-md hover:outline outline-slate-500"
+            class="p-2 text-left rounded-md hover:border-blue-400 border border-slate-200 dark:border-slate-700 bg-white dark:bg-black select-text"
             onclick={() => {
               onClick?.(item);
             }}
@@ -77,13 +79,12 @@
                 </span>
               </div>
             {/if}
-            <div class="overflow-hidden text-ellipsis line-clamp-4 leading-5" use:markHighlight={highlight}>
+            <div use:highlightText={{ scorer: fuzzyScorer, query: highlight }}>
               <TooltipContent values={item.fields} columnStyles={columnStyles ?? {}} />
             </div>
           </button>
-          <hr class="border-slate-300 dark:border-slate-600" />
         {/each}
-      {/snippet}
-    </Paginator>
-  </div>
+      </div>
+    {/snippet}
+  </Paginator>
 </div>

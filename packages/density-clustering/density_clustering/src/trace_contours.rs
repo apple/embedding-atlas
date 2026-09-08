@@ -41,7 +41,7 @@ pub fn trace_outer_contour<T: Eq + Copy>(start: (i32, i32), array: &Array2D<T>) 
     result
 }
 
-fn fill_contour<T: Eq + Copy>(array: &mut Array2D<T>, contour: &Vec<(i32, i32)>, value: T) {
+fn fill_contour<T: Eq + Copy>(array: &mut Array2D<T>, contour: &[(i32, i32)], value: T) {
     // Contour is expected to be what returned from trace_outer_contour.
     let mut edges = HashMap::<i32, BinaryHeap<std::cmp::Reverse<i32>>>::new();
 
@@ -83,7 +83,7 @@ pub fn trace_all_outer_contours(array: &Array2D<i32>) -> HashMap<i32, Vec<Vec<(i
     for (x, y) in array.iter_coords() {
         let v = array[(x, y)];
         if v >= 0 && mask[(x, y)] {
-            let contour = trace_outer_contour((x, y), &array);
+            let contour = trace_outer_contour((x, y), array);
             fill_contour(&mut mask, &contour, false);
             result.entry(v).or_default().push(contour);
         }

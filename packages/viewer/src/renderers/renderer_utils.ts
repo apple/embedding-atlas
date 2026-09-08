@@ -1,10 +1,14 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import { detectAudioMimeType, detectBase64MimeType, detectImageMimeType } from "@embedding-atlas/utils";
+
 const imageExtensions = new Set(["png", "jpg", "jpeg", "tiff", "tif", "gif"]);
 const audioExtensions = new Set(["wav", "wave", "mp3", "aac"]);
 
-// Quick heuristic check based on string prefixes and file extensions.
-// May not capture all formats (e.g., raw base64 strings, binary objects without a path).
+/** Detect displayable media from a column value. Strings are checked by prefix
+ * (URLs, data: URLs) and then probed as raw base64; binary values are detected based
+ * on magic bytes, with a fallback on the path's
+ * file extension. */
 export function valueKind(value: any): "link" | "image" | "audio" | undefined {
   if (typeof value == "string") {
     if (value.startsWith("http://") || value.startsWith("https://")) {
@@ -14,18 +18,55 @@ export function valueKind(value: any): "link" | "image" | "audio" | undefined {
     } else if (value.startsWith("data:audio/")) {
       return "audio";
     }
-  } else if (typeof value == "object" && value != null && value.bytes) {
-    if (typeof value.path == "string") {
-      let ext = value.path.split(".").pop()?.toLowerCase();
-      if (imageExtensions.has(ext)) {
+    let mimeType = detectBase64MimeType(value);
+    if (mimeType != null) {
+      if (mimeType.startsWith("image/")) {
         return "image";
-      } else if (audioExtensions.has(ext)) {
+      } else if (mimeType.startsWith("audio/")) {
         return "audio";
       }
+    }
+    return undefined;
+  }
+
+  let bytes: Uint8Array | null = null;
+  let path: string | undefined = undefined;
+  if (value instanceof Uint8Array) {
+    bytes = value;
+  } else if (typeof value == "object" && value != null && value.bytes) {
+    if (value.bytes instanceof Uint8Array) {
+      bytes = value.bytes;
+    }
+    if (typeof value.path == "string") {
+      path = value.path;
+    }
+  }
+
+  if (bytes != null) {
+    if (detectImageMimeType(bytes) != null) {
+      return "image";
+    }
+    if (detectAudioMimeType(bytes) != null) {
+      return "audio";
+    }
+  }
+  if (path != null) {
+    let ext = path.split(".").pop()?.toLowerCase() ?? "";
+    if (imageExtensions.has(ext)) {
+      return "image";
+    } else if (audioExtensions.has(ext)) {
+      return "audio";
     }
   }
   return undefined;
 }
+
+/**
+ * Prevents large binary values from being expanded into a JSON array of numbers.
+ * For eg. this is enough to keep typical embedding vectors visible and  small enough that an
+ * undetected image can never dump megabytes of digits into the DOM. */
+
+const MAX_INLINE_BINARY_BYTES = 16384;
 
 export function safeJSONStringify(value: any, space?: number): string {
   try {
@@ -33,6 +74,9 @@ export function safeJSONStringify(value: any, space?: number): string {
       value,
       (_, value) => {
         if (value instanceof Object && ArrayBuffer.isView(value)) {
+          if (value.byteLength > MAX_INLINE_BINARY_BYTES) {
+            return `(${value.constructor.name}, ${formatByteSize(value.byteLength)})`;
+          }
           return Array.from(value as any);
         }
         return value;
@@ -41,6 +85,16 @@ export function safeJSONStringify(value: any, space?: number): string {
     );
   } catch (e) {
     return "(invalid)";
+  }
+}
+
+function formatByteSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  } else if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} kB`;
+  } else {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 }
 

@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import type { JSType } from "../../utils/database.js";
+import type { ColumnDesc, JSType } from "../../utils/database.js";
 import type { ChartSpec } from "../spec/spec.js";
 
 export interface Field {
@@ -39,6 +39,13 @@ export type UIElement =
       };
       label?: string;
       details?: string;
+    }
+  | {
+      table: {
+        key: string;
+      };
+      label?: string;
+      details?: string;
     };
 
 // Helpers to infer the type of values from the UI description.
@@ -52,7 +59,9 @@ type UIValue<E> = E extends { field: { key: infer K extends string; required: tr
         ? { [P in K]: boolean }
         : E extends { spec: { key: infer K extends string } }
           ? { [P in K]: ChartSpec }
-          : never;
+          : E extends { table: { key: infer K extends string } }
+            ? { [P in K]: string | undefined }
+            : never;
 
 type UnionToIntersection<U> = (U extends any ? (x: U) => void : never) extends (x: infer I) => void ? I : never;
 type UIValues<A extends readonly UIElement[]> = UnionToIntersection<UIValue<A[number]>>;
@@ -71,5 +80,8 @@ export interface ChartBuilderDescription<Spec, UI extends readonly UIElement[]> 
   preview?: boolean;
 
   /** A function to create a chart spec from the given values */
-  create: (values: UIValues<UI>, context: { table: string; id: string }) => Spec | undefined;
+  create: (
+    values: UIValues<UI>,
+    context: { tables: Record<string, { id: string; columns: ColumnDesc[] }> },
+  ) => Spec | undefined;
 }

@@ -16,7 +16,7 @@ if ! command -v cargo &> /dev/null; then
 fi
 
 if ! command -v wasm-bindgen &> /dev/null; then
-  echo "Error: wasm-bindgen is not installed. Install it with: cargo install -f wasm-bindgen-cli --version 0.2.114"
+  echo "Error: wasm-bindgen is not installed. Install it with: cargo install -f wasm-bindgen-cli --version 0.2.121"
   missing=1
 fi
 

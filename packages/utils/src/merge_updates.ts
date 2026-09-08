@@ -54,59 +54,6 @@ export function mergeUpdates<T>(value: T, updates: Partial<T>): T | undefined {
   }
 }
 
-export function applyUpdatesIfNeeded<T, R>(
-  value: T,
-  updates: Partial<T>,
-  mode: "merge" | "replace",
-  setter: (value: T) => R,
-): R | undefined {
-  switch (mode) {
-    case "merge": {
-      let r = mergeUpdates(value, updates);
-      if (r !== undefined) {
-        return setter(r);
-      } else {
-        return undefined;
-      }
-    }
-    case "replace": {
-      if (value !== updates) {
-        return setter(updates as any);
-      } else {
-        return undefined;
-      }
-    }
-  }
-}
-
-export function applyUpdatesForKeyIfNeeded<T, R>(
-  records: Record<string, T>,
-  key: string,
-  update: Partial<T>,
-  mode: "merge" | "replace",
-  setter: (value: Record<string, T>) => R,
-): R | undefined {
-  switch (mode) {
-    case "merge": {
-      let r = mergeUpdates(records, { [key]: update as any });
-      if (r !== undefined) {
-        return setter(r);
-      } else {
-        return undefined;
-      }
-    }
-    case "replace": {
-      if (records[key] !== update) {
-        let newValue = { ...records };
-        newValue[key] = update as any;
-        return setter(newValue);
-      } else {
-        return undefined;
-      }
-    }
-  }
-}
-
 function isObject(value: any): boolean {
   return value != null && typeof value == "object" && !Array.isArray(value);
 }

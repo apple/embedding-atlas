@@ -4,7 +4,7 @@ import type { Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 import * as d3 from "d3";
 
-import { distinctCount, jsTypeFromDBType } from "../../utils/database.js";
+import { distinctCount, isFloatingPointDBType, jsTypeFromDBType } from "../../utils/database.js";
 import { computeFieldStats } from "../common/aggregate.js";
 import { inferBinning, inferTimeBinning, type Binning } from "../common/binning.js";
 import { inferNumberFormatter, inferTimeFormatter } from "../common/formatter.js";
@@ -37,6 +37,13 @@ export async function makeCategoryColumn(
   if (jsType == "string") {
     return await makeDiscreteCategoryColumn(coordinator, table, column, 10, theme);
   } else if (jsType == "number" || jsType == "Date") {
+    // Floating-point columns are treated as continuous regardless of cardinality.
+    // Sorting a handful of fractional scores by frequency reads as arbitrary, while
+    // a value-ordered binned legend matches how such columns are naturally read.
+    // Low-cardinality integers stay categorical.
+    if (jsType == "number" && isFloatingPointDBType(desc.column_type)) {
+      return await makeBinnedNumericColumn(coordinator, table, column, theme);
+    }
     let distinct = await distinctCount(coordinator, table, column);
     if (distinct <= 10) {
       // Numeric / temporal categoricals (e.g. a confidence score with
@@ -69,8 +76,7 @@ async function makeDiscreteCategoryColumn(
   // sorts numerically (or chronologically for dates). ``"count"``
   // (default) keeps the standard most-common-first order for string
   // enums.
-  let orderbyExpr =
-    options.sortBy === "value" ? SQL.asc(SQL.min(SQL.column(column))) : SQL.desc(SQL.count());
+  let orderbyExpr = options.sortBy === "value" ? SQL.asc(SQL.min(SQL.column(column))) : SQL.desc(SQL.count());
   let values = Array.from(
     await coordinator.query(
       SQL.Query.from(table)

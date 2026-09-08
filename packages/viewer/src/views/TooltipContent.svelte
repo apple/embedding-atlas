@@ -37,7 +37,7 @@
 
     <div class="flex flex-col">
       <div class="text-slate-400 dark:text-slate-400 font-medium text-xs">{key}</div>
-      <div>
+      <div data-highlight>
         <ContentRenderer value={value} style={columnStyles[key]} />
       </div>
     </div>

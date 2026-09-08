@@ -22,8 +22,10 @@
 //   -> scale_fit = min(2/target_w, 2*height/(width*target_h))
 
 import type { MCPTool, ToolResponse } from "../app/mcp_server.js";
+import type { EmbeddingAtlasStore } from "../stores/embedding_atlas_store.js";
 import type { ModelContextDelegate } from "./model_context.js";
 import { screenshot } from "../utils/screenshot.js";
+import { get } from "svelte/store";
 
 // Mirror of Viewport.projectLat / unprojectLat — duplicated here to avoid
 // a cross-package import cycle (this module is in viewer, those live in
@@ -126,25 +128,21 @@ function bboxToViewport(
 }
 
 /** Find the GIS embedding chart id; null if none. */
-function findGisChartId(delegate: ModelContextDelegate): string | null {
-  for (const [id, spec] of Object.entries(delegate.charts) as [string, any][]) {
+function findGisChartId(store: EmbeddingAtlasStore): string | null {
+  const charts = get(store.charts);
+  for (const [id, spec] of Object.entries(charts) as [string, any][]) {
     if (spec?.type === "embedding" && spec?.data?.isGis) return id;
   }
   // Fall back: any embedding chart
-  for (const [id, spec] of Object.entries(delegate.charts) as [string, any][]) {
+  for (const [id, spec] of Object.entries(charts) as [string, any][]) {
     if (spec?.type === "embedding") return id;
   }
   return null;
 }
 
 /** Merge a partial state update into an existing chart state. */
-function updateChartState(
-  delegate: ModelContextDelegate,
-  id: string,
-  patch: Record<string, any>,
-) {
-  const prev = delegate.chartStates[id] ?? {};
-  delegate.chartStates = { ...delegate.chartStates, [id]: { ...prev, ...patch } };
+function updateChartState(store: EmbeddingAtlasStore, id: string, patch: Record<string, any>) {
+  store.updateChartState(id, (draft) => Object.assign(draft, patch));
 }
 
 /** Wait ~2 frames so the Svelte $effect that mirrors state → MapLibre fires. */
@@ -210,7 +208,7 @@ function errorResponse(msg: string): ToolResponse {
 // Screenshot shared options (same as model_context.ts)
 const SHOT_OPTS = { maxWidth: 1568, maxHeight: 1568, pixelRatio: 2 };
 
-export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
+export function geoTools(store: EmbeddingAtlasStore, delegate: ModelContextDelegate): MCPTool[] {
   return [
     {
       name: "get_map_viewport",
@@ -221,7 +219,7 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
         const v = readViewportHook();
         if (!v) return errorResponse("No viewport available — is a GIS chart loaded?");
         const bbox = viewportBbox(v);
-        const chartId = findGisChartId(delegate);
+        const chartId = findGisChartId(store);
         return jsonResponse({
           chart_id: chartId,
           center: {
@@ -248,8 +246,7 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
           lat: { type: "number", description: "Latitude in degrees (-85..85)" },
           zoom: {
             type: "number",
-            description:
-              "MapLibre zoom (0 = world, 14 = street). Default: 10. Clamped to [1, 19].",
+            description: "MapLibre zoom (0 = world, 14 = street). Default: 10. Clamped to [1, 19].",
           },
         },
         required: ["lon", "lat"],
@@ -258,13 +255,13 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
       execute: async (params: { lon: number; lat: number; zoom?: number }) => {
         const v = readViewportHook();
         if (!v) return errorResponse("No viewport available.");
-        const chartId = findGisChartId(delegate);
+        const chartId = findGisChartId(store);
         if (!chartId) return errorResponse("No GIS embedding chart found.");
         const zoom = Math.min(19, Math.max(1, params.zoom ?? 10));
         const scale = zoomToScale(zoom, v.width);
         const x = params.lon;
         const y = v.isGis ? projectLat(params.lat) : params.lat;
-        updateChartState(delegate, chartId, { viewport: { x, y, scale } });
+        updateChartState(store, chartId, { viewport: { x, y, scale } });
         await nextRender();
         return jsonResponse({
           ok: true,
@@ -294,16 +291,10 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
         required: ["west", "south", "east", "north"],
         additionalProperties: false,
       },
-      execute: async (params: {
-        west: number;
-        south: number;
-        east: number;
-        north: number;
-        padding?: number;
-      }) => {
+      execute: async (params: { west: number; south: number; east: number; north: number; padding?: number }) => {
         const v = readViewportHook();
         if (!v) return errorResponse("No viewport available.");
-        const chartId = findGisChartId(delegate);
+        const chartId = findGisChartId(store);
         if (!chartId) return errorResponse("No GIS embedding chart found.");
         const vp = bboxToViewport(
           params.west,
@@ -315,7 +306,7 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
           v.isGis,
           params.padding ?? 0.05,
         );
-        updateChartState(delegate, chartId, { viewport: vp });
+        updateChartState(store, chartId, { viewport: vp });
         await nextRender();
         return jsonResponse({
           ok: true,
@@ -336,10 +327,7 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
       inputSchema: { type: "object", additionalProperties: false },
       execute: async () => {
         const el = findMapContainer(delegate);
-        if (!el)
-          return errorResponse(
-            "Map container not found. Is a GIS embedding chart rendered?",
-          );
+        if (!el) return errorResponse("Map container not found. Is a GIS embedding chart rendered?");
         await nextRender();
         await waitForMapIdle();
         const img = await screenshot(el, SHOT_OPTS);
@@ -372,7 +360,7 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
       execute: async (params: any) => {
         const v = readViewportHook();
         if (!v) return errorResponse("No viewport available.");
-        const chartId = findGisChartId(delegate);
+        const chartId = findGisChartId(store);
         if (!chartId) return errorResponse("No GIS embedding chart found.");
         let vp: { x: number; y: number; scale: number };
         if (params.lon != null && params.lat != null) {
@@ -382,12 +370,7 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
             y: v.isGis ? projectLat(params.lat) : params.lat,
             scale: zoomToScale(zoom, v.width),
           };
-        } else if (
-          params.west != null &&
-          params.south != null &&
-          params.east != null &&
-          params.north != null
-        ) {
+        } else if (params.west != null && params.south != null && params.east != null && params.north != null) {
           vp = bboxToViewport(
             params.west,
             params.south,
@@ -399,11 +382,9 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
             params.padding ?? 0.05,
           );
         } else {
-          return errorResponse(
-            "Provide either {lon, lat, zoom?} or {west, south, east, north, padding?}",
-          );
+          return errorResponse("Provide either {lon, lat, zoom?} or {west, south, east, north, padding?}");
         }
-        updateChartState(delegate, chartId, { viewport: vp });
+        updateChartState(store, chartId, { viewport: vp });
         await nextRender();
         await waitForMapIdle();
         // Extra settle time only if caller asked for it (default 0).
@@ -445,19 +426,14 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
         additionalProperties: false,
       },
       execute: async (params: any) => {
-        const chartId = findGisChartId(delegate);
+        const chartId = findGisChartId(store);
         if (!chartId) return errorResponse("No GIS embedding chart found.");
-        const spec = delegate.charts[chartId];
+        const spec = get(store.charts)[chartId];
         const xCol = spec?.data?.x;
         const yCol = spec?.data?.y;
 
-        if (
-          params.west == null ||
-          params.south == null ||
-          params.east == null ||
-          params.north == null
-        ) {
-          updateChartState(delegate, chartId, { brush: undefined });
+        if (params.west == null || params.south == null || params.east == null || params.north == null) {
+          updateChartState(store, chartId, { brush: undefined });
           return jsonResponse({ applied: "clear" });
         }
         // Chart brush is stored in projected coords (matching internalDataY)
@@ -470,12 +446,12 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
           yMin: projS,
           yMax: projN,
         };
-        updateChartState(delegate, chartId, { brush });
+        updateChartState(store, chartId, { brush });
 
         let matched: number | null = null;
         if (xCol && yCol) {
-          const q = await delegate.context.coordinator.query(
-            `SELECT COUNT(*)::BIGINT AS c FROM "${delegate.context.table}"
+          const q = await store.coordinator.query(
+            `SELECT COUNT(*)::BIGINT AS c FROM "${store.props.data.table}"
              WHERE "${xCol}" BETWEEN ${params.west} AND ${params.east}
                AND "${yCol}" BETWEEN ${params.south} AND ${params.north}`,
           );
@@ -491,9 +467,9 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
       description: "Clear the GIS cross-filter brush (equivalent to select_bbox with no args).",
       inputSchema: { type: "object", additionalProperties: false },
       execute: async () => {
-        const chartId = findGisChartId(delegate);
+        const chartId = findGisChartId(store);
         if (!chartId) return errorResponse("No GIS embedding chart found.");
-        updateChartState(delegate, chartId, { brush: undefined });
+        updateChartState(store, chartId, { brush: undefined });
         return textResponse("ok");
       },
     },
@@ -513,20 +489,15 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
         required: ["west", "south", "east", "north"],
         additionalProperties: false,
       },
-      execute: async (params: {
-        west: number;
-        south: number;
-        east: number;
-        north: number;
-      }) => {
-        const chartId = findGisChartId(delegate);
+      execute: async (params: { west: number; south: number; east: number; north: number }) => {
+        const chartId = findGisChartId(store);
         if (!chartId) return errorResponse("No GIS embedding chart.");
-        const spec = delegate.charts[chartId];
+        const spec = get(store.charts)[chartId];
         const xCol = spec?.data?.x;
         const yCol = spec?.data?.y;
         if (!xCol || !yCol) return errorResponse("chart has no x/y columns.");
-        const q = await delegate.context.coordinator.query(
-          `SELECT COUNT(*)::BIGINT c FROM "${delegate.context.table}"
+        const q = await store.coordinator.query(
+          `SELECT COUNT(*)::BIGINT c FROM "${store.props.data.table}"
              WHERE "${xCol}" BETWEEN ${params.west} AND ${params.east}
                AND "${yCol}" BETWEEN ${params.south} AND ${params.north}`,
         );
@@ -575,9 +546,9 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
         columns?: string[];
         where?: string;
       }) => {
-        const chartId = findGisChartId(delegate);
+        const chartId = findGisChartId(store);
         if (!chartId) return errorResponse("No GIS embedding chart.");
-        const spec = delegate.charts[chartId];
+        const spec = get(store.charts)[chartId];
         const xCol = spec?.data?.x;
         const yCol = spec?.data?.y;
         if (!xCol || !yCol) return errorResponse("chart has no x/y columns.");
@@ -595,7 +566,7 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
         const sql = `
             WITH candidates AS (
               SELECT "${xCol}" AS lon, "${yCol}" AS lat${extra}
-              FROM "${delegate.context.table}"
+              FROM "${store.props.data.table}"
               WHERE "${xCol}" BETWEEN ${params.lon - dLon} AND ${params.lon + dLon}
                 AND "${yCol}" BETWEEN ${params.lat - dLat} AND ${params.lat + dLat}
                 ${where}
@@ -610,7 +581,7 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
             WHERE distance_m <= ${r * 1000}
             ORDER BY distance_m
             LIMIT ${n}`;
-        const q = await delegate.context.coordinator.query(sql);
+        const q = await store.coordinator.query(sql);
         return jsonResponse({
           center: { lon: params.lon, lat: params.lat },
           radius_km: r,
@@ -641,9 +612,9 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
         additionalProperties: false,
       },
       execute: async (params: any) => {
-        const chartId = findGisChartId(delegate);
+        const chartId = findGisChartId(store);
         if (!chartId) return errorResponse("No GIS embedding chart.");
-        const spec = delegate.charts[chartId];
+        const spec = get(store.charts)[chartId];
         const xCol = spec?.data?.x;
         const yCol = spec?.data?.y;
         if (!xCol || !yCol) return errorResponse("chart has no x/y columns.");
@@ -657,13 +628,13 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
               LEAST(${nx - 1}, GREATEST(0, CAST(floor(("${xCol}" - ${params.west}) / ${w / nx}) AS INT))) AS ix,
               LEAST(${ny - 1}, GREATEST(0, CAST(floor(("${yCol}" - ${params.south}) / ${h / ny}) AS INT))) AS iy,
               COUNT(*)::BIGINT AS n
-            FROM "${delegate.context.table}"
+            FROM "${store.props.data.table}"
             WHERE "${xCol}" BETWEEN ${params.west} AND ${params.east}
               AND "${yCol}" BETWEEN ${params.south} AND ${params.north}
             GROUP BY 1, 2
             ORDER BY n DESC
             ${topK}`;
-        const q = await delegate.context.coordinator.query(sql);
+        const q = await store.coordinator.query(sql);
         const rows = q.toArray() as { ix: number; iy: number; n: number | bigint }[];
         const cellW = w / nx;
         const cellH = h / ny;
@@ -773,7 +744,7 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
         additionalProperties: false,
       },
       execute: async (params: { style: string | null }) => {
-        const chartId = findGisChartId(delegate);
+        const chartId = findGisChartId(store);
         if (!chartId) return errorResponse("No GIS embedding chart found.");
         const known: Record<string, string | null> = {
           none: null,
@@ -803,11 +774,9 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
         if (params.style == null) styleValue = null;
         else if (params.style in known) styleValue = known[params.style];
         else styleValue = params.style;
-        const prev = delegate.charts[chartId];
-        delegate.charts = {
-          ...delegate.charts,
-          [chartId]: { ...prev, mapStyle: styleValue },
-        };
+        store.updateChart(chartId, (draft) => {
+          (draft as any).mapStyle = styleValue;
+        });
         await nextRender();
         return jsonResponse({ ok: true, mapStyle: styleValue });
       },
@@ -817,8 +786,7 @@ export function geoTools(delegate: ModelContextDelegate): MCPTool[] {
 
 function imageResponse(dataUrl: string): ToolResponse {
   const comma = dataUrl.indexOf(",");
-  if (!dataUrl.startsWith("data:") || comma < 0)
-    return textResponse("failed to take screenshot");
+  if (!dataUrl.startsWith("data:") || comma < 0) return textResponse("failed to take screenshot");
   const meta = dataUrl.substring(5, comma);
   const b64 = dataUrl.substring(comma + 1);
   const mimeType = meta.replace(";base64", "");

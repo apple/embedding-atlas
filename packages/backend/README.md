@@ -1,6 +1,6 @@
 # Geospatial Atlas
 
-A Python package that provides a command line tool to visualize geospatial and embedding data. It also includes a Python Notebook (e.g., Jupyter) widget and a Streamlit widget.
+A Python package that provides a command-line tool to visualize geospatial and embedding data. It also includes a Python notebook (e.g., Jupyter) widget and a Streamlit widget.
 
 - Documentation: https://do-me.github.io/geospatial-atlas
 - GitHub: https://github.com/do-me/geospatial-atlas
@@ -39,7 +39,7 @@ geospatial-atlas huggingface_org/dataset_name
 
 ## Visualizing Embedding Projections
 
-To visual embedding projections, pre-compute the X and Y coordinates, and specify the column names with `--x` and `--y`, such as:
+To visualize embedding projections, pre-compute the X and Y coordinates, and specify the column names with `--x` and `--y`, such as:
 
 ```bash
 geospatial-atlas path_to_dataset.parquet --x projection_x --y projection_y

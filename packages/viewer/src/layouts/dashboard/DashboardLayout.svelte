@@ -8,22 +8,18 @@
   import { IconPlus } from "../../assets/icons.js";
 
   import { deepMemo } from "../../../../utils/dist/equals.js";
-  import { findUnusedId } from "../../utils/identifier.js";
+  import { getStoreContext } from "../../stores/embedding_atlas_store.js";
   import { reorder } from "../../utils/sort.js";
   import type { LayoutProps } from "../layout.js";
   import { OccupancyMap } from "./occupancy_map.js";
-  import { Grid, computePlacements } from "./placement.js";
-  import type { DashboardLayoutState, Placement } from "./types.js";
+  import { Grid, computePlacements, overlaps } from "./placement.js";
+  import type { DashboardLayoutSpec, Placement } from "./types.js";
 
-  let {
-    context,
-    charts,
-    state: layoutState,
-    onStateChange,
-    onChartsChange,
-    onChartStatesChange,
-    chartView,
-  }: LayoutProps<DashboardLayoutState> = $props();
+  const { layout, chartView }: LayoutProps = $props();
+
+  const store = getStoreContext();
+  const { layouts, charts } = store;
+  let spec = $derived($layouts[layout] ?? {}) as DashboardLayoutSpec;
 
   let containerWidth = $state(100);
   let containerHeight = $state(100);
@@ -32,23 +28,49 @@
 
   let placementChangingCounter = $state(0);
 
-  let numColumns = $derived(layoutState.numColumns ?? (containerWidth < 500 ? 8 : 24));
-  let numRows = $derived(layoutState.numRows ?? 16);
+  let visibleCharts = $derived.by(() => {
+    const out: Record<string, any> = {};
+    for (const id of spec.chartIds ?? []) {
+      if ($charts[id] != null) out[id] = $charts[id];
+    }
+    return out;
+  });
+
+  let numColumns = $derived(spec.numColumns ?? (containerWidth < 500 ? 8 : 24));
+  let numRows = $derived(spec.numRows ?? 18);
   let grid = $derived(new Grid(containerWidth, containerHeight, numColumns, numRows, 6));
   let gridKey = $derived(`${numColumns}x${numRows}`);
 
   let placements = $derived.by(() =>
-    computePlacements(charts, layoutState.grids?.[gridKey]?.placements ?? {}, grid.numColumns),
+    computePlacements(visibleCharts, spec.grids?.[gridKey]?.placements ?? {}, grid.numColumns),
   );
-  let chartIds = $derived.by(
-    deepMemo(() => reorder(Object.keys(charts), layoutState.grids?.[gridKey]?.order).reverse()),
+
+  let orderingInfo = $derived.by(
+    deepMemo(() => {
+      let order = reorder(Object.keys(visibleCharts), spec.grids?.[gridKey]?.order).reverse();
+
+      return Object.fromEntries(
+        order.map((id, index) => {
+          let hasOverlap = false;
+          let p1 = placements[id];
+          for (let rid of order.slice(0, index)) {
+            if (overlaps(p1, placements[rid])) {
+              hasOverlap = true;
+              break;
+            }
+          }
+          return [id, { order: index, hasOverlap: hasOverlap }];
+        }),
+      );
+    }),
   );
+
   let newChartRects = $derived.by(() => {
     let map = new OccupancyMap(grid.numColumns);
     for (let id in placements) {
       map.fill(placements[id].x, placements[id].y, placements[id].width, placements[id].height);
     }
-    return map.unusedRects(4, 4, 12, 8);
+    return map.unusedRects(4, 4, 8, 6, numRows);
   });
 
   let maxY = $derived.by(() => {
@@ -61,7 +83,7 @@
 
   let lockedMaxY = $state<number | undefined>(undefined);
   let effectiveMaxY = $derived(Math.max(lockedMaxY ?? maxY, maxY));
-  let innerHeight = $derived(effectiveMaxY <= grid.numRows ? containerHeight : grid.yScaler * effectiveMaxY);
+  let innerHeight = $derived(grid.totalHeight(effectiveMaxY));
 
   $effect.pre(() => {
     let cond = placementChangingCounter >= 1;
@@ -75,29 +97,35 @@
   });
 
   function removeChart(id: string) {
-    onStateChange({ grids: { [gridKey]: { placements: { ...placements, [id]: undefined as any } } } });
-    onChartsChange({ [id]: undefined });
-    onChartStatesChange({ [id]: undefined });
+    store.removeChartFromLayout(layout, id);
   }
 
   function bringToFront(id: string) {
-    let existingOrder = layoutState.grids?.[gridKey]?.order ?? [];
-    let newOrder = [id, ...existingOrder.filter((x) => x != id)];
-    onStateChange({ grids: { [gridKey]: { order: newOrder } } });
+    let existingOrder = spec.grids?.[gridKey]?.order ?? [];
+    let newOrder = [id, ...existingOrder.filter((x: string) => x != id)];
+    store.updateLayout<DashboardLayoutSpec>(layout, (draft) => {
+      draft.grids ??= {};
+      draft.grids[gridKey] ??= {};
+      draft.grids[gridKey].order = newOrder;
+    });
   }
 
   function newChart(placement: Placement) {
-    let id = findUnusedId(charts);
-    onChartsChange({ [id]: { type: "builder", title: "New" } });
-    onStateChange({ grids: { [gridKey]: { placements: { [id]: placement } } } });
+    let id = store.addChartToLayout(layout);
+    store.updateLayout<DashboardLayoutSpec>(layout, (draft) => {
+      draft.grids ??= {};
+      draft.grids[gridKey] ??= {};
+      draft.grids[gridKey].placements ??= {};
+      draft.grids[gridKey].placements[id] = placement;
+    });
   }
 
   let chartPanels = $state<Record<string, DashboardChartPanel | null>>({});
   onMount(() => {
-    let chartIDs = new Set(Object.keys(charts));
+    let chartIDs = new Set(Object.keys(visibleCharts));
     $effect(() => {
       let oldIDs = chartIDs;
-      chartIDs = new Set(Object.keys(charts));
+      chartIDs = new Set(Object.keys(visibleCharts));
       if (chartIDs.size != oldIDs.size + 1) {
         return;
       }
@@ -118,21 +146,20 @@
   class="w-full h-full overflow-x-hidden relative {innerHeight > containerHeight
     ? 'overflow-y-scroll overscroll-none'
     : 'overflow-y-hidden'}"
-  bind:clientWidth={containerWidth}
   bind:clientHeight={containerHeight}
 >
   <div
     bind:this={innerContainer}
     style:z-index={0}
-    style:width="{containerWidth}px"
+    bind:clientWidth={containerWidth}
+    style:width="100%"
     style:height="{innerHeight}px"
     style:position="relative"
-    style:overflow="hidden"
   >
     {#each newChartRects as rect}
       {@const p = grid.resolvePlacement(rect)}
       <button
-        class="absolute rounded-md border bg-slate-100 dark:bg-slate-900 border-slate-400 text-slate-400 dark:border-slate-500 dark:text-slate-500 border-dashed opacity-0 hover:opacity-50 flex items-center justify-center"
+        class="absolute rounded-md border bg-slate-100 dark:bg-slate-900 border-slate-400 text-slate-600 dark:border-slate-500 dark:text-slate-400 border-dashed opacity-0 hover:opacity-50 flex items-center justify-center"
         style:left="{p.x}px"
         style:top="{p.y}px"
         style:width="{p.width}px"
@@ -144,25 +171,31 @@
       </button>
     {/each}
 
-    {#each Object.keys(charts) as id (id)}
+    {#each Object.keys(visibleCharts) as id (id)}
       <DashboardChartPanel
         bind:this={chartPanels[id]}
-        context={context}
+        context={store.chartContext}
         id={id}
-        spec={charts[id]}
+        spec={$charts[id]}
         placement={placements[id] ?? { x: 0, y: 0, width: 4, height: 3 }}
         grid={grid}
-        order={chartIds.indexOf(id)}
+        order={orderingInfo[id].order}
+        hasBorder={orderingInfo[id].hasOverlap}
         onRemove={removeChart.bind(null, id)}
         onPlacementChange={(placement) => {
-          onStateChange({ grids: { [gridKey]: { placements: { ...placements, [id]: placement } } } });
+          store.updateLayout<DashboardLayoutSpec>(layout, (draft) => {
+            draft.grids ??= {};
+            draft.grids[gridKey] ??= {};
+            draft.grids[gridKey].placements = {
+              ...placements,
+              [id]: placement,
+            };
+          });
         }}
         onIsPlacementChanging={(value) => (placementChangingCounter += value ? 1 : -1)}
         onBringToFront={bringToFront.bind(null, id)}
         onSpecChange={(spec) => {
-          onChartsChange({ [id]: undefined });
-          onChartStatesChange({ [id]: undefined });
-          onChartsChange({ [id]: spec });
+          store.replaceChart(id, spec);
         }}
         chartView={chartView}
       />

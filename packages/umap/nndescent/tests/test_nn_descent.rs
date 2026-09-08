@@ -387,3 +387,142 @@ fn test_one_dimensional_data() {
 
     assert!(recall >= 0.95, "1D query accuracy: {:.4} < 0.95", recall);
 }
+
+/// Test vertex order: query the training data itself and verify each point
+/// finds itself as the nearest neighbor (returned in original numbering).
+#[test]
+fn test_vertex_order_self_query() {
+    let data = make_nn_data();
+    let train_data = data.slice(ndarray::s![..500, ..]).to_owned();
+    let k = 5;
+
+    let mut nnd = NNDescent::builder(train_data.clone(), "euclidean", 15)
+        .random_state(42)
+        .build()
+        .unwrap();
+
+    // Query the training data itself
+    let (indices, distances) = nnd.query(&train_data, k, 0.1);
+
+    // Each point should find itself as the nearest neighbor (distance ~0)
+    let mut self_found = 0;
+    for i in 0..train_data.nrows() {
+        // Check if point i appears in its own result set
+        for j in 0..k {
+            if indices[[i, j]] == i as i32 {
+                self_found += 1;
+                // The distance to self should be very close to zero
+                assert!(
+                    distances[[i, j]] < 1e-5,
+                    "Point {} distance to self: {}",
+                    i,
+                    distances[[i, j]]
+                );
+                break;
+            }
+        }
+    }
+
+    let self_recall = self_found as f32 / train_data.nrows() as f32;
+    assert!(
+        self_recall >= 0.95,
+        "Self-query recall: {:.4} < 0.95 ({}/{} points found themselves)",
+        self_recall,
+        self_found,
+        train_data.nrows()
+    );
+}
+
+/// Test that query results use original (pre-reorder) indices.
+/// Verify by checking that returned indices index into the original data
+/// and produce correct distances.
+#[test]
+fn test_vertex_order_original_indices() {
+    let data = make_nn_data();
+    let train_data = data.slice(ndarray::s![200.., ..]).to_owned();
+    let query_data = data.slice(ndarray::s![..50, ..]).to_owned();
+    let k = 5;
+
+    let mut nnd = NNDescent::builder(train_data.clone(), "euclidean", 15)
+        .random_state(42)
+        .build()
+        .unwrap();
+
+    let (indices, distances) = nnd.query(&query_data, k, 0.2);
+
+    // Verify returned indices are valid and distances are correct
+    for i in 0..query_data.nrows() {
+        for j in 0..k {
+            let idx = indices[[i, j]];
+            assert!(
+                idx >= 0 && (idx as usize) < train_data.nrows(),
+                "Invalid index {} for query {} neighbor {}",
+                idx,
+                i,
+                j
+            );
+
+            // Verify the distance matches the actual euclidean distance
+            // between the query point and the indexed training point
+            let actual_dist = distance::euclidean(
+                query_data.row(i).as_slice().unwrap(),
+                train_data.row(idx as usize).as_slice().unwrap(),
+            );
+            assert!(
+                (distances[[i, j]] - actual_dist).abs() < 1e-4,
+                "Distance mismatch for query {} neighbor {}: returned {} vs actual {}",
+                i,
+                j,
+                distances[[i, j]],
+                actual_dist
+            );
+        }
+    }
+}
+
+/// Test hub tree: verify that hub tree splits produce a valid tree structure.
+#[test]
+fn test_hub_tree_structure() {
+    use nndescent::rng::TauRng;
+    use nndescent::rp_trees;
+
+    let data = make_nn_data();
+    let train_data = data.slice(ndarray::s![..500, ..]).to_owned();
+    let k = 15;
+
+    // Build KNN graph first
+    let nnd = NNDescent::builder(train_data.clone(), "euclidean", k)
+        .random_state(42)
+        .build()
+        .unwrap();
+    let (neighbor_indices, _) = nnd.raw_neighbor_graph().unwrap();
+
+    // Build hub tree
+    let mut rng = TauRng::new(42);
+    let tree = rp_trees::make_hub_tree(&train_data, neighbor_indices, &mut rng, 30, false, 200);
+
+    // Verify tree covers all points
+    let n = train_data.nrows();
+    let mut seen = vec![false; n];
+    for &idx in &tree.indices {
+        if idx >= 0 && (idx as usize) < n {
+            seen[idx as usize] = true;
+        }
+    }
+    let covered = seen.iter().filter(|&&s| s).count();
+    assert_eq!(
+        covered, n,
+        "Hub tree should cover all {} points, but only covered {}",
+        n, covered
+    );
+
+    // Verify search still works
+    let point = train_data.row(0).to_vec();
+    let mut search_rng = TauRng::new(99);
+    let (start, end) = rp_trees::search_flat_tree(&tree, &point, &mut search_rng);
+    assert!(end > start, "Leaf should be non-empty");
+    assert!(
+        end - start <= tree.leaf_size + 1,
+        "Leaf should not exceed leaf_size"
+    );
+}

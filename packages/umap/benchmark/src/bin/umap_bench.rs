@@ -1,12 +1,11 @@
 //! UMAP benchmark binary.
 //!
-//! Usage: umap-bench <data_dir> <metric> [--output results.csv] [--seed N] [--embedding-path path]
+//! Usage: umap-bench <data_dir> <metric> [--gpu] [--output result.json] [--seed N] [--embedding-path path]
 //!
 //! Reads meta.json + data.bin, runs UMAP (2D), saves embedding and timing.
 
 use std::env;
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 
@@ -66,6 +65,7 @@ fn main() {
     let mut output_path: Option<String> = None;
     let mut seed: Option<u64> = None;
     let mut embedding_path: Option<String> = None;
+    let mut use_gpu = false;
     let mut i = 3;
     while i < args.len() {
         match args[i].as_str() {
@@ -81,13 +81,17 @@ fn main() {
                 embedding_path = Some(args[i + 1].clone());
                 i += 2;
             }
+            "--gpu" => {
+                use_gpu = true;
+                i += 1;
+            }
             _ => {
                 i += 1;
             }
         }
     }
     let output_path =
-        output_path.unwrap_or_else(|| data_dir.join("results.csv").to_string_lossy().to_string());
+        output_path.unwrap_or_else(|| data_dir.join("result.json").to_string_lossy().to_string());
 
     // Read metadata
     let meta_str =
@@ -96,8 +100,8 @@ fn main() {
     let dim = extract_json_int(&meta_str, "dim");
 
     eprintln!(
-        "Rust UMAP benchmark: n={}, dim={}, metric={}",
-        n, dim, metric
+        "Rust UMAP benchmark: n={}, dim={}, metric={}, gpu={}",
+        n, dim, metric, use_gpu
     );
 
     // Load data
@@ -112,6 +116,7 @@ fn main() {
         .n_components(2)
         .min_dist(0.1)
         .metric(metric)
+        .gpu(use_gpu)
         .verbose(true);
     if let Some(s) = seed {
         builder = builder.random_state(s);
@@ -124,26 +129,29 @@ fn main() {
     // Save embedding
     let emb_path = match &embedding_path {
         Some(p) => std::path::PathBuf::from(p),
-        None => data_dir.join(format!("rust_{}_embedding.bin", metric)),
+        None => {
+            let prefix = if use_gpu { "rust_gpu" } else { "rust" };
+            data_dir.join(format!("{}_{}_embedding.bin", prefix, metric))
+        }
     };
     write_f32_bin(&emb_path, &result.embedding);
     eprintln!("  Saved embedding to {:?}", emb_path);
 
-    // Append to results CSV
-    let output = Path::new(&output_path);
-    let write_header =
-        !output.exists() || fs::metadata(output).map(|m| m.len() == 0).unwrap_or(true);
+    // Write JSON result
+    let json = format!(
+        concat!(
+            "{{\n",
+            "  \"implementation\": \"rust\",\n",
+            "  \"n_points\": {},\n",
+            "  \"dim\": {},\n",
+            "  \"metric\": \"{}\",\n",
+            "  \"gpu\": {},\n",
+            "  \"time_s\": {:.3}\n",
+            "}}\n"
+        ),
+        n, dim, metric, use_gpu, elapsed
+    );
+    fs::write(&output_path, &json).unwrap_or_else(|_| panic!("Failed to write {}", output_path));
 
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(output)
-        .expect("Failed to open output CSV");
-
-    if write_header {
-        writeln!(file, "implementation,n_points,dim,metric,time_s").unwrap();
-    }
-    writeln!(file, "rust,{},{},{},{:.3}", n, dim, metric, elapsed).unwrap();
-
-    eprintln!("  Result appended to {}", output_path);
+    eprintln!("  Result written to {}", output_path);
 }

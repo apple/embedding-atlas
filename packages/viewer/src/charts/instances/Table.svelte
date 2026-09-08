@@ -6,13 +6,15 @@
 
   import { IconSortDown, IconSortUp, IconSortUpDown } from "../../assets/icons.js";
 
+  import { highlight as highlightText } from "../../highlight/action.js";
   import type { ColumnStyle } from "../../renderers/types.js";
   import type { ColumnDesc } from "../../utils/database.js";
-  import type { RowID } from "../chart.js";
+  import type { ChartContext, RowID } from "../chart.js";
   import { inferColumnFormatters } from "./infer_formatters.js";
   import type { SortOrder } from "./types.js";
 
   interface Props {
+    context: ChartContext;
     data: Record<string, any>[];
     columns: string[];
     columnDescs: ColumnDesc[];
@@ -25,6 +27,7 @@
   }
 
   let {
+    context,
     data,
     columns,
     columnDescs,
@@ -35,6 +38,8 @@
     onRowClick,
     onSortChange,
   }: Props = $props();
+
+  let { textHighlight, highlightScorer } = $derived(context);
 
   let highlightSet = $derived(new Set(highlight));
   let columnFormatters = $derived(inferColumnFormatters(data, columns));
@@ -56,15 +61,16 @@
     return "text-left";
   }
 
-  function isCellClamped(content: any): boolean {
-    return String(content).length > 100;
-  }
-
   function toggleRowExpansion(rowIndex: number) {
     expandedRows = new Set(
       expandedRows.has(rowIndex) ? [...expandedRows].filter((i) => i !== rowIndex) : [...expandedRows, rowIndex],
     );
   }
+
+  $effect.pre(() => {
+    let _ = [data, sort];
+    expandedRows = new Set();
+  });
 
   // Column resizing handlers
   function handleResizeStart(column: string) {
@@ -175,6 +181,11 @@
             e.preventDefault();
           }
         }}
+        use:highlightText={{
+          query: $textHighlight ?? undefined,
+          scorer: $highlightScorer,
+          include: "[data-highlight]",
+        }}
         bind:this={() => idMapper.get(rowId), (v) => idMapper.set(rowId, v)}
       >
         {#each columns as column}
@@ -185,13 +196,10 @@
             onmouseenter={() => (hoveredCell = { row: index, col: column })}
             onmouseleave={() => (hoveredCell = null)}
           >
-            <div
-              class="overflow-wrap-anywhere"
-              class:line-clamp-3={!expandedRows.has(index) && isCellClamped(row[column])}
-            >
+            <div class="wrap-anywhere" data-highlight class:line-clamp-3={!expandedRows.has(index)}>
               <ContentRenderer value={row[column]} style={columnStyles[column]} formatter={columnFormatters[column]} />
             </div>
-            {#if !expandedRows.has(index) && isCellClamped(row[column]) && hoveredCell?.row === index && hoveredCell?.col === column}
+            {#if !expandedRows.has(index) && hoveredCell?.row === index && hoveredCell?.col === column}
               <button
                 class="absolute bottom-0.5 right-0.5 text-xs px-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
                 onclick={(e) => {

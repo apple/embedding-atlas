@@ -1,3 +1,0 @@
-[workspace]
-members = ["nndescent", "umap-wasm", "umap", "benchmark"]
-resolver = "2"

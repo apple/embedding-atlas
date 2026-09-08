@@ -59,9 +59,7 @@
       return;
     }
     try {
-      const res = await fetch(
-        `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5`,
-      );
+      const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5`);
       if (!res.ok) return;
       const data = await res.json();
       results = data.features ?? [];
@@ -118,8 +116,12 @@
       bind:value={query}
       oninput={onInput}
       onkeydown={onKeydown}
-      onfocus={() => { if (results.length > 0) isOpen = true; }}
-      onblur={() => { setTimeout(() => (isOpen = false), 200); }}
+      onfocus={() => {
+        if (results.length > 0) isOpen = true;
+      }}
+      onblur={() => {
+        setTimeout(() => (isOpen = false), 200);
+      }}
       type="text"
       placeholder="Go to place..."
       class="w-full text-xs rounded-md py-1 pl-2 pr-7 bg-white/75 dark:bg-slate-800/75 backdrop-blur-sm border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-2 focus:outline-blue-600 focus:-outline-offset-1"
@@ -146,7 +148,10 @@
             class:bg-blue-100={selectedIndex === i}
             class:dark:bg-blue-900={selectedIndex === i}
             onmouseenter={() => (selectedIndex = i)}
-            onmousedown={(e) => { e.preventDefault(); selectResult(feature); }}
+            onmousedown={(e) => {
+              e.preventDefault();
+              selectResult(feature);
+            }}
           >
             <div class="text-slate-800 dark:text-slate-200 truncate">
               {formatResult(feature)}

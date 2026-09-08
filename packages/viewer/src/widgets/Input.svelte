@@ -7,6 +7,7 @@
     className?: string;
     onEnter?: () => void;
     disabled?: boolean;
+    onBlur?: () => void;
   }
 
   let {
@@ -15,6 +16,7 @@
     placeholder = "",
     className = "",
     onEnter,
+    onBlur,
     disabled = false,
   }: Props = $props();
 
@@ -33,6 +35,7 @@
   placeholder={placeholder}
   onkeydown={onKeyDown}
   disabled={disabled}
+  onblur={onBlur}
   class="form-input rounded-md py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 disabled:opacity-50 {className ??
     ''}"
 />

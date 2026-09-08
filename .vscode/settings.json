@@ -2,7 +2,7 @@
   "python.analysis.typeCheckingMode": "standard",
   "python-envs.pythonProjects": [
     {
-      "path": "packages/backend",
+      "path": ".",
       "envManager": "ms-python.python:venv"
     }
   ],

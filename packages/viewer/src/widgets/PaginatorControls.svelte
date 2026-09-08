@@ -23,9 +23,9 @@
   }
 </script>
 
-<div class="flex gap-2 select-none mx-2 my-1 items-center">
+<div class="flex gap-2 select-none items-center">
   <button
-    class="border border-slate-300 bg-white/50 dark:border-slate-700 dark:bg-black/50 px-3 py-1 rounded-md"
+    class="border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 px-3 py-1.5 rounded-md"
     class:text-slate-300={currentPage <= 0}
     class:dark:text-slate-700={currentPage <= 0}
     disabled={currentPage <= 0}
@@ -40,7 +40,7 @@
     <input
       bind:this={inputElement}
       value={currentPage + 1}
-      class="form-input w-16 h-7.5 text-right border border-slate-300 bg-white/50 dark:border-slate-700 dark:bg-black/50 rounded-md px-2 py-0 my-1"
+      class="form-input w-16 py-1 text-right border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 rounded-md px-2"
       onblur={() => {
         let p = +inputElement.value;
         update(Math.round(p) - 1);
@@ -55,7 +55,7 @@
     <div>of {pageCount}</div>
   </div>
   <button
-    class="border border-slate-300 bg-white/50 dark:border-slate-700 dark:bg-black/50 px-3 py-1 rounded-md"
+    class="border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900 px-3 py-1.5 rounded-md"
     class:text-slate-300={currentPage >= pageCount - 1}
     class:dark:text-slate-700={currentPage >= pageCount - 1}
     disabled={currentPage >= pageCount - 1}

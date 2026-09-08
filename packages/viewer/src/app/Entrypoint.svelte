@@ -43,5 +43,5 @@
 <WebGPUBanner />
 
 {#if routes}
-  <Router {routes} />
+  <Router routes={routes} />
 {/if}

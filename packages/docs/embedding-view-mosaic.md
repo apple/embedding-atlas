@@ -1,9 +1,9 @@
 # EmbeddingViewMosaic
 
-The `embedding-atlas` package contains a component for displaying up to a few millions of points from an embedding with x and y coordinates.
+The `embedding-atlas` package contains a component for displaying up to a few million points from an embedding with x and y coordinates.
 The component connects to a [Mosaic](https://idl.uw.edu/mosaic/) coordinator and can display data for specified table and x, y coordinate columns.
 
-We also provide React and Svelte wrappers of the component to easily include it in your own application.
+We also provide React and Svelte wrappers for the component to easily include it in your own application.
 
 <p class="light-only"><img style="margin: 0 auto;" src="./public/assets/component-light.png" /></p>
 <p class="dark-only"><img style="margin: 0 auto;" src="./public/assets/component-dark.png" /></p>

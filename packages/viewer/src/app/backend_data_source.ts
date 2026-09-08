@@ -33,6 +33,7 @@ interface Metadata {
     load?: boolean;
     files?: string[];
     datasetUrl?: string;
+    additionalTables?: { name: string; url: string }[];
   };
 
   mcp?: {
@@ -68,9 +69,10 @@ export class BackendDataSource implements DataSource {
 
     if (metadata.database?.load) {
       onStatus("Loading data...");
-      const baseUrl = metadata.database?.datasetUrl ?? this.serverUrl;
-      const files = metadata.database?.files ?? ["dataset.parquet"];
-      const datasetUrls = files.map((f: string) => joinUrl(baseUrl, f));
+      const files = metadata.database?.files;
+      const datasetUrls = files?.length
+        ? files.map((file) => joinUrl(metadata.database?.datasetUrl ?? this.serverUrl, file))
+        : [metadata.database?.datasetUrl ?? joinUrl(this.serverUrl, "dataset.parquet")];
 
       let loadQuery;
       if (datasetUrls.length === 1) {
@@ -80,6 +82,12 @@ export class BackendDataSource implements DataSource {
         loadQuery = `CREATE OR REPLACE TABLE ${table} AS (SELECT * FROM read_parquet([${urlsList}]));`;
       }
       await coordinator.exec(loadQuery);
+      for (const t of metadata.database?.additionalTables ?? []) {
+        let tableUrl = t.url.startsWith("http") ? t.url : joinUrl(this.serverUrl, t.url);
+        await coordinator.exec(`
+          CREATE OR REPLACE TABLE ${t.name} AS (SELECT * FROM read_parquet(${SQL.literal(tableUrl)}));
+        `);
+      }
     }
 
     if (!metadata.isStatic) {

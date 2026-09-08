@@ -13,11 +13,11 @@ impl DisjointSet {
 
     pub fn find_parent(&mut self, index: i32) -> i32 {
         if self.parent[index as usize] == index {
-            return index;
+            index
         } else {
             let p = self.find_parent(self.parent[index as usize]);
             self.parent[index as usize] = p;
-            return p;
+            p
         }
     }
 

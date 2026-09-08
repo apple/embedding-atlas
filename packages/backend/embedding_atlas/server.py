@@ -10,25 +10,27 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
-from functools import lru_cache
+from functools import lru_cache, partial
+from io import BytesIO
 from typing import Callable
 
 import duckdb
+import pyarrow as pa
 from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .data_source import DataSource
-import pyarrow as pa
-
 from .utils import arrow_to_bytes, to_parquet_bytes
 
 
 # Read-only SQL command prefixes. Anything starting with one of these is
 # safe to memoize (no side effects on `dataset`). The cache is invalidated
 # by any other command (ALTER, UPDATE, INSERT, CREATE, DROP, …).
-_READONLY_RE = re.compile(r"^\s*(?:WITH\b|SELECT\b|TABLE\b|VALUES\b|DESCRIBE\b|SUMMARIZE\b|PRAGMA\b)", re.I)
+_READONLY_RE = re.compile(
+    r"^\s*(?:WITH\b|SELECT\b|TABLE\b|VALUES\b|DESCRIBE\b|SUMMARIZE\b|PRAGMA\b)", re.I
+)
 
 
 class _ArrowResultCache:
@@ -130,6 +132,8 @@ def make_server(
     into a few seconds.
     """
 
+    additional_tables = data_source.additional_tables
+
     app = FastAPI()
 
     if cors is not None:
@@ -167,12 +171,27 @@ def make_server(
         _dataset_parquet_bytes,
     )
 
+    if additional_tables:
+        for name, df in additional_tables.items():
+            mount_bytes(
+                app,
+                f"/data/tables/{name}.parquet",
+                "application/octet-stream",
+                partial(to_parquet_bytes, df),
+            )
+
     @app.get("/data/metadata.json")
     async def get_metadata():
         meta = {}
         # Database
         if duckdb_uri is None or duckdb_uri == "wasm":
-            meta["database"] = {"type": "wasm", "load": True}
+            db_meta: dict = {"type": "wasm", "load": True}
+            if additional_tables:
+                db_meta["additionalTables"] = [
+                    {"name": name, "url": f"tables/{name}.parquet"}
+                    for name in additional_tables
+                ]
+            meta["database"] = db_meta
         elif duckdb_uri == "server":
             # Point to the server itself.
             meta["database"] = {"type": "rest"}
@@ -198,7 +217,9 @@ def make_server(
 
         body = data_source.metadata | meta
         if debug_sql:
-            keys = sorted(body.get("props", {}).get("data", {}).get("projection", {}).keys())
+            keys = sorted(
+                body.get("props", {}).get("data", {}).get("projection", {}).keys()
+            )
             print(f"[metadata fetch] projection keys: {keys}", flush=True)
         return JSONResponse(
             body,
@@ -229,7 +250,9 @@ def make_server(
 
     if duckdb_uri == "server":
         if duckdb_connection is None:
-            duckdb_connection = make_duckdb_connection(data_source.dataset)
+            duckdb_connection = make_duckdb_connection(
+                data_source.dataset, additional_tables=additional_tables
+            )
     else:
         duckdb_connection = None
 
@@ -255,8 +278,14 @@ def make_server(
     # viewer issues it (after every pan/zoom release, on color-by toggle,
     # …). A simple LRU short-circuits the redundant DuckDB scans.
     # Disabled via env so users can A/B at runtime.
-    cache_disabled = os.environ.get("GSA_DISABLE_QUERY_CACHE", "").lower() in ("1", "true", "yes")
-    arrow_cache: _ArrowResultCache | None = None if cache_disabled else _ArrowResultCache()
+    cache_disabled = os.environ.get("GSA_DISABLE_QUERY_CACHE", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    arrow_cache: _ArrowResultCache | None = (
+        None if cache_disabled else _ArrowResultCache()
+    )
 
     # Lazy view→table promotion. fast_load_parquet returns the dataset as
     # a VIEW (no materialisation, ~5 ms) so the first map render is fast.
@@ -311,11 +340,15 @@ def make_server(
                         )
                     if not (materialise_error and materialise_error[0]):
                         cur.execute(f'DROP VIEW "{dataset_table_name}"')
-                        cur.execute(f'ALTER TABLE "{materialise_table}" RENAME TO "{dataset_table_name}"')
+                        cur.execute(
+                            f'ALTER TABLE "{materialise_table}" RENAME TO "{dataset_table_name}"'
+                        )
                         bg_succeeded = True
                 if not bg_succeeded:
                     tmp = f"__{dataset_table_name}_mat_tmp__"
-                    cur.execute(f'CREATE TABLE "{tmp}" AS SELECT * FROM "{dataset_table_name}"')
+                    cur.execute(
+                        f'CREATE TABLE "{tmp}" AS SELECT * FROM "{dataset_table_name}"'
+                    )
                     cur.execute(f'DROP VIEW "{dataset_table_name}"')
                     cur.execute(f'ALTER TABLE "{tmp}" RENAME TO "{dataset_table_name}"')
             finally:
@@ -336,6 +369,7 @@ def make_server(
         and materialise_thread is not None
         and materialise_table is not None
     ):
+
         def _eager_swap_when_ready() -> None:
             try:
                 materialise_thread.join()
@@ -376,7 +410,10 @@ def make_server(
             if cached is not None:
                 if debug_sql:
                     dt = (time.perf_counter() - t_start) * 1000
-                    print(f"[sql arrow CACHE HIT {dt:6.1f}ms] -> {len(cached):,} bytes", flush=True)
+                    print(
+                        f"[sql arrow CACHE HIT {dt:6.1f}ms] -> {len(cached):,} bytes",
+                        flush=True,
+                    )
                 if len(cached) >= STREAM_THRESHOLD:
                     return StreamingResponse(
                         _chunked(cached),
@@ -418,7 +455,9 @@ def make_server(
                     buf = arrow_to_bytes(rel.fetch_arrow_table())
                     if debug_sql:
                         dt = (time.perf_counter() - t_start) * 1000
-                        print(f"[sql arrow {dt:6.1f}ms] -> {len(buf):,} bytes", flush=True)
+                        print(
+                            f"[sql arrow {dt:6.1f}ms] -> {len(buf):,} bytes", flush=True
+                        )
                     if arrow_cache is not None and _READONLY_RE.match(sql) is not None:
                         arrow_cache.put(sql, buf)
                     if len(buf) >= STREAM_THRESHOLD:
@@ -442,7 +481,9 @@ def make_server(
                     data = result.df().to_json(orient="records")
                     if debug_sql:
                         dt = (time.perf_counter() - t_start) * 1000
-                        print(f"[sql json {dt:6.1f}ms] -> {len(data):,} bytes", flush=True)
+                        print(
+                            f"[sql json {dt:6.1f}ms] -> {len(data):,} bytes", flush=True
+                        )
                     return Response(data, headers={"Content-Type": "application/json"})
                 else:
                     raise ValueError(f"Unknown command {command}")
@@ -456,33 +497,35 @@ def make_server(
         assert duckdb_connection is not None
         predicate = query.get("predicate", None)
         format = query["format"]
-        formats = {
-            "json": "(FORMAT JSON, ARRAY true)",
-            "jsonl": "(FORMAT JSON)",
-            "csv": "(FORMAT CSV)",
-            "parquet": "(FORMAT parquet)",
-        }
-        with duckdb_connection.cursor() as cursor:
-            filename = ".selection-" + str(uuid.uuid4()) + ".tmp"
-            try:
-                if predicate is not None:
-                    cursor.execute(
-                        f"COPY (SELECT * FROM dataset WHERE {predicate}) TO '{filename}' {formats[format]}"
-                    )
+
+        try:
+            with duckdb_connection.cursor() as cursor:
+                statement = (
+                    f"SELECT * FROM dataset WHERE {predicate}"
+                    if predicate is not None
+                    else "SELECT * FROM dataset"
+                )
+                # Convert to DataFrame and save since we've disabled DuckDB filesystem access
+                result = cursor.sql(statement).to_df()
+
+                output = BytesIO()
+                if format == "parquet":
+                    result.to_parquet(output, index=False)
+                elif format == "json":
+                    result.to_json(output, orient="records", index=False)
+                elif format == "jsonl":
+                    result.to_json(output, orient="records", lines=True, index=False)
+                elif format == "csv":
+                    result.to_csv(output, index=False)
                 else:
-                    cursor.execute(f"COPY dataset TO '{filename}' {formats[format]}")
-                with open(filename, "rb") as f:
-                    buffer = f.read()
-                    return Response(
-                        buffer, headers={"Content-Type": "application/octet-stream"}
-                    )
-            except Exception as e:
-                return JSONResponse({"error": str(e)}, status_code=500)
-            finally:
-                try:
-                    os.unlink(filename)
-                except Exception:
-                    pass
+                    raise ValueError("invalid format")
+
+                return Response(
+                    output.getvalue(),
+                    headers={"Content-Type": "application/octet-stream"},
+                )
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
 
     executor = concurrent.futures.ThreadPoolExecutor()
 
@@ -523,7 +566,11 @@ def make_server(
     # URL load and first paint drops from ~5 s to ~1.5 s. Disable via
     # ``GSA_DISABLE_PREWARM=1`` if the load-time cost ever shows up
     # somewhere it shouldn't (e.g. one-shot CLI exports).
-    prewarm_disabled = os.environ.get("GSA_DISABLE_PREWARM", "").lower() in ("1", "true", "yes")
+    prewarm_disabled = os.environ.get("GSA_DISABLE_PREWARM", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if (
         prewarm_arrow_queries
         and arrow_cache is not None
@@ -685,10 +732,16 @@ def make_mcp_proxy(app: FastAPI):
         return await handler.send_request(await request.json())
 
 
-def make_duckdb_connection(df):
+def make_duckdb_connection(df, additional_tables: dict | None = None):
     con = duckdb.connect(":memory:")
     _ = df  # used in the query
     con.sql("CREATE TABLE dataset AS (SELECT * FROM df)")
+    if additional_tables is not None:
+        for name, additional_df in additional_tables.items():
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+                raise ValueError(f"invalid table name: {name!r}")
+            _ = additional_df  # used in the query
+            con.sql(f"CREATE TABLE {name} AS (SELECT * FROM additional_df)")
     con.sql("SET enable_external_access = false")
     con.sql("SET lock_configuration = true")
     return con

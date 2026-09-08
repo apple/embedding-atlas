@@ -35,7 +35,7 @@
 
     onSpecChange?: (spec: any) => void;
 
-    chartView: LayoutProps<unknown>["chartView"];
+    chartView: LayoutProps["chartView"];
   }
 
   let { id, spec, isVisible, colorScheme, chartView, onIsVisibleChange, onUp, onDown, onRemove, onSpecChange }: Props =
@@ -50,7 +50,7 @@
 
 <div class="p-2 flex items-center">
   <button
-    class="font-mono font-medium h-6 text-left flex flex-1 mr-2 overflow-hidden items-center"
+    class="h-6 text-left flex flex-1 mr-2 overflow-hidden items-center"
     onclick={() => onIsVisibleChange?.(!isVisible)}
   >
     {#if isVisible}
@@ -92,7 +92,7 @@
   style:grid-template-rows={isVisible ? "1fr" : "0fr"}
   style:transition="grid-template-rows 300ms ease-in-out"
 >
-  <div class="overflow-hidden">
+  <div class="overflow-hidden rounded-md">
     {@render chartView({ id: id, width: "container", mode: chartMode })}
     {#if chartMode == "view" && isEditing && onSpecChange}
       <div transition:slide class="h-96">

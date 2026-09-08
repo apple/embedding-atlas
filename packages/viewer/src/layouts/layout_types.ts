@@ -7,12 +7,16 @@ import DashboardLayoutOptions from "./dashboard/DashboardLayoutOptions.svelte";
 import ListLayout from "./list/ListLayout.svelte";
 import ListLayoutOptions from "./list/ListLayoutOptions.svelte";
 
+import type { DashboardLayoutSpec } from "./dashboard/types.js";
 import type { LayoutOptionsProps, LayoutProps } from "./layout.js";
+import type { ListLayoutSpec } from "./list/types.js";
 
-export type LayoutComponentClass = Component<LayoutProps<any>, {}, "">;
-export type LayoutOptionsComponentClass = Component<LayoutOptionsProps<any>, {}, "">;
+export type BuiltinLayoutSpec = ListLayoutSpec | DashboardLayoutSpec;
 
-export const layoutTypes: Record<string, [LayoutComponentClass, LayoutOptionsComponentClass]> = {
+export type LayoutComponentClass = Component<LayoutProps, {}, "">;
+export type LayoutOptionsComponentClass = Component<LayoutOptionsProps, {}, "">;
+
+export const layoutTypes: Record<string, [LayoutComponentClass, LayoutOptionsComponentClass | undefined]> = {
   list: [ListLayout, ListLayoutOptions],
   dashboard: [DashboardLayout, DashboardLayoutOptions],
 };
@@ -24,7 +28,7 @@ export function findLayoutComponent(type: string): LayoutComponentClass {
   return layoutTypes[type][0];
 }
 
-export function findLayoutOptionsComponent(type: string): LayoutOptionsComponentClass {
+export function findLayoutOptionsComponent(type: string): LayoutOptionsComponentClass | undefined {
   if (layoutTypes[type] == null) {
     return layoutTypes.list[1];
   }

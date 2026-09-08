@@ -13,9 +13,9 @@ pub struct Array2D<T> {
 impl<T> Array2D<T> {
     pub fn new(width: i32, height: i32, data: Vec<T>) -> Self {
         Array2D {
-            width: width,
-            height: height,
-            data: data,
+            width,
+            height,
+            data,
         }
     }
 
@@ -24,8 +24,8 @@ impl<T> Array2D<T> {
         T: Copy,
     {
         Array2D {
-            width: width,
-            height: height,
+            width,
+            height,
             data: vec![value; (width * height) as usize],
         }
     }
@@ -100,11 +100,11 @@ where
     T: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Array2D({}, {}) [\n", self.width, self.height)?;
+        writeln!(f, "Array2D({}, {}) [", self.width, self.height)?;
         for row in 0..self.height {
-            write!(
+            writeln!(
                 f,
-                "  {:?}\n",
+                "  {:?}",
                 &self.data[(row * self.width) as usize..(row * self.width + self.width) as usize]
             )?;
         }
@@ -115,13 +115,13 @@ where
 
 impl<T> Index<(i32, i32)> for Array2D<T> {
     type Output = T;
-    fn index<'a>(&'a self, location: (i32, i32)) -> &'a T {
+    fn index(&self, location: (i32, i32)) -> &T {
         &self.data[(location.1 * self.width + location.0) as usize]
     }
 }
 
 impl<T> IndexMut<(i32, i32)> for Array2D<T> {
-    fn index_mut<'a>(&'a mut self, location: (i32, i32)) -> &'a mut T {
+    fn index_mut(&mut self, location: (i32, i32)) -> &mut T {
         &mut self.data[(location.1 * self.width + location.0) as usize]
     }
 }

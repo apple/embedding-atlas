@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import struct
 
-import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -32,8 +31,12 @@ def latlon_parquet(tmp_path):
     table = pa.table(
         {
             "id": pa.array([f"row-{i}" for i in range(n)]),
-            "lat": pa.array([(i % 180) - 90 + 0.5 for i in range(n)], type=pa.float64()),
-            "lon": pa.array([(i % 360) - 180 + 0.25 for i in range(n)], type=pa.float64()),
+            "lat": pa.array(
+                [(i % 180) - 90 + 0.5 for i in range(n)], type=pa.float64()
+            ),
+            "lon": pa.array(
+                [(i % 360) - 180 + 0.25 for i in range(n)], type=pa.float64()
+            ),
             "name": pa.array([f"name-{i}" for i in range(n)]),
         }
     )
@@ -98,12 +101,9 @@ def test_eager_materialise_returns_table(latlon_parquet):
 
     # Color-by ALTER + UPDATE must work directly against an eager-table load.
     con = res.connection
+    con.execute(f'ALTER TABLE "{res.table}" ADD COLUMN __ev_test_id INTEGER DEFAULT 0')
     con.execute(
-        f'ALTER TABLE "{res.table}" ADD COLUMN __ev_test_id INTEGER DEFAULT 0'
-    )
-    con.execute(
-        f'UPDATE "{res.table}" '
-        f'SET __ev_test_id = CASE WHEN lat > 0 THEN 1 ELSE 0 END'
+        f'UPDATE "{res.table}" SET __ev_test_id = CASE WHEN lat > 0 THEN 1 ELSE 0 END'
     )
     counts = con.sql(
         f'SELECT __ev_test_id, COUNT(*) FROM "{res.table}" GROUP BY __ev_test_id'
@@ -123,7 +123,9 @@ def test_view_promotes_to_table_on_alter(latlon_parquet):
     # Promote — same SQL the server runs lazily on first non-readonly query.
     cur = con.cursor()
     try:
-        cur.execute(f'CREATE TABLE "__{res.table}_mat_tmp__" AS SELECT * FROM "{res.table}"')
+        cur.execute(
+            f'CREATE TABLE "__{res.table}_mat_tmp__" AS SELECT * FROM "{res.table}"'
+        )
         cur.execute(f'DROP VIEW "{res.table}"')
         cur.execute(f'ALTER TABLE "__{res.table}_mat_tmp__" RENAME TO "{res.table}"')
     finally:
@@ -132,8 +134,7 @@ def test_view_promotes_to_table_on_alter(latlon_parquet):
     # Now ALTER+UPDATE works.
     con.execute(f'ALTER TABLE "{res.table}" ADD COLUMN __ev_test_id INTEGER DEFAULT 0')
     con.execute(
-        f'UPDATE "{res.table}" '
-        f'SET __ev_test_id = CASE WHEN lat > 0 THEN 1 ELSE 0 END'
+        f'UPDATE "{res.table}" SET __ev_test_id = CASE WHEN lat > 0 THEN 1 ELSE 0 END'
     )
     counts = con.sql(
         f'SELECT __ev_test_id, COUNT(*) FROM "{res.table}" GROUP BY __ev_test_id'
@@ -210,7 +211,7 @@ def test_collision_with_file_row_number_uses_window_fallback(tmp_path):
 
     rows = con.sql(
         f'SELECT file_row_number, "{res.id_column}" FROM "{res.table}" '
-        f'ORDER BY file_row_number'
+        f"ORDER BY file_row_number"
     ).fetchall()
     assert [r[0] for r in rows] == list(range(100, 100 + n))
     # ROW_NUMBER() OVER () is 1-based; that's fine — it's monotone unique.
@@ -301,7 +302,9 @@ def test_precomputed_disabled_via_flag(latlon_parquet):
     res = fast_load_parquet(str(path), precompute_quantised=False)
     assert res.quantised_x_column is None
     assert res.quantised_y_column is None
-    cols = [r[1] for r in res.connection.sql(f'PRAGMA table_info("{res.table}")').fetchall()]
+    cols = [
+        r[1] for r in res.connection.sql(f'PRAGMA table_info("{res.table}")').fetchall()
+    ]
     assert "__x_u32__" not in cols
 
 
@@ -316,7 +319,9 @@ def test_low_cardinality_varchar_becomes_enum(tmp_path):
             "lat": pa.array([float(i % 90) for i in range(n)]),
             "lon": pa.array([float(i % 180 - 90) for i in range(n)]),
             "category": pa.array([["A", "B", "C", "D"][i % 4] for i in range(n)]),
-            "wide": pa.array([f"row-{i}" for i in range(n)]),  # high-cardinality, not ENUM
+            "wide": pa.array(
+                [f"row-{i}" for i in range(n)]
+            ),  # high-cardinality, not ENUM
         }
     )
     pq.write_table(table, str(path))
@@ -379,7 +384,7 @@ def test_id_column_avoids_collision_with_existing_row_index(tmp_path):
     con = res.connection
     rows = con.sql(
         f'SELECT __row_index__, "{res.id_column}" FROM "{res.table}" '
-        f'ORDER BY __row_index__ DESC'
+        f"ORDER BY __row_index__ DESC"
     ).fetchall()
     assert [r[0] for r in rows] == [99, 98, 97, 96, 95]
     assert len({r[1] for r in rows}) == n

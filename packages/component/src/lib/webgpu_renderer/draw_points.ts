@@ -49,33 +49,26 @@ export function makeDrawPointsCommand(
   );
 
   return df.derive(
-    [
-      pipeline,
-      bindGroups.group0,
-      bindGroups.group1,
-      auxiliaryResources.colorTexture,
-      auxiliaryResources.alphaTexture,
-    ],
-    (pipeline, group0, group1, colorTexture, alphaTexture) =>
-      (encoder, instanceFirst, instanceCount, isFirstChunk) => {
-        // Only the first chunk in a multi-cmd-buf chunked draw clears
-        // the attachments; subsequent chunks ``load`` the partial
-        // accumulation so additive blending across chunks lands.
-        const op: GPULoadOp = isFirstChunk ? "clear" : "load";
-        let pass = encoder.beginRenderPass({
-          colorAttachments: [
-            { clearValue: [0, 0, 0, 0], loadOp: op, storeOp: "store", view: colorTexture.createView() },
-            { clearValue: [0, 0, 0, 0], loadOp: op, storeOp: "store", view: alphaTexture.createView() },
-          ],
-        });
-        pass.setPipeline(pipeline);
-        pass.setBindGroup(0, group0);
-        pass.setBindGroup(1, group1);
-        if (instanceCount > 0) {
-          pass.draw(4, instanceCount, 0, instanceFirst);
-        }
-        pass.end();
-      },
+    [pipeline, bindGroups.group0, bindGroups.group1, auxiliaryResources.colorTexture, auxiliaryResources.alphaTexture],
+    (pipeline, group0, group1, colorTexture, alphaTexture) => (encoder, instanceFirst, instanceCount, isFirstChunk) => {
+      // Only the first chunk in a multi-cmd-buf chunked draw clears
+      // the attachments; subsequent chunks ``load`` the partial
+      // accumulation so additive blending across chunks lands.
+      const op: GPULoadOp = isFirstChunk ? "clear" : "load";
+      let pass = encoder.beginRenderPass({
+        colorAttachments: [
+          { clearValue: [0, 0, 0, 0], loadOp: op, storeOp: "store", view: colorTexture.createView() },
+          { clearValue: [0, 0, 0, 0], loadOp: op, storeOp: "store", view: alphaTexture.createView() },
+        ],
+      });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, group0);
+      pass.setBindGroup(1, group1);
+      if (instanceCount > 0) {
+        pass.draw(4, instanceCount, 0, instanceFirst);
+      }
+      pass.end();
+    },
   );
 }
 

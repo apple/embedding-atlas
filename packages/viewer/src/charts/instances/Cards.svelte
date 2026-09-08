@@ -2,11 +2,13 @@
 <script lang="ts">
   import TooltipContent from "../../views/TooltipContent.svelte";
 
+  import { highlight as highlightText } from "../../highlight/action.js";
   import type { ColumnStyle } from "../../renderers/types.js";
   import { compileLiquidTemplate } from "../../utils/html_template.js";
-  import type { RowID } from "../chart.js";
+  import type { ChartContext, RowID } from "../chart.js";
 
   interface Props {
+    context: ChartContext;
     data: Record<string, any>[];
     columns: string[];
     columnStyles: Record<string, ColumnStyle>;
@@ -15,7 +17,9 @@
     onRowClick: (rowId: RowID | null | undefined, event: MouseEvent) => void;
   }
 
-  let { data, columns, columnStyles, highlight, cardTemplate, onRowClick }: Props = $props();
+  let { context, data, columns, columnStyles, highlight, cardTemplate, onRowClick }: Props = $props();
+
+  let { textHighlight, highlightScorer } = $derived(context);
 
   let highlightSet = $derived(new Set(highlight));
   let idMapper = new Map<RowID, Element>();
@@ -49,9 +53,16 @@
             }
           }}
           onclick={(e) => onRowClick(rowId, e)}
+          use:highlightText={{
+            query: $textHighlight ?? undefined,
+            scorer: $highlightScorer,
+            include: "[data-highlight]",
+          }}
         >
           {#if compiledTemplate != null}
-            {@html compiledTemplate(values)}
+            <div data-highlight>
+              {@html compiledTemplate(values)}
+            </div>
           {:else}
             <div class="w-full p-4">
               <TooltipContent values={values} columns={columns} columnStyles={columnStyles} />

@@ -90,7 +90,11 @@ const render: Render<Model> = (view) => {
 
   function saveState(state: EmbeddingAtlasState) {
     view.model.set("_state", JSON.stringify(state));
-    view.model.set("_predicate", state.predicate ?? null);
+    view.model.save_changes();
+  }
+
+  function savePredicate(predicate: string | null) {
+    view.model.set("_predicate", predicate ?? null);
     view.model.save_changes();
   }
 
@@ -114,6 +118,7 @@ const render: Render<Model> = (view) => {
       ...(state != null ? { initialState: state } : {}),
       colorScheme: detectColorScheme(container),
       onStateChange: debounce(saveState, 200),
+      onPredicateChange: debounce(savePredicate, 200),
     };
   }
 

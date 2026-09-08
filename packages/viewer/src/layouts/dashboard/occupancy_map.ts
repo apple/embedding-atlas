@@ -129,10 +129,11 @@ export class OccupancyMap {
     minHeight: number,
     maxWidth: number,
     maxHeight: number,
+    viewHeight: number,
   ): { x: number; y: number; width: number; height: number }[] {
     let map = this.clone();
     let result: { x: number; y: number; width: number; height: number }[] = [];
-    let maxY = this.maxOccupiedY();
+    let maxY = Math.max(this.maxOccupiedY(), viewHeight);
     // Find all unused rectangular areas that meet the size constraints
     for (let y = 0; y <= maxY; y++) {
       for (let x = 0; x < map.numColumns; x++) {

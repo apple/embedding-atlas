@@ -2,9 +2,10 @@
 
 import type { Coordinator } from "@uwdata/mosaic-core";
 
-import { columnDescriptions, distinctCountBatch, type ColumnDesc } from "../utils/database.js";
+import { columnDescriptions, distinctCountBatch, isFloatingPointDBType, type ColumnDesc } from "../utils/database.js";
 import type { BuiltinChartSpec } from "./chart_types.js";
 import type { EmbeddingSpec } from "./embedding/types.js";
+import type { FeaturesListSpec } from "./features/types.js";
 import type { InstancesSpec } from "./instances/types.js";
 import type { ChartSpec } from "./spec/spec.js";
 
@@ -32,6 +33,7 @@ interface ProjectionInput {
   isGis?: boolean;
   image?: string;
   importance?: string;
+  neighbors?: string;
   bounds?: { x: [number, number]; y: [number, number] } | null;
   /** Names of pre-computed u16-quantised x/y columns. When set, the
    *  scatter wire query becomes a pure scan — see `EmbeddingViewMosaic`. */
@@ -56,9 +58,10 @@ interface ProjectionInput {
  *  on it shifted first-paint by exactly that much. */
 export function defaultPrimaryCharts(options: {
   projection?: ProjectionInput;
+  features?: string;
   config?: DefaultChartsConfig;
 }): BuiltinChartSpec[] {
-  let { projection } = options;
+  let { projection, features } = options;
   let config = options.config ?? {};
   let charts: BuiltinChartSpec[] = [];
 
@@ -76,11 +79,23 @@ export function defaultPrimaryCharts(options: {
         bounds: projection.bounds,
         precomputed: projection.precomputed,
         viewportHint: projection.viewportHint,
+        neighbors: projection.neighbors,
       },
     };
     if (typeof config.embedding == "object") {
       spec = { ...spec, ...config.embedding };
     }
+    charts.push(spec);
+  }
+
+  if (features != null) {
+    let spec: FeaturesListSpec = {
+      type: "features-list",
+      title: "Features",
+      data: {
+        features: features,
+      },
+    };
     charts.push(spec);
   }
 
@@ -109,6 +124,7 @@ export async function defaultColumnCharts(options: {
   table: string;
   columns?: ColumnDesc[];
   projection?: ProjectionInput;
+  features?: string;
   config?: DefaultChartsConfig;
 }): Promise<BuiltinChartSpec[]> {
   let { coordinator, table, projection } = options;
@@ -121,10 +137,12 @@ export async function defaultColumnCharts(options: {
       exclude.push(projection.text);
     }
   }
+  if (options.features) {
+    exclude.push(options.features);
+  }
 
   let columns =
-    options.columns ??
-    (await columnDescriptions(coordinator, table)).filter((x) => !x.name.startsWith("__"));
+    options.columns ?? (await columnDescriptions(coordinator, table)).filter((x) => !x.name.startsWith("__"));
 
   let charts: BuiltinChartSpec[] = [];
 
@@ -147,12 +165,13 @@ export async function defaultColumnCharts(options: {
   let distinctMap: Map<string, number>;
   try {
     distinctMap = await Promise.race([
-      distinctCountBatch(coordinator, table, candidates.map((c) => c.name)),
+      distinctCountBatch(
+        coordinator,
+        table,
+        candidates.map((c) => c.name),
+      ),
       new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error("distinctCountBatch timeout (15 s) — falling back to heuristics")),
-          15_000,
-        ),
+        setTimeout(() => reject(new Error("distinctCountBatch timeout (15 s) — falling back to heuristics")), 15_000),
       ),
     ]);
   } catch (err) {
@@ -222,7 +241,10 @@ export async function defaultColumnCharts(options: {
       }
       case "number":
       case "Date": {
-        if (distinctKnown && distinct <= 10) {
+        // Treat floating-point columns as continuous regardless of cardinality, so a
+        // few fractional values produce a value-ordered histogram instead of a
+        // frequency-sorted count plot. Low-cardinality integers stay categorical.
+        if (distinctKnown && distinct <= 10 && !isFloatingPointDBType(item.type)) {
           charts.push({
             type: "count-plot",
             title: item.name,
@@ -246,26 +268,30 @@ export async function defaultCharts(options: {
   table: string;
   id: string;
   projection?: ProjectionInput;
+  features?: string;
   config?: DefaultChartsConfig;
 }): Promise<BuiltinChartSpec[]> {
   const primary = defaultPrimaryCharts({
     projection: options.projection,
+    features: options.features,
     config: options.config,
   });
   const cols = await defaultColumnCharts({
     coordinator: options.coordinator,
     table: options.table,
     projection: options.projection,
+    features: options.features,
     config: options.config,
   });
   return [...primary, ...cols];
 }
 
-export function histogramSpec(field: string, groupField?: string): ChartSpec {
+export function histogramSpec(field: string, groupField?: string, table?: string): ChartSpec {
   return {
     title: field,
     layers: [
       {
+        ...(table != null ? { from: table } : {}),
         mark: "bar",
         style: { fillColor: "$markColorFade" },
         encoding: {
@@ -274,6 +300,7 @@ export function histogramSpec(field: string, groupField?: string): ChartSpec {
         },
       },
       {
+        ...(table != null ? { from: table } : {}),
         mark: "bar",
         filter: "$filter",
         encoding: {

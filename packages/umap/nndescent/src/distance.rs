@@ -146,9 +146,7 @@ pub fn alternative_cosine(x: &[f32], y: &[f32]) -> f32 {
     }
     if norm_x == 0.0 && norm_y == 0.0 {
         0.0
-    } else if norm_x == 0.0 || norm_y == 0.0 {
-        FLOAT32_MAX
-    } else if dot <= 0.0 {
+    } else if norm_x == 0.0 || norm_y == 0.0 || dot <= 0.0 {
         FLOAT32_MAX
     } else {
         let ratio = (norm_x * norm_y).sqrt() / dot;
@@ -420,9 +418,7 @@ pub fn alternative_hellinger(x: &[f32], y: &[f32]) -> f32 {
     }
     if l1_norm_x == 0.0 && l1_norm_y == 0.0 {
         0.0
-    } else if l1_norm_x == 0.0 || l1_norm_y == 0.0 {
-        FLOAT32_MAX
-    } else if result <= 0.0 {
+    } else if l1_norm_x == 0.0 || l1_norm_y == 0.0 || result <= 0.0 {
         FLOAT32_MAX
     } else {
         ((l1_norm_x * l1_norm_y).sqrt() / result).log2()

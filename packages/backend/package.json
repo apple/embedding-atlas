@@ -9,7 +9,7 @@
   },
   "devDependencies": {
     "@embedding-atlas/viewer": "*",
-    "anywidget": "^0.9.21",
+    "anywidget": "^0.11.0",
     "streamlit-component-lib": "^2.0.0",
     "svelte-check": "^4.4.5",
     "vite": "^8.0.1"

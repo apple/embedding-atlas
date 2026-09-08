@@ -16,7 +16,8 @@ const href = computed(
 
 <template>
   <a :href="withBase(href)" target="_blank" class="example-item">
-    <img :src="withBase(image)" />
+    <img class="light-only" :src="withBase(image.light)" />
+    <img class="dark-only" :src="withBase(image.dark)" />
     <div class="example-item-title">{{ props.title }}</div>
     <div class="example-item-details">{{ props.details }}</div>
   </a>

@@ -26,8 +26,15 @@
 // Falls back to the upstream ``restConnector`` for non-arrow queries
 // (json/exec) where the response is small.
 
-import { restConnector, type Connector } from "@uwdata/mosaic-core";
-import { tableFromIPC } from "@uwdata/flechette";
+import {
+  restConnector,
+  type ArrowQueryRequest,
+  type Connector,
+  type ConnectorQueryRequest,
+  type ExecQueryRequest,
+  type JSONQueryRequest,
+} from "@uwdata/mosaic-core";
+import { tableFromIPC, type Table } from "@uwdata/flechette";
 
 /** Same shape as Mosaic's ``restConnector`` options. */
 export interface StreamingRestConnectorOptions {
@@ -225,27 +232,29 @@ async function readBodyAsMessages(res: Response): Promise<Uint8Array[]> {
 export function streamingRestConnector(options: StreamingRestConnectorOptions): Connector {
   const baseConnector = restConnector({ uri: options.uri, ipc: options.ipc });
   const ipcOptions = options.ipc;
+  async function query(query: ArrowQueryRequest): Promise<Table>;
+  async function query(query: ExecQueryRequest): Promise<void>;
+  async function query(query: JSONQueryRequest): Promise<Record<string, unknown>[]>;
+  async function query(query: ConnectorQueryRequest): Promise<unknown> {
+    // Non-arrow queries (small JSON / exec) go through the upstream
+    // connector unchanged.
+    if (query.type !== "arrow") {
+      return baseConnector.query(query as any);
+    }
+    const res = await fetch(options.uri, {
+      method: "POST",
+      mode: "cors",
+      credentials: "omit",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(query),
+    });
+    if (!res.ok) {
+      throw new Error(`[atlas-stream] arrow query failed with HTTP ${res.status}: ${await res.text()}`);
+    }
+    const messages = await readBodyAsMessages(res);
+    return tableFromIPC(messages, ipcOptions);
+  }
   return {
-    query: async (query: any) => {
-      // Non-arrow queries (small JSON / exec) go through the upstream
-      // connector unchanged.
-      if (query?.type !== "arrow") {
-        return baseConnector.query(query);
-      }
-      const res = await fetch(options.uri, {
-        method: "POST",
-        mode: "cors",
-        credentials: "omit",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(query),
-      });
-      if (!res.ok) {
-        throw new Error(
-          `[atlas-stream] arrow query failed with HTTP ${res.status}: ${await res.text()}`,
-        );
-      }
-      const messages = await readBodyAsMessages(res);
-      return tableFromIPC(messages, ipcOptions);
-    },
+    query,
   };
 }

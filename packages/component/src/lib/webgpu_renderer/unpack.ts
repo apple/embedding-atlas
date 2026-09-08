@@ -164,10 +164,7 @@ export async function runUnpack(
   const CHUNK_TARGET_THREADS = 8_000_000;
   const workgroupsX = UNPACK_STRIDE / UNPACK_WG_SIZE;
   const workgroupsY = Math.max(1, Math.ceil(count / UNPACK_STRIDE));
-  const targetWorkgroupsPerChunk = Math.max(
-    1,
-    Math.floor(CHUNK_TARGET_THREADS / UNPACK_STRIDE),
-  );
+  const targetWorkgroupsPerChunk = Math.max(1, Math.floor(CHUNK_TARGET_THREADS / UNPACK_STRIDE));
   const numChunks = Math.max(1, Math.ceil(workgroupsY / targetWorkgroupsPerChunk));
   const chunkSizeY = Math.ceil(workgroupsY / numChunks);
 

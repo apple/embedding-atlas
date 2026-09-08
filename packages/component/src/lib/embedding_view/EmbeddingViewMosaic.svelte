@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
-  import { imageToDataUrl } from "@embedding-atlas/utils";
+  import { deepEquals, imageToDataUrl } from "@embedding-atlas/utils";
   import { coordinator as defaultCoordinator, isSelection, makeClient, type MosaicClient } from "@uwdata/mosaic-core";
   import * as SQL from "@uwdata/mosaic-sql";
   import { untrack } from "svelte";
@@ -16,7 +16,8 @@
 
   import EmbeddingViewImpl from "./EmbeddingViewImpl.svelte";
 
-  import { deepEquals, type Point, type Rectangle, type ViewportState } from "../utils.js";
+  import { ImageSummarizer } from "../image_summarizer/image_summarizer.js";
+  import { type Point, type Rectangle, type ViewportState } from "../utils.js";
   import type { EmbeddingViewMosaicProps } from "./embedding_view_mosaic_api.js";
   import { IMAGE_LABEL_SIZE } from "./labels.js";
   import {
@@ -160,10 +161,11 @@
               .then((real) => {
                 if (didDestroy) return;
                 const dt = performance.now() - t0;
-                console.info(
-                  `[atlas-stage] deferred-density-refine done in ${dt.toFixed(0)}ms`,
-                  { categoryCount: real.categoryCount, totalCount: real.totalCount, maxDensity: real.maxDensity },
-                );
+                console.info(`[atlas-stage] deferred-density-refine done in ${dt.toFixed(0)}ms`, {
+                  categoryCount: real.categoryCount,
+                  totalCount: real.totalCount,
+                  maxDensity: real.maxDensity,
+                });
                 totalCount = real.totalCount || totalCount;
                 maxDensity = real.maxDensity;
                 categoryCount = real.categoryCount;
@@ -225,8 +227,8 @@
       // does, advertise it through ``yIsAlreadyMercator`` so
       // ``EmbeddingViewImpl`` skips its 5.9 s JS Mercator loop on 322 M
       // rows.
-      const precomputedYIsMerc = packed && precomputedCols != null
-        && (precomputedCols as { y_is_mercator?: boolean }).y_is_mercator === true;
+      const precomputedYIsMerc =
+        packed && precomputedCols != null && (precomputedCols as { y_is_mercator?: boolean }).y_is_mercator === true;
       yIsAlreadyMercator = gisProjectInQuery || precomputedYIsMerc;
       client = makeClient({
         coordinator: deps.coordinator,
@@ -286,7 +288,7 @@
           // server-side ``combine_chunks`` we get a single chunk, and
           // toArray returns the underlying buffer view at zero cost.
           const t0 = performance.now();
-          const numRowsHint = (data && typeof data.numRows === "number") ? data.numRows : -1;
+          const numRowsHint = data && typeof data.numRows === "number" ? data.numRows : -1;
           console.info(`[atlas-stage] scatter-queryResult arrived numRows=${numRowsHint} at ${t0.toFixed(0)}`);
           // Drop the previous batch's heap refs BEFORE allocating the next.
           // Each ``getChild().toArray()`` materialises a fresh contiguous
@@ -323,10 +325,7 @@
           // apps/desktop/electron/main.ts). Gated by row count so the
           // dev/standalone packages (where ``gc`` is never exposed) and
           // small datasets pay no cost.
-          if (
-            numRowsHint > 50_000_000 &&
-            typeof (globalThis as any).gc === "function"
-          ) {
+          if (numRowsHint > 50_000_000 && typeof (globalThis as any).gc === "function") {
             (globalThis as any).gc();
           }
           let xArray, yArray, categoryArray;
@@ -395,7 +394,12 @@
           updateSelection(null);
           const n = (xArray as any)?.length ?? 0;
           if (n > 1_000_000) {
-            const mb = (((xArray as any)?.byteLength ?? 0) + ((yArray as any)?.byteLength ?? 0) + (categoryArray?.byteLength ?? 0)) / 1024 / 1024;
+            const mb =
+              (((xArray as any)?.byteLength ?? 0) +
+                ((yArray as any)?.byteLength ?? 0) +
+                (categoryArray?.byteLength ?? 0)) /
+              1024 /
+              1024;
             const path = nextXPacked != null ? "u32-direct" : "f32";
             console.log(
               `[scatter] ${n.toLocaleString()} pts (${mb.toFixed(0)} MB JS heap, ${path}) | toArray=${(t1 - t0).toFixed(0)} ms | typed-array-coerce=${(t2 - t1).toFixed(0)} ms`,
@@ -671,55 +675,73 @@
   }
 
   async function queryClusterImageLabels(clusters: Rectangle[][]): Promise<(LabelContent | null)[]> {
-    if (image == null || importance == null) {
+    if (image == null || importance == null || identifier == null) {
       return [];
     }
-    // Build a VALUES table of all rectangles with their region index
-    let values = clusters
-      .flatMap((rects, regionId) =>
-        rects.map(
-          (r) => SQL.sql`(
-            ${SQL.literal(regionId)},
-            ${SQL.literal(r.xMin)}, ${SQL.literal(r.xMax)},
-            ${SQL.literal(r.yMin)}, ${SQL.literal(r.yMax)}
-          )`,
-        ),
-      )
-      .join(", ");
-    let sql = `
-      WITH rectangles(regionId, xMin, xMax, yMin, yMax) AS (VALUES ${values})
-      SELECT
-        r.regionId AS regionId,
-        arg_max(${SQL.column(image, "t")}, ${SQL.column(importance, "t")}) AS bestImage,
-        arg_max(${SQL.column(x, "t")}, ${SQL.column(importance, "t")}) AS bestX,
-        arg_max(${SQL.column(y, "t")}, ${SQL.column(importance, "t")}) AS bestY
-      FROM rectangles r
-      JOIN "${table}" AS t ON
-        ${SQL.column(x, "t")} BETWEEN r.xMin AND r.xMax AND
-        ${SQL.column(y, "t")} BETWEEN r.yMin AND r.yMax
-      GROUP BY r.regionId
-      ORDER BY r.regionId
-    `;
-    let result = await coordinator.query(sql);
-    let rows = result.toArray();
+    let idColumn = identifier;
 
-    // Map results back by region_id, measuring image dimensions for aspect ratio
-    let output: ({
-      image: string;
-      width: number;
-      height: number;
-      x: number;
-      y: number;
-    } | null)[] = clusters.map(() => null);
+    let output: ({ image: string; width: number; height: number; x: number; y: number } | null)[] = clusters.map(
+      () => null,
+    );
+    let summarizer = new ImageSummarizer({ regions: clusters });
 
-    for (let i = 0; i < rows.length; i++) {
-      let { bestImage, bestX, bestY, regionId } = rows[i];
+    let normId = (v: any) => (typeof v == "bigint" ? Number(v) : v);
+
+    // Stream the points from the database in chunks so we neither pull every
+    // column at once nor block the main thread for too long.
+    let start = 0;
+    let chunkSize = 10000;
+    while (true) {
+      let r = await coordinator.query(
+        SQL.Query.from(table)
+          .select({
+            x: SQL.sql`${SQL.column(x)}::DOUBLE`,
+            y: SQL.sql`${SQL.column(y)}::DOUBLE`,
+            importance: SQL.sql`${SQL.column(importance)}::DOUBLE`,
+            id: SQL.column(idColumn),
+          })
+          .offset(start)
+          .limit(chunkSize),
+      );
+      let ids = r.getChild("id").toArray();
+      summarizer.add({
+        x: r.getChild("x").toArray(),
+        y: r.getChild("y").toArray(),
+        importance: r.getChild("importance").toArray(),
+        id: ids,
+      });
+      if (ids.length < chunkSize) {
+        break;
+      }
+      start += chunkSize;
+    }
+    let winners = summarizer.summarize();
+    let winnerIds = Array.from(new Set(winners.filter((w) => w != null).map((w) => normId(w!.id))));
+    let idToImage = new Map<any, any>();
+    if (winnerIds.length > 0) {
+      let r = await coordinator.query(
+        SQL.Query.from(table)
+          .select({ id: SQL.column(idColumn), image: SQL.column(image) })
+          .where(
+            SQL.isIn(
+              SQL.column(idColumn),
+              winnerIds.map((v) => SQL.literal(v)),
+            ),
+          ),
+      );
+      for (let row of r) {
+        idToImage.set(normId(row.id), row.image);
+      }
+    }
+    for (let regionId = 0; regionId < winners.length; regionId++) {
+      let winner = winners[regionId];
+      if (winner == null) continue;
+      let bestImage = idToImage.get(normId(winner.id));
       if (bestImage == null) continue;
       let dataUrl = imageToDataUrl(bestImage);
       if (dataUrl == null) continue;
-      output[regionId] = { image: dataUrl, width: 0, height: 0, x: bestX, y: bestY };
+      output[regionId] = { image: dataUrl, width: 0, height: 0, x: winner.x, y: winner.y };
     }
-
     await Promise.all(
       output.map(async (item) => {
         if (item == null) {
@@ -732,7 +754,6 @@
         item.height = height * scale;
       }),
     );
-
     return output;
   }
 
@@ -764,9 +785,7 @@
   yIsAlreadyMercator={yIsAlreadyMercator}
   totalCount={totalCount}
   maxDensity={maxDensity}
-  categoryCount={categoryColors != null && categoryColors.length > 1
-    ? categoryColors.length
-    : categoryCount}
+  categoryCount={categoryColors != null && categoryColors.length > 1 ? categoryColors.length : categoryCount}
   categoryColors={categoryColors}
   defaultViewportState={defaultViewportState}
   querySelection={querySelection}
@@ -786,4 +805,5 @@
     onRangeSelection?.(v);
   }}
   cache={cache}
+  cacheIdentifier={{ table, x, y, text }}
 />

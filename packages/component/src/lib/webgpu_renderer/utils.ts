@@ -1,17 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 export function isWebGPUAvailable(): boolean {
-  if (
-    navigator.gpu == undefined ||
-    navigator.gpu.requestAdapter == undefined ||
-    navigator.gpu.wgslLanguageFeatures == undefined
-  ) {
-    return false;
-  }
-  if (!navigator.gpu.wgslLanguageFeatures.has("unrestricted_pointer_parameters")) {
-    return false;
-  }
-  return true;
+  return typeof navigator !== "undefined" && navigator.gpu != undefined && navigator.gpu.requestAdapter != undefined;
 }
 
 export interface WebGPUDeviceResult {
@@ -37,10 +27,14 @@ export async function requestWebGPUDevice(): Promise<WebGPUDeviceResult | null> 
   const limitPresets: (null | number)[] = [null, 512, 256, 128, 64, 32];
   function buildDescriptor(sz: number | null, features: GPUFeatureName[]): GPUDeviceDescriptor {
     const maxBuf = sz == null ? adapter!.limits.maxBufferSize : Math.min(sz * 1048576, adapter!.limits.maxBufferSize);
-    const maxStor = sz == null
-      ? adapter!.limits.maxStorageBufferBindingSize
-      : Math.min(sz * 1048576, adapter!.limits.maxStorageBufferBindingSize);
-    return { requiredLimits: { maxBufferSize: maxBuf, maxStorageBufferBindingSize: maxStor }, requiredFeatures: features };
+    const maxStor =
+      sz == null
+        ? adapter!.limits.maxStorageBufferBindingSize
+        : Math.min(sz * 1048576, adapter!.limits.maxStorageBufferBindingSize);
+    return {
+      requiredLimits: { maxBufferSize: maxBuf, maxStorageBufferBindingSize: maxStor },
+      requiredFeatures: features,
+    };
   }
 
   // Try shader-f16 first (half the blur-buffer memory, small perf win on
@@ -81,10 +75,7 @@ declare global {
   }
 }
 
-function installGpuErrorObservability(
-  device: GPUDevice,
-  meta: { useF16: boolean; sizePresetMiB: number | null },
-) {
+function installGpuErrorObservability(device: GPUDevice, meta: { useF16: boolean; sizePresetMiB: number | null }) {
   if (typeof window === "undefined") return;
   if (!Array.isArray(window.__atlasGpuErrors)) window.__atlasGpuErrors = [];
   window.__atlasGpuDeviceInfo = { ...meta, t: performance.now() };

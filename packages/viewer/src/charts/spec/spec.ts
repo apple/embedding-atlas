@@ -8,7 +8,7 @@ export type MarkType = "bar" | "rect" | "line" | "area" | "point" | "rule";
 /** Field from the data table, can be a column name or a SQL expression */
 export type SQLField = string | { sql: string };
 
-/** Table name or SQL expression that produces a table */
+/** Table name or SQL expression that produces a table. In SQL expression, you can refer to the current filter predicate with $filter. */
 export type SQLTable = string | { sql: string };
 
 /** Data value (a value in the data domain, which can be mapped to the visual domain through a scale) */
@@ -82,7 +82,18 @@ export type Encoding =
 /** Mark dimension for width and height */
 export type Dimension = { gap: number; clampToRatio?: number } | { ratio: number } | number;
 
-/** Mark style */
+/**
+ * Mark style
+ *
+ * For colors such as fillColor, strokeColor, you may use colors from the theme with a $ prefix, including:
+ * - $markColor
+ * - $markColorFade
+ * - $markColorGray
+ * - $markColorGrayFade
+ * - $ruleColor
+ * - $gridColor
+ * - $labelColor
+ */
 export interface MarkStyle {
   /** Fill color. If `null`, disable fill. Default is based on mark type. */
   fillColor?: string | null;

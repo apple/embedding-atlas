@@ -10,8 +10,7 @@ import {
   type Matrix3,
   type Vector4,
 } from "../matrix.js";
-import type { DensityMap, EmbeddingRenderer, EmbeddingRendererProps, RenderMode } from "../renderer_interface.js";
-import type { ViewportState } from "../utils.js";
+import type { Point, ViewportState } from "../utils.js";
 import { Viewport } from "../viewport_utils.js";
 import { makeModuleUniforms, type ModuleUniforms } from "./uniforms.js";
 import { gpuBuffer, gpuBufferData, gpuTexture } from "./utils.js";
@@ -20,13 +19,61 @@ import { makeAccumulateCommand } from "./accumulate.js";
 import { makeBindGroups } from "./bind_groups.js";
 import { makeDownsampleCommand, makeDownsampleResources, type DownsampleConfig } from "./downsample.js";
 import { makeDrawDensityMapCommand } from "./draw_density_map.js";
-import { makeDrawPointsCommand, makeDrawPointsCompactedCommand, makeDrawPointsDownsampledCommand } from "./draw_points.js";
+import {
+  makeDrawPointsCommand,
+  makeDrawPointsCompactedCommand,
+  makeDrawPointsDownsampledCommand,
+} from "./draw_points.js";
 import { makeGammaCorrectionCommand } from "./gamma_correction.js";
 import { makeGaussianBlurCommand } from "./gaussian_blur.js";
 import { kdeConfig } from "./kde_config.js";
 import { makeUnpackPipeline, runUnpack, type UnpackPipeline } from "./unpack.js";
 
 import programCode from "./program.wgsl?raw";
+
+export type RenderMode = "points" | "density";
+
+export interface EmbeddingRendererProps {
+  mode: RenderMode;
+  colorScheme: "light" | "dark";
+
+  x: Float32Array<ArrayBuffer>;
+  y: Float32Array<ArrayBuffer>;
+  /** Optional u32-packed coordinate input. When set, `x`/`y` are ignored. */
+  xPacked?: Uint32Array<ArrayBuffer> | null;
+  yPacked?: Uint32Array<ArrayBuffer> | null;
+  coordsBoundsX?: [number, number] | null;
+  coordsBoundsY?: [number, number] | null;
+  category: Uint8Array<ArrayBuffer> | null;
+
+  categoryCount: number;
+  categoryColors: string[] | null;
+  viewportX: number;
+  viewportY: number;
+  viewportScale: number;
+  pointSize: number;
+  pointAlpha: number;
+  pointsAlpha: number;
+  densityScaler: number;
+  densityBandwidth: number;
+  densityQuantizationStep: number;
+  densityAlpha: number;
+  contoursAlpha: number;
+  gamma: number;
+  width: number;
+  height: number;
+  downsampleMaxPoints: number | null;
+  downsampleDensityWeight: number;
+  isGis: boolean;
+  skipDownsampleCompute?: boolean;
+}
+
+export interface DensityMap {
+  data: Float32Array;
+  width: number;
+  height: number;
+  coordinateAtPixel: (x: number, y: number) => Point;
+}
 
 /** Rewrite the f16-enabled WGSL program to its f32 equivalent.
  *
@@ -73,7 +120,7 @@ function f32ProgramOf(src: string): string {
     );
 }
 
-export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
+export class EmbeddingRenderer {
   readonly props: EmbeddingRendererProps;
   readonly gpuDevice: GPUDevice;
   readonly useF16: boolean;
@@ -212,6 +259,7 @@ export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
     );
   }
 
+  /** Set renderer props. Returns true if a render is needed. */
   setProps(newProps: Partial<EmbeddingRendererProps>): boolean {
     let needsRender = false;
     let key: keyof EmbeddingRendererProps;
@@ -248,9 +296,7 @@ export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
       this.lastCoordsBoundsX = null;
       this.lastCoordsBoundsY = null;
     }
-    const count = usePacked
-      ? (this.props.xPacked!.length)
-      : this.props.x.length;
+    const count = usePacked ? this.props.xPacked!.length : this.props.x.length;
     this.renderInputs.count.value = count;
     this.renderInputs.mode.value = this.props.mode;
     this.renderInputs.colorScheme.value = this.props.colorScheme;
@@ -397,14 +443,17 @@ export class EmbeddingRendererWebGPU implements EmbeddingRenderer {
     return this._unpackInFlight;
   }
 
+  /** Render */
   render(): void {
     this.renderer.value(this.props, this.context.getCurrentTexture().createView());
   }
 
+  /** Destroy the renderer and free any resource */
   destroy(): void {
     this.df.destroy();
   }
 
+  /** Produce a density map */
   async densityMap(width: number, height: number, radius: number, viewportState: ViewportState): Promise<DensityMap> {
     let subgraph = this.df.subgraph();
     let { x, y, scale: s } = viewportState;
@@ -726,7 +775,7 @@ function makeRenderCommand(
         const effectiveMaxPoints = userMaxPoints;
         const useDownsampling = effectiveMaxPoints !== null && count > effectiveMaxPoints;
 
-        if (count > 1_000_000 && !((globalThis as any).__atlasRenderDiagLogged)) {
+        if (count > 1_000_000 && !(globalThis as any).__atlasRenderDiagLogged) {
           (globalThis as any).__atlasRenderDiagLogged = true;
           console.log(
             `[atlas-renderdiag] count=${count} useDownsampling=${useDownsampling} effectiveMaxPoints=${effectiveMaxPoints} mode=${props.mode} densityWeight=${props.downsampleDensityWeight} skipDownsample=${props.skipDownsampleCompute} usePacked=${props.xPacked != null}`,
@@ -734,8 +783,7 @@ function makeRenderCommand(
         }
 
         if (useDownsampling) {
-          const wantsDensityOverlay =
-            props.mode == "density" && (props.densityAlpha > 0 || props.contoursAlpha > 0);
+          const wantsDensityOverlay = props.mode == "density" && (props.densityAlpha > 0 || props.contoursAlpha > 0);
           const wantsDensityWeighting = props.downsampleDensityWeight > 0;
 
           // accumulate + blur populate ``blur_buffer`` which the

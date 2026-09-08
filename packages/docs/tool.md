@@ -1,4 +1,4 @@
-# Command Line Utility
+# Command Line Tool
 
 The Python package contains a command-line utility for you to quickly explore large text datasets with metadata.
 
@@ -106,7 +106,7 @@ df = await async_compute_projection(df, inputs="text_column", modality="text",
 
 ## MCP Support
 
-The command line utility supports Model Context Protocol (MCP). You can enable it with the `--mcp` flag. When running, it exposes an MCP server that allows AI agents to query the data schema, run SQL queries, create and modify charts, adjust the layout, and capture screenshots.
+The command line tool supports Model Context Protocol (MCP). You can enable it with the `--mcp` flag. When running, it exposes an MCP server that allows AI agents to query the data schema, run SQL queries, create and modify charts, adjust the layout, and capture screenshots.
 
 ## Usage
 

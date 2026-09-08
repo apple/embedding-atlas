@@ -61,11 +61,7 @@
     color: #78350f;
     border-bottom: 1px solid #fde68a;
     font-size: 0.82rem;
-    font-family:
-      -apple-system,
-      BlinkMacSystemFont,
-      "Segoe UI",
-      sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
   :global(html.dark) .wgb,
   :global(body.dark) .wgb {

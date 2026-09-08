@@ -13,12 +13,12 @@
   import { IconClose } from "../assets/icons.js";
 
   import type { EmbeddingAtlasProps, EmbeddingAtlasState } from "../api.js";
-  import { computeEmbedding } from "../embedding/index.js";
   import { systemColorScheme } from "../utils/color_scheme.js";
   import { initializeDatabase } from "../utils/database.js";
   import { downloadBuffer } from "../utils/download.js";
   import { exportMosaicSelection, type ExportFormat } from "../utils/mosaic_exporter.js";
   import { getQueryPayload, setQueryPayload } from "../utils/query_payload.js";
+  import { computeProjection } from "./compute_projection.js";
   import { importDataTable } from "./import_data.js";
   import { Logger } from "./logging.js";
 
@@ -116,17 +116,13 @@
           let extracted = false;
           try {
             await coordinator.exec(`INSTALL spatial; LOAD spatial;`);
-            const describeRows = (await coordinator.query(
-              `DESCRIBE TABLE dataset`,
-            )) as unknown as { column_name: string; column_type: string }[];
-            const geomType = Array.from(describeRows).find(
-              (r) => r.column_name === geomCol,
-            )?.column_type;
-            const isNativeGeometry =
-              typeof geomType === "string" && geomType.toUpperCase().startsWith("GEOMETRY");
-            const geomExpr = isNativeGeometry
-              ? `"${geomCol}"`
-              : `ST_GeomFromWKB("${geomCol}")`;
+            const describeRows = (await coordinator.query(`DESCRIBE TABLE dataset`)) as unknown as {
+              column_name: string;
+              column_type: string;
+            }[];
+            const geomType = Array.from(describeRows).find((r) => r.column_name === geomCol)?.column_type;
+            const isNativeGeometry = typeof geomType === "string" && geomType.toUpperCase().startsWith("GEOMETRY");
+            const geomExpr = isNativeGeometry ? `"${geomCol}"` : `ST_GeomFromWKB("${geomCol}")`;
             await coordinator.exec(
               `ALTER TABLE dataset ADD COLUMN IF NOT EXISTS "${xCol}" DOUBLE;
                ALTER TABLE dataset ADD COLUMN IF NOT EXISTS "${yCol}" DOUBLE;
@@ -142,9 +138,7 @@
           // Fallback: parse WKB in JavaScript, write back as a new table, then join
           if (!extracted) {
             logger.info("Parsing WKB geometry in browser...");
-            const rows = await coordinator.query(
-              `SELECT __row_index__, "${geomCol}" AS geom FROM dataset`,
-            );
+            const rows = await coordinator.query(`SELECT __row_index__, "${geomCol}" AS geom FROM dataset`);
             const lons: number[] = [];
             const lats: number[] = [];
             const ids: number[] = [];
@@ -198,7 +192,7 @@
         let x = input + "_proj_x";
         let y = input + "_proj_y";
         let msg = logger.info(`Embedding: Initialize`);
-        await computeEmbedding({
+        await computeProjection({
           coordinator: coordinator,
           table: "dataset",
           idColumn: "__row_index__",
@@ -207,6 +201,7 @@
           xColumn: x,
           yColumn: y,
           model: model,
+          umapOptions: spec.embedding.compute.umapOptions,
           callback: (message, progress) => {
             msg.update({ text: `Embedding: ${message}`, progress: progress });
           },

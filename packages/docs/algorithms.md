@@ -33,7 +33,7 @@ After initialization, use the `run` method to update the embedding coordinates:
 
 ```js
 // Run the algorithm to completion.
-umap.run();
+await umap.run();
 ```
 
 At any time, you can get the current embedding by calling the `embedding` method.

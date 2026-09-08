@@ -15,19 +15,19 @@ impl DisjointSet2D {
             parent[(x, y)] = (x, y);
         }
         DisjointSet2D {
-            width: width,
-            height: height,
-            parent: parent,
+            width,
+            height,
+            parent,
         }
     }
 
     pub fn find_parent(&mut self, location: (i32, i32)) -> (i32, i32) {
         if self.parent[location] == location {
-            return location;
+            location
         } else {
             let p = self.find_parent(self.parent[location]);
             self.parent[location] = p;
-            return p;
+            p
         }
     }
 

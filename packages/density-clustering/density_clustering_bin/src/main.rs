@@ -59,7 +59,7 @@ pub fn main() {
             let polygons_f: Vec<Vec<(f64, f64)>> = polygons
                 .iter()
                 .map(|polygon| {
-                    let mut polygon_f =
+                    let mut polygon_f: Vec<(f64, f64)> =
                         polygon.iter().map(|&(x, y)| (x as f64, y as f64)).collect();
                     polygon_f = smooth_polygon(&polygon_f);
                     polygon_f
@@ -79,7 +79,7 @@ pub fn main() {
         bw,
         &OutputJSON {
             summaries: clusters,
-            boundaries: boundaries,
+            boundaries,
         },
     )
     .unwrap();

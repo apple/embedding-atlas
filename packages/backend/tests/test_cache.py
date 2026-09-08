@@ -1,3 +1,5 @@
+# Copyright (c) 2025 Apple Inc. Licensed under MIT License.
+
 import numpy as np
 import pytest
 from embedding_atlas.cache import (

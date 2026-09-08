@@ -7,6 +7,12 @@ export interface EmbeddingSpec {
   title?: string;
 
   data: {
+    /** The data table, leave undefined for the default table. */
+    table?: string;
+
+    /** The row id column, must be set when using a non-default table. */
+    id?: string;
+
     x: string;
     y: string;
     text?: string | null;
@@ -14,8 +20,8 @@ export interface EmbeddingSpec {
     importance?: string | null;
     category?: string | null;
     isGis?: boolean;
-    /** Axis-aligned bounds for (x, y). When set, the scatter query packs
-     *  coordinates as u16 on the wire — see `EmbeddingViewMosaic`. */
+    /** Axis-aligned bounds for (x, y). When set, the scatter query can pack
+     *  coordinates on the wire — see `EmbeddingViewMosaic`. */
     bounds?: { x: [number, number]; y: [number, number] } | null;
     /** Names of pre-computed u16-quantised x/y columns on the source
      *  table. When set, the scatter query is a pure scan — no per-row
@@ -35,6 +41,7 @@ export interface EmbeddingSpec {
       rowCount?: number;
       skipDeferredRefine?: boolean;
     } | null;
+    neighbors?: string | null;
   };
 
   mode?: "points" | "density";

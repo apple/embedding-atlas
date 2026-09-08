@@ -1,46 +1,16 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import { connectWorker, type WorkerProxy } from "@embedding-atlas/utils";
 import type { Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 
 import type { Searcher } from "../api.js";
+import type { SearchIndex } from "./search.worker.js";
 
-class SearchWorkerAPI {
-  worker: Worker;
-  callbacks: Map<string, (data: any) => void>;
-
-  constructor() {
-    this.worker = new Worker(new URL("./search.worker.js", import.meta.url), { type: "module" });
-    this.callbacks = new Map();
-    this.worker.onmessage = (e) => {
-      let cb = this.callbacks.get(e.data.identifier);
-      if (cb != null) {
-        this.callbacks.delete(e.data.identifier);
-        cb(e.data);
-      }
-    };
-  }
-
-  rpc(message: any): Promise<any> {
-    return new Promise((resolve, _) => {
-      let identifier = new Date().getTime() + "-" + Math.random();
-      this.callbacks.set(identifier, resolve);
-      this.worker.postMessage({ ...message, identifier: identifier });
-    });
-  }
-
-  async clear() {
-    await this.rpc({ type: "clear" });
-  }
-
-  async addPoints(points: { id: string | number; text: string }[]) {
-    await this.rpc({ type: "points", points: points });
-  }
-
-  async query(query: string, limit: number): Promise<string[]> {
-    let data = await this.rpc({ type: "query", query: query, limit: limit });
-    return data.result;
-  }
+async function createSearchIndex(): Promise<WorkerProxy<SearchIndex>> {
+  let worker = new Worker(new URL("./search.worker.js", import.meta.url), { type: "module" });
+  let conn = await connectWorker(worker);
+  return conn.create<SearchIndex>("SearchIndex");
 }
 
 export class FullTextSearcher implements Searcher {
@@ -48,7 +18,7 @@ export class FullTextSearcher implements Searcher {
   table: string;
   columns: { text: string; id: string };
 
-  backend: SearchWorkerAPI;
+  backend: Promise<WorkerProxy<SearchIndex>>;
   currentIndex: { predicate: string | null; promise: Promise<void> } | null = null;
 
   constructor(
@@ -63,7 +33,7 @@ export class FullTextSearcher implements Searcher {
     this.table = table;
     this.columns = columns;
     this.currentIndex = null;
-    this.backend = new SearchWorkerAPI();
+    this.backend = createSearchIndex();
   }
 
   predicateString(predicate: any | null): string | null {
@@ -93,8 +63,9 @@ export class FullTextSearcher implements Searcher {
         FROM ${this.table}
       `);
       }
-      await this.backend.clear();
-      await this.backend.addPoints(Array.from(result));
+      let backend = await this.backend;
+      await backend.clear();
+      await backend.addPoints(Array.from(result));
     };
 
     let predicateString = this.predicateString(predicate);
@@ -119,7 +90,8 @@ export class FullTextSearcher implements Searcher {
     options?.onStatus?.("Indexing...");
     await this.buildIndexIfNeeded(predicate);
     options?.onStatus?.("Searching...");
-    let resultIDs = await this.backend.query(query, limit);
+    let backend = await this.backend;
+    let resultIDs = await backend.query(query, limit);
     return resultIDs.map((id) => ({ id: id }));
   }
 }
@@ -136,21 +108,13 @@ export interface SearchResultItem {
 export async function querySearchResultItems(
   coordinator: Coordinator,
   table: string,
-  columns: { id: string; x?: string | null; y?: string | null; text?: string | null },
+  idColumn: string,
   additionalFields: Record<string, any> | null,
   predicate: string | null,
   items: { id: any; distance?: number }[],
 ): Promise<SearchResultItem[]> {
-  let fieldExpressions: string[] = [`${SQL.column(columns.id, table)} AS id`];
-  if (columns.x) {
-    fieldExpressions.push(`${SQL.column(columns.x, table)} AS x`);
-  }
-  if (columns.y) {
-    fieldExpressions.push(`${SQL.column(columns.y, table)} AS y`);
-  }
-  if (columns.text) {
-    fieldExpressions.push(`${SQL.column(columns.text, table)} AS text`);
-  }
+  let fieldExpressions: string[] = [`${SQL.column(idColumn, table)} AS id`];
+
   let fields = additionalFields ?? {};
   for (let key in fields) {
     let spec = fields[key];
@@ -172,13 +136,13 @@ export async function querySearchResultItems(
     SELECT
       ${fieldExpressions.join(", ")}
     FROM (
-      SELECT ${SQL.column(columns.id, table)} AS __search_result_id__
+      SELECT ${SQL.column(idColumn, table)} AS __search_result_id__
       FROM ${table}
       WHERE
-        ${SQL.column(columns.id, table)} IN [${ids.map((x) => SQL.literal(x)).join(", ")}]
+        ${SQL.column(idColumn, table)} IN [${ids.map((x) => SQL.literal(x)).join(", ")}]
         ${predicate ? `AND (${predicate})` : ``}
     )
-    LEFT JOIN ${table} ON ${SQL.column(columns.id, table)} = __search_result_id__
+    LEFT JOIN ${table} ON ${SQL.column(idColumn, table)} = __search_result_id__
   `);
 
   let result = Array.from(r).map((x: any): any => {
@@ -224,29 +188,6 @@ export function resolveSearcher(options: {
     result.vectorSearch = searcher.vectorSearch.bind(searcher);
   }
 
-  if (searcher?.nearestNeighbors != null) {
-    result.nearestNeighbors = searcher.nearestNeighbors.bind(searcher);
-  } else if (neighborsColumn != null) {
-    // Search with pre-computed nearest neighbors.
-    result.nearestNeighbors = async (id: any): Promise<{ id: any; distance: number }[]> => {
-      let q = SQL.Query.from(table)
-        .select({ knn: SQL.column(neighborsColumn) })
-        .where(SQL.eq(SQL.column(idColumn), SQL.literal(id)));
-      let result = await coordinator.query(q);
-      let items: any[] = Array.from(result);
-      if (items.length != 1) {
-        return [];
-      }
-      let { distances, ids } = items[0].knn;
-      let r = Array.from(ids)
-        .map((nid, i) => {
-          return { id: nid, distance: distances[i] };
-        })
-        .filter((x) => x.id != id);
-      return r;
-    };
-  }
-
   return result;
 }
 
@@ -266,37 +207,15 @@ export async function performSearch({
   onStatus: (status: string) => void;
 }): Promise<{ id: any; distance?: number }[]> {
   onStatus("Searching...");
-
-  let searcherResult: { id: any; distance?: number }[] = [];
-  let highlight: string = "";
-  let label = query.toString();
-
   if (mode == "full-text" && searcher.fullTextSearch != null) {
     query = query.trim();
-    searcherResult = await searcher.fullTextSearch(query, {
-      limit: limit,
-      predicate: predicate,
-      onStatus: onStatus,
-    });
-    highlight = query;
+    return await searcher.fullTextSearch(query, { limit: limit, predicate: predicate, onStatus: onStatus });
   } else if (mode == "vector" && searcher.vectorSearch != null) {
     query = query.trim();
-    searcherResult = await searcher.vectorSearch(query, {
-      limit: limit,
-      predicate: predicate,
-      onStatus: onStatus,
-    });
-    highlight = query;
-  } else if (mode == "neighbors" && searcher.nearestNeighbors != null) {
-    label = "Neighbors of #" + query.toString();
-    searcherResult = await searcher.nearestNeighbors(query, {
-      limit: limit,
-      predicate: predicate,
-      onStatus: onStatus,
-    });
+    return await searcher.vectorSearch(query, { limit: limit, predicate: predicate, onStatus: onStatus });
+  } else if (mode == "raw") {
+    return query.items;
   } else {
     return [];
   }
-
-  return searcherResult;
 }
