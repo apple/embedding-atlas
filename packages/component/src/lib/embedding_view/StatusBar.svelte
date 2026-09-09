@@ -26,9 +26,9 @@
 </script>
 
 <div
-  style:font-size="12px"
-  style:line-height="20px"
-  style:height="20px"
+  style:font-size="calc(12px * var(--ea-toolbar-scale, 1))"
+  style:line-height="calc(20px * var(--ea-toolbar-scale, 1))"
+  style:height="calc(20px * var(--ea-toolbar-scale, 1))"
   style:color={resolvedTheme.statusBarTextColor}
   style:position="absolute"
   style:bottom="0px"
@@ -43,8 +43,8 @@
     style:flex="none"
     style:display="flex"
     style:flex-direction="row"
-    style:gap="4px"
-    style:padding="0px 4px"
+    style:gap="calc(4px * var(--ea-toolbar-scale, 1))"
+    style:padding="0px calc(4px * var(--ea-toolbar-scale, 1))"
     style:border-radius="2px"
     style:background={resolvedTheme.statusBarBackgroundColor}
   >
@@ -60,8 +60,8 @@
     style:display="flex"
     style:flex-direction="row"
     style:align-items="center"
-    style:gap="4px"
-    style:padding="0px 4px"
+    style:gap="calc(4px * var(--ea-toolbar-scale, 1))"
+    style:padding="0px calc(4px * var(--ea-toolbar-scale, 1))"
     style:border-radius="2px"
     style:background={resolvedTheme.statusBarBackgroundColor}
   >
@@ -75,7 +75,9 @@
       >
         {resolvedTheme.brandingLink.text}
       </a>
-      <div style="border-right: 1px solid currentColor; margin: 4px 2px; opacity: 0.3; width: 0; height: 10px"></div>
+      <div
+        style="border-right: 1px solid currentColor; margin: calc(4px * var(--ea-toolbar-scale, 1)) calc(2px * var(--ea-toolbar-scale, 1)); opacity: 0.3; width: 0; height: calc(10px * var(--ea-toolbar-scale, 1))"
+      ></div>
     {/if}
     <Button
       icon="marquee"
@@ -89,9 +91,13 @@
       title="Toggle lasso selection mode. In normal mode, use shift + meta + drag for lasso selection."
       onClick={() => onSelectionMode(selectionMode == "lasso" ? "none" : "lasso")}
     />
-    <div style="border-right: 1px solid currentColor; margin: 4px 2px; opacity: 0.3; width: 0; height: 10px"></div>
+    <div
+      style="border-right: 1px solid currentColor; margin: calc(4px * var(--ea-toolbar-scale, 1)) calc(2px * var(--ea-toolbar-scale, 1)); opacity: 0.3; width: 0; height: calc(10px * var(--ea-toolbar-scale, 1))"
+    ></div>
     <MapScaleLegend distancePerPoint={distancePerPoint} />
-    <div style="border-right: 1px solid currentColor; margin: 4px 2px; opacity: 0.3; width: 0; height: 10px"></div>
+    <div
+      style="border-right: 1px solid currentColor; margin: calc(4px * var(--ea-toolbar-scale, 1)) calc(2px * var(--ea-toolbar-scale, 1)); opacity: 0.3; width: 0; height: calc(10px * var(--ea-toolbar-scale, 1))"
+    ></div>
     <span>{pointCount.toLocaleString()} points</span>
   </div>
 </div>

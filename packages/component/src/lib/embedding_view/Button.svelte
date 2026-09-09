@@ -24,8 +24,8 @@
   style:appearance="none"
   style:background={active ? "color-mix(in srgb, currentColor 20%, transparent)" : "none"}
   style:border-radius="2px"
-  style:height="16px"
-  style:width="16px"
+  style:height="calc(16px * var(--ea-toolbar-scale, 1))"
+  style:width="calc(16px * var(--ea-toolbar-scale, 1))"
   style:padding="0"
   style:margin="0"
   style:font-family="inherit"
@@ -39,7 +39,13 @@
   onclick={onClick}
 >
   {#if icon != null}
-    <svg width="24" height="24" viewBox="0 0 24 24" style:width="14px" style:height="14px">
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      style:width="calc(14px * var(--ea-toolbar-scale, 1))"
+      style:height="calc(14px * var(--ea-toolbar-scale, 1))"
+    >
       <path d={icons[icon]} style:fill="currentColor" />
     </svg>
   {/if}
