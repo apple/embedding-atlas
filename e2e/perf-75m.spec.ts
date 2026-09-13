@@ -19,12 +19,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { type ChildProcess } from "child_process";
 import { writeFileSync, mkdirSync } from "fs";
 import path from "path";
-import {
-  startBackendServer,
-  waitForServer,
-  teardown,
-  waitForCanvas,
-} from "./helpers.js";
+import { startBackendServer, waitForServer, teardown, waitForCanvas } from "./helpers.js";
 import { E2E_CONSTANTS } from "../playwright.config.js";
 
 const PARQUET = process.env.PERF_PARQUET_FILE;
@@ -79,7 +74,43 @@ async function readPerfSummary(page: Page): Promise<PerfSummary | null> {
 }
 
 async function resetPerf(page: Page): Promise<void> {
-  await page.evaluate(() => (window as any).__atlasPerf?.reset?.());
+  await page.evaluate(() => {
+    (window as any).__atlasPerf?.reset?.();
+    (window as any).__atlasPanDbg = undefined;
+  });
+}
+
+/**
+ * Wait for every submitted instrumented WebGPU frame to reach the screen.
+ * A render is recorded when it is submitted, while the matching GPU timing
+ * is appended only after queue.onSubmittedWorkDone() resolves. Waiting only
+ * for `summary().count > 0` therefore starts the gesture in the middle of the
+ * initial full-fidelity draw when Max Points is set to All.
+ */
+async function waitForGpuIdle(page: Page): Promise<void> {
+  const deadline = Date.now() + 5 * 60 * 1000;
+  let previousCount = -1;
+  while (Date.now() < deadline) {
+    const state = await page.evaluate(() => {
+      const summary = (window as any).__atlasPerf?.summary?.();
+      return {
+        firstFramePresented: (window as any).__atlasFirstBigRenderGpuLogged === true,
+        submitted: summary?.count ?? 0,
+        completed: summary?.gpu?.count ?? 0,
+      };
+    });
+    if (
+      state.firstFramePresented &&
+      state.submitted > 0 &&
+      state.completed >= state.submitted &&
+      state.submitted === previousCount
+    ) {
+      return;
+    }
+    previousCount = state.completed >= state.submitted ? state.submitted : -1;
+    await page.waitForTimeout(500);
+  }
+  throw new Error("WebGPU queue did not become idle before the performance gesture");
 }
 
 async function gpuInfo(page: Page): Promise<unknown> {
@@ -91,7 +122,14 @@ async function gpuInfo(page: Page): Promise<unknown> {
       maxBufferSize: adapter.limits.maxBufferSize,
       maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
       maxComputeWorkgroupStorageSize: adapter.limits.maxComputeWorkgroupStorageSize,
-      adapterInfo: adapter.info ? { vendor: adapter.info.vendor, architecture: adapter.info.architecture, device: adapter.info.device, description: adapter.info.description } : null,
+      adapterInfo: adapter.info
+        ? {
+            vendor: adapter.info.vendor,
+            architecture: adapter.info.architecture,
+            device: adapter.info.device,
+            description: adapter.info.description,
+          }
+        : null,
       features: [...adapter.features],
     };
   });
@@ -132,6 +170,8 @@ async function dragPan(page: Page, seconds: number): Promise<unknown> {
     let movesFired = 0;
     let viewportChanges = 0;
     const startState = JSON.stringify((window as any).__geospatialAtlasViewport ?? null);
+    let actualDurationMs = 0;
+    let panDbgBeforeRelease: Record<string, unknown> | null = null;
 
     function fire(target: EventTarget, type: string, x: number, y: number, buttons: number) {
       const ev = new MouseEvent(type, {
@@ -156,6 +196,8 @@ async function dragPan(page: Page, seconds: number): Promise<unknown> {
       const tick = () => {
         const elapsed = (performance.now() - start) / 1000;
         if (elapsed >= seconds) {
+          actualDurationMs = performance.now() - start;
+          panDbgBeforeRelease = structuredClone((window as any).__atlasPanDbg ?? null);
           fire(window, "mouseup", cx, cy, 0);
           resolve();
           return;
@@ -181,6 +223,9 @@ async function dragPan(page: Page, seconds: number): Promise<unknown> {
       downTargetRect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
       movesFired,
       viewportChanges,
+      actualDurationMs,
+      gestureFps: actualDurationMs > 0 ? (movesFired * 1000) / actualDurationMs : 0,
+      panDbgBeforeRelease,
       startState,
       endState: (window as any).__geospatialAtlasViewport ?? null,
     };
@@ -192,13 +237,22 @@ async function dragPan(page: Page, seconds: number): Promise<unknown> {
  * collects results into a single JSON report. The configurations are
  * intentionally independent so we can compare raw effect sizes.
  */
-interface SweepConfig { tag: string; query: string; description: string; targetScale?: number }
+interface SweepConfig {
+  tag: string;
+  query: string;
+  description: string;
+  targetScale?: number;
+}
 const CONFIGS: SweepConfig[] = [
-  { tag: "world",         query: "perf=1",                              description: "world view, all opts" },
-  { tag: "region",        query: "perf=1",                              description: "region view, all opts",         targetScale: 0.5 },
-  { tag: "city",          query: "perf=1",                              description: "city view, all opts",           targetScale: 5.0 },
-  { tag: "neighborhood",  query: "perf=1",                              description: "neighborhood (50x), all opts",  targetScale: 50.0 },
-  { tag: "world-noskip",  query: "perf=1&interactiveCap=0",             description: "world A/B: adaptive disabled" },
+  { tag: "world", query: "perf=1", description: "world view, full fidelity" },
+  { tag: "region", query: "perf=1", description: "region view, full fidelity", targetScale: 0.5 },
+  { tag: "city", query: "perf=1", description: "city view, full fidelity", targetScale: 5.0 },
+  { tag: "neighborhood", query: "perf=1", description: "neighborhood, full fidelity", targetScale: 50.0 },
+  {
+    tag: "world-capped",
+    query: "perf=1&downsampleMax=4000000&densityWeight=0",
+    description: "world view, 4M representative sample",
+  },
 ];
 
 async function setViewport(page: Page, scale: number) {
@@ -226,7 +280,10 @@ async function setViewport(page: Page, scale: number) {
   await page.waitForTimeout(800);
 }
 
-async function runConfig(page: Page, config: { tag: string; query: string; description: string; targetScale?: number }) {
+async function runConfig(
+  page: Page,
+  config: { tag: string; query: string; description: string; targetScale?: number },
+) {
   console.log(`\n=== Running [${config.tag}]: ${config.description} ===`);
   await page.goto(`${BASE_URL}?${config.query}`);
   await waitForCanvas(page, 5 * 60 * 1000);
@@ -238,15 +295,22 @@ async function runConfig(page: Page, config: { tag: string; query: string; descr
     null,
     { timeout: 5 * 60 * 1000, polling: 500 },
   );
-  // Settle: let trailing initial-load frames complete.
-  await page.waitForTimeout(2000);
+  // Do not begin a gesture while the initial full-fidelity frame (or a
+  // layout-triggered follow-up frame) is still monopolising the GPU.
+  await waitForGpuIdle(page);
   if (config.targetScale != null) {
     await setViewport(page, config.targetScale);
-    await page.waitForTimeout(500);
+    await waitForGpuIdle(page);
   }
   await resetPerf(page);
   const dragInfo = await dragPan(page, PAN_SECONDS);
-  await page.waitForTimeout(500);
+  // Mouse-up submits one catch-up render and clears the CSS transform only
+  // after that frame is presented. This is both a correctness assertion and
+  // a clean boundary before the next navigation.
+  await page.waitForFunction(() => ((window as any).__atlasPanDbg?.clearedViaGpuDone ?? 0) > 0, null, {
+    timeout: 5 * 60 * 1000,
+    polling: 250,
+  });
   const panSummary = await readPerfSummary(page);
   console.log(`[${config.tag}] drag: ${JSON.stringify(dragInfo)}`);
   console.log(`[${config.tag}] pan: ${JSON.stringify(panSummary)}`);
@@ -256,19 +320,30 @@ async function runConfig(page: Page, config: { tag: string; query: string; descr
 test("75M perf sweep", async ({ page }) => {
   test.setTimeout(30 * 60 * 1000);
 
+  const fatalBrowserErrors: string[] = [];
   page.on("console", (msg) => {
     const t = msg.type();
-    if (t === "error" || t === "warning" || msg.text().includes("WebGPU") || msg.text().includes("buffer")) {
+    const message = msg.text();
+    if (/device.*lost|kIOGPU|ignored submissions|out of memory|RangeError|WebGPU.*error/i.test(message)) {
+      fatalBrowserErrors.push(message);
+    }
+    if (t === "error" || t === "warning" || message.includes("WebGPU") || message.includes("buffer")) {
       console.log(`[browser:${t}] ${msg.text()}`);
+    }
+  });
+  page.on("pageerror", (error) => fatalBrowserErrors.push(`pageerror: ${error.message}`));
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      console.log(`[browser:http-${response.status()}] ${response.url()}`);
     }
   });
 
   // Initial load — warm DuckDB, capture GPU info
+  const tLoadStart = Date.now();
   await page.goto(`${BASE_URL}?perf=1`);
   console.log("---");
   console.log("GPU info:", JSON.stringify(await gpuInfo(page), null, 2));
   console.log("---");
-  const tLoadStart = Date.now();
   await waitForCanvas(page, 5 * 60 * 1000);
   await page.waitForFunction(
     () => {
@@ -278,6 +353,7 @@ test("75M perf sweep", async ({ page }) => {
     null,
     { timeout: 5 * 60 * 1000, polling: 500 },
   );
+  await waitForGpuIdle(page);
   const loadDuration = Date.now() - tLoadStart;
   const coldSummary = await readPerfSummary(page);
   console.log(`Load to first-frame: ${loadDuration} ms`);
@@ -307,20 +383,18 @@ test("75M perf sweep", async ({ page }) => {
   // Print a table-style summary at the end so we can eyeball the deltas.
   console.log("\n========== SWEEP SUMMARY ==========");
   console.log(`load: ${loadDuration}ms  parquet: ${PARQUET}`);
-  console.log("config            fps     mean_ms  p50_ms  p95_ms  p99_ms  ds_ratio");
+  console.log("config          gesture_fps moves   gpu_ms  ds_ratio");
   for (const r of results) {
     const ps = r.panSummary;
     if (!ps) {
       console.log(`${r.config.tag.padEnd(18)} (no data)`);
       continue;
     }
-    const i = ps.interval;
+    const drag = r.dragInfo;
     console.log(
-      `${r.config.tag.padEnd(18)}${ps.fps.toFixed(1).padStart(6)}` +
-        `${i.meanMs.toFixed(1).padStart(10)}` +
-        `${i.p50Ms.toFixed(1).padStart(8)}` +
-        `${i.p95Ms.toFixed(1).padStart(8)}` +
-        `${i.p99Ms.toFixed(1).padStart(8)}` +
+      `${r.config.tag.padEnd(18)}${drag.gestureFps.toFixed(1).padStart(8)}` +
+        `${String(drag.movesFired).padStart(7)}` +
+        `${ps.gpu.meanMs.toFixed(1).padStart(9)}` +
         `${(ps.downsampleRatio * 100).toFixed(0).padStart(8)}%`,
     );
   }
@@ -329,5 +403,20 @@ test("75M perf sweep", async ({ page }) => {
   // Sanity
   for (const r of results) {
     expect(r.panSummary).not.toBeNull();
+    expect(r.dragInfo.viewportChanges, `${r.config.tag}: pan did not update the viewport`).toBeGreaterThan(
+      PAN_SECONDS * 20,
+    );
+    expect(r.dragInfo.gestureFps, `${r.config.tag}: gesture RAF stalled`).toBeGreaterThan(20);
+    const dbg = r.dragInfo.panDbgBeforeRelease;
+    expect(dbg, `${r.config.tag}: CSS-pan instrumentation missing`).not.toBeNull();
+    expect(dbg.cssPanApplied, `${r.config.tag}: CSS-pan fast path did not run`).toBeGreaterThan(PAN_SECONDS * 20);
+    expect(dbg.renderCalls, `${r.config.tag}: too many WebGPU renders during CSS-pan`).toBeLessThan(
+      Math.max(5, dbg.cssPanApplied / 5),
+    );
   }
+  expect(
+    results.find((r) => r.config.tag === "world-capped")?.panSummary?.downsampleRatio,
+    "explicit 4M cap did not exercise the downsampled renderer path",
+  ).toBe(1);
+  expect(fatalBrowserErrors, `fatal browser errors: ${JSON.stringify(fatalBrowserErrors)}`).toEqual([]);
 });
