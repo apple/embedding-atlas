@@ -106,11 +106,11 @@ You can also provide these options as `light` and/or `dark` properties, which wi
 
 ### Toolbar size
 
-The status bar at the bottom of the view (selection tools, scale legend, point count) is sized in pixels. Set the `--ea-toolbar-scale` CSS custom property on the element that contains the view to scale it proportionally, for example to make the buttons easier to hit on a touch screen:
+The status bar at the bottom of the view (selection tools, scale legend, point count) is sized in pixels. Use `toolbarScale` to scale its text, icons and spacing proportionally, for example to make the buttons easier to hit on a touch screen:
 
-```css
-.my-embedding-view {
-  --ea-toolbar-scale: 1.5;
+```ts
+{
+  toolbarScale: 1.5;
 }
 ```
 

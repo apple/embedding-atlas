@@ -3,10 +3,10 @@
   import Button from "./Button.svelte";
   import MapScaleLegend from "./MapScaleLegend.svelte";
 
-  import type { ThemeConfig } from "./theme.js";
+  import type { EmbeddingViewTheme } from "./theme.js";
 
   interface Props {
-    resolvedTheme: ThemeConfig;
+    resolvedTheme: EmbeddingViewTheme;
     statusMessage: string | null;
     pointCount: number;
     distancePerPoint: number;
@@ -23,12 +23,24 @@
     selectionMode,
     onSelectionMode,
   }: Props = $props();
+
+  let scale = $derived(resolvedTheme.toolbarScale);
 </script>
 
+{#snippet separator()}
+  <div
+    style:border-right="1px solid currentColor"
+    style:margin="{4 * scale}px {2 * scale}px"
+    style:opacity="0.3"
+    style:width="0"
+    style:height="{10 * scale}px"
+  ></div>
+{/snippet}
+
 <div
-  style:font-size="calc(12px * var(--ea-toolbar-scale, 1))"
-  style:line-height="calc(20px * var(--ea-toolbar-scale, 1))"
-  style:height="calc(20px * var(--ea-toolbar-scale, 1))"
+  style:font-size="{12 * scale}px"
+  style:line-height="{20 * scale}px"
+  style:height="{20 * scale}px"
   style:color={resolvedTheme.statusBarTextColor}
   style:position="absolute"
   style:bottom="0px"
@@ -43,8 +55,8 @@
     style:flex="none"
     style:display="flex"
     style:flex-direction="row"
-    style:gap="calc(4px * var(--ea-toolbar-scale, 1))"
-    style:padding="0px calc(4px * var(--ea-toolbar-scale, 1))"
+    style:gap="{4 * scale}px"
+    style:padding="0px {4 * scale}px"
     style:border-radius="2px"
     style:background={resolvedTheme.statusBarBackgroundColor}
   >
@@ -60,8 +72,8 @@
     style:display="flex"
     style:flex-direction="row"
     style:align-items="center"
-    style:gap="calc(4px * var(--ea-toolbar-scale, 1))"
-    style:padding="0px calc(4px * var(--ea-toolbar-scale, 1))"
+    style:gap="{4 * scale}px"
+    style:padding="0px {4 * scale}px"
     style:border-radius="2px"
     style:background={resolvedTheme.statusBarBackgroundColor}
   >
@@ -75,29 +87,25 @@
       >
         {resolvedTheme.brandingLink.text}
       </a>
-      <div
-        style="border-right: 1px solid currentColor; margin: calc(4px * var(--ea-toolbar-scale, 1)) calc(2px * var(--ea-toolbar-scale, 1)); opacity: 0.3; width: 0; height: calc(10px * var(--ea-toolbar-scale, 1))"
-      ></div>
+      {@render separator()}
     {/if}
     <Button
       icon="marquee"
+      scale={scale}
       active={selectionMode == "marquee"}
       title="Toggle rectangle selection mode. In normal mode, use shift + drag for rectangle selection."
       onClick={() => onSelectionMode(selectionMode == "marquee" ? "none" : "marquee")}
     />
     <Button
       icon="lasso"
+      scale={scale}
       active={selectionMode == "lasso"}
       title="Toggle lasso selection mode. In normal mode, use shift + meta + drag for lasso selection."
       onClick={() => onSelectionMode(selectionMode == "lasso" ? "none" : "lasso")}
     />
-    <div
-      style="border-right: 1px solid currentColor; margin: calc(4px * var(--ea-toolbar-scale, 1)) calc(2px * var(--ea-toolbar-scale, 1)); opacity: 0.3; width: 0; height: calc(10px * var(--ea-toolbar-scale, 1))"
-    ></div>
+    {@render separator()}
     <MapScaleLegend distancePerPoint={distancePerPoint} />
-    <div
-      style="border-right: 1px solid currentColor; margin: calc(4px * var(--ea-toolbar-scale, 1)) calc(2px * var(--ea-toolbar-scale, 1)); opacity: 0.3; width: 0; height: calc(10px * var(--ea-toolbar-scale, 1))"
-    ></div>
+    {@render separator()}
     <span>{pointCount.toLocaleString()} points</span>
   </div>
 </div>

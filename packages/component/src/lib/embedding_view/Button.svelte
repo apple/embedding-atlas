@@ -14,9 +14,11 @@
     onClick?: () => void;
     active?: boolean;
     title?: string;
+    /** Scale factor for the button and its icon. */
+    scale?: number;
   }
 
-  let { icon, onClick, title, active = false }: Props = $props();
+  let { icon, onClick, title, active = false, scale = 1 }: Props = $props();
 </script>
 
 <button
@@ -24,8 +26,8 @@
   style:appearance="none"
   style:background={active ? "color-mix(in srgb, currentColor 20%, transparent)" : "none"}
   style:border-radius="2px"
-  style:height="calc(16px * var(--ea-toolbar-scale, 1))"
-  style:width="calc(16px * var(--ea-toolbar-scale, 1))"
+  style:height="{16 * scale}px"
+  style:width="{16 * scale}px"
   style:padding="0"
   style:margin="0"
   style:font-family="inherit"
@@ -39,13 +41,7 @@
   onclick={onClick}
 >
   {#if icon != null}
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      style:width="calc(14px * var(--ea-toolbar-scale, 1))"
-      style:height="calc(14px * var(--ea-toolbar-scale, 1))"
-    >
+    <svg width="24" height="24" viewBox="0 0 24 24" style:width="{14 * scale}px" style:height="{14 * scale}px">
       <path d={icons[icon]} style:fill="currentColor" />
     </svg>
   {/if}
