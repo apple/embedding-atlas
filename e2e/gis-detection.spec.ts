@@ -8,17 +8,50 @@
 import { test, expect } from "@playwright/test";
 import { type ChildProcess, spawn } from "child_process";
 import path from "path";
+import { inflateRawSync } from "zlib";
 import {
   waitForServer,
   teardown,
   waitForCanvas,
   waitForDataRender,
+  projectLat,
 } from "./helpers.js";
 import { E2E_CONSTANTS } from "../playwright.config.js";
 
 const FIXTURES = path.resolve(__dirname, ".data/fixtures");
 const SERVER_PORT = 5089; // use a different port from the main tests
 const BASE_URL = `http://localhost:${SERVER_PORT}`;
+
+const PHOTON_RESULTS = [
+  {
+    geometry: { coordinates: [45.3182, 2.0469] },
+    properties: { name: "First Result", city: "Mogadishu", country: "Somalia", osm_value: "city" },
+  },
+  {
+    geometry: { coordinates: [12.5, 41.9] },
+    properties: { name: "Second Result", city: "Rome", country: "Italy", osm_value: "city" },
+  },
+  {
+    geometry: { coordinates: [2.35, 48.85] },
+    properties: { name: "Third Result", city: "Paris", country: "France", osm_value: "city" },
+  },
+  {
+    geometry: { coordinates: [13.4, 52.5] },
+    properties: { name: "Fourth Result", city: "Berlin", country: "Germany", osm_value: "city" },
+  },
+  {
+    geometry: { coordinates: [-0.1, 51.5] },
+    properties: { name: "Fifth Result", city: "London", country: "UK", osm_value: "city" },
+  },
+];
+
+function stateFromURL(url: string): any {
+  const state = new URLSearchParams(new URL(url).hash.split("?").at(-1)).get("state");
+  if (state == null) {
+    throw new Error("URL does not contain serialized state");
+  }
+  return JSON.parse(inflateRawSync(Buffer.from(state, "base64url")).toString());
+}
 
 function startServerWithFixture(parquetFile: string): ChildProcess {
   return spawn(
@@ -92,6 +125,44 @@ test.describe.serial("GeoParquet Server Mode", () => {
     expect(projection.x).toBe("lon");
     expect(projection.y).toBe("lat");
     expect(projection.isGis).toBe(true);
+  });
+
+  test("Enter selects the first geocoder result unless keyboard navigation selects another", async ({ page }) => {
+    server = startServerWithFixture(path.join(FIXTURES, "latlon_columns.parquet"));
+    await waitForServer(`${BASE_URL}/data/metadata.json`);
+    await page.route("https://photon.komoot.io/api/**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ features: PHOTON_RESULTS }),
+      }),
+    );
+
+    await page.goto(BASE_URL);
+    const input = page.getByPlaceholder("Go to place...");
+    await input.fill("result");
+    const resultButtons = page.locator("ul li button");
+    await expect(resultButtons).toHaveCount(5);
+
+    // A pointer resting over the menu must not change the keyboard default.
+    await resultButtons.last().hover();
+    await input.press("Enter");
+    await expect(input).toHaveValue("First Result, Mogadishu, Somalia");
+
+    await expect
+      .poll(() => stateFromURL(page.url()).chartStates?.["1"]?.viewport)
+      .toMatchObject({
+        x: 45.3182,
+        y: projectLat(2.0469),
+      });
+
+    // Explicit arrow-key navigation remains available.
+    await input.fill("result");
+    await expect(resultButtons).toHaveCount(5);
+    await input.press("ArrowDown");
+    await input.press("ArrowDown");
+    await input.press("Enter");
+    await expect(input).toHaveValue("Second Result, Rome, Italy");
   });
 
   test("longitude/latitude columns detected", async ({ request }) => {

@@ -95,7 +95,8 @@
       selectedIndex = Math.max(selectedIndex - 1, 0);
     } else if (e.key === "Enter" && results.length > 0) {
       e.preventDefault();
-      selectResult(results[Math.max(selectedIndex, 0)]);
+      e.stopPropagation();
+      selectResult(results[selectedIndex >= 0 ? selectedIndex : 0] ?? results[0]);
     } else if (e.key === "Escape") {
       isOpen = false;
     }
@@ -144,10 +145,9 @@
       {#each results as feature, i}
         <li>
           <button
-            class="w-full text-left px-2 py-1.5 text-xs cursor-pointer transition-colors"
+            class="w-full text-left px-2 py-1.5 text-xs cursor-pointer transition-colors hover:bg-blue-100 dark:hover:bg-blue-900"
             class:bg-blue-100={selectedIndex === i}
             class:dark:bg-blue-900={selectedIndex === i}
-            onmouseenter={() => (selectedIndex = i)}
             onmousedown={(e) => {
               e.preventDefault();
               selectResult(feature);
