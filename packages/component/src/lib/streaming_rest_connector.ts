@@ -175,11 +175,22 @@ function readMessageBodyLength(metadata: Uint8Array): number {
  *  (continuation marker + metadata length + metadata + body) — small
  *  enough that even on the 322 M-row scatter we never allocate more
  *  than ~2 MB at once on the JS heap. */
+class ArrowTransportError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "ArrowTransportError";
+  }
+}
+
 async function readBodyAsMessages(res: Response): Promise<Uint8Array[]> {
-  const reader = res.body!.getReader();
+  if (res.body == null) {
+    throw new ArrowTransportError("[atlas-stream] arrow response has no body");
+  }
+  const reader = res.body.getReader();
   const queue = new ChunkQueue();
   const messages: Uint8Array[] = [];
   let eos = false;
+  let receivedBytes = 0;
 
   // Try to extract one message at the head of the queue. Returns
   // false if not enough buffered yet, true if a message was emitted
@@ -213,17 +224,78 @@ async function readBodyAsMessages(res: Response): Promise<Uint8Array[]> {
     return true;
   };
 
-  for (;;) {
-    const r = await reader.read();
-    if (r.value && r.value.length > 0) queue.push(r.value);
-    while (tryExtract()) {
-      if (eos) break;
+  try {
+    for (;;) {
+      const r = await reader.read();
+      if (r.done) break;
+      if (r.value && r.value.length > 0) {
+        receivedBytes += r.value.length;
+        if (eos) {
+          throw new ArrowTransportError(
+            `[atlas-stream] received ${r.value.length.toLocaleString()} trailing bytes after Arrow end-of-stream`,
+          );
+        }
+        queue.push(r.value);
+      }
+      while (!eos && tryExtract()) {
+        // Drain every complete IPC message currently buffered.
+      }
     }
-    if (eos) break;
-    if (r.done) break;
+  } catch (error) {
+    if (error instanceof ArrowTransportError) throw error;
+    throw new ArrowTransportError("[atlas-stream] arrow response body was interrupted", { cause: error });
+  } finally {
+    reader.releaseLock();
+  }
+
+  const contentLength = res.headers.get("Content-Length");
+  if (contentLength != null) {
+    const advertisedLength = Number(contentLength);
+    if (Number.isFinite(advertisedLength) && advertisedLength >= 0 && receivedBytes !== advertisedLength) {
+      throw new ArrowTransportError(
+        `[atlas-stream] truncated arrow response: received ${receivedBytes.toLocaleString()} of ${advertisedLength.toLocaleString()} bytes`,
+      );
+    }
+  }
+  if (!eos) {
+    throw new ArrowTransportError(
+      `[atlas-stream] truncated arrow response: connection ended with ${queue.available().toLocaleString()} undecoded bytes`,
+    );
+  }
+  if (queue.available() !== 0) {
+    throw new ArrowTransportError(
+      `[atlas-stream] arrow response has ${queue.available().toLocaleString()} trailing bytes`,
+    );
   }
 
   return messages;
+}
+
+async function fetchArrowMessages(uri: string, query: ArrowQueryRequest): Promise<Uint8Array[]> {
+  // Arrow requests are read-only. A single retry turns a transient local
+  // socket truncation into a recovered refresh without retrying exec/DDL or
+  // hiding persistent failures. HTTP errors and IPC decode errors are not
+  // retried.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(uri, {
+        method: "POST",
+        mode: "cors",
+        credentials: "omit",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(query),
+      });
+      if (!res.ok) {
+        throw new Error(`[atlas-stream] arrow query failed with HTTP ${res.status}: ${await res.text()}`);
+      }
+      return await readBodyAsMessages(res);
+    } catch (error) {
+      const retryable = error instanceof ArrowTransportError || error instanceof TypeError;
+      if (!retryable || attempt >= 1) throw error;
+      console.warn("[atlas-stream] arrow transport interrupted; retrying once", error);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
 }
 
 /** Mosaic-core connector with the streaming-arrow override. Initialise
@@ -241,17 +313,7 @@ export function streamingRestConnector(options: StreamingRestConnectorOptions): 
     if (query.type !== "arrow") {
       return baseConnector.query(query as any);
     }
-    const res = await fetch(options.uri, {
-      method: "POST",
-      mode: "cors",
-      credentials: "omit",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(query),
-    });
-    if (!res.ok) {
-      throw new Error(`[atlas-stream] arrow query failed with HTTP ${res.status}: ${await res.text()}`);
-    }
-    const messages = await readBodyAsMessages(res);
+    const messages = await fetchArrowMessages(options.uri, query as ArrowQueryRequest);
     return tableFromIPC(messages, ipcOptions);
   }
   return {

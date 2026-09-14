@@ -267,11 +267,20 @@ def make_server(
     STREAM_CHUNK = 4 * 1024 * 1024
 
     def _chunked(buf: bytes, chunk: int = STREAM_CHUNK):
-        n = len(buf)
-        i = 0
-        while i < n:
-            yield buf[i : i + chunk]
-            i += chunk
+        # Yield zero-copy views. ``buf[i:i + chunk]`` allocates and copies a
+        # fresh 4 MiB ``bytes`` object for every ASGI send. Avoiding that
+        # allocation churn keeps overlapping 600 MiB+ scatter refreshes as
+        # lean as possible. If any stream ends after its 200/Content-Length
+        # headers have been sent, Chromium reports ERR_CONTENT_LENGTH_MISMATCH.
+        view = memoryview(buf)
+        try:
+            n = len(view)
+            i = 0
+            while i < n:
+                yield view[i : i + chunk]
+                i += chunk
+        finally:
+            view.release()
 
     # Per-connection scatter cache. The dataset is immutable per-load,
     # so the same Arrow query returns the same bytes every time the

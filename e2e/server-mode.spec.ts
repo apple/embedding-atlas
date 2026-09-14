@@ -66,6 +66,36 @@ test.describe("API", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("Rendering", () => {
+  test("retries one interrupted read-only Arrow response", async ({ page }) => {
+    let interrupted = false;
+    const warnings: string[] = [];
+
+    page.on("console", (message) => {
+      if (message.type() === "warning") warnings.push(message.text());
+    });
+    await page.route("**/data/query", async (route) => {
+      let body: { type?: string } = {};
+      try {
+        body = route.request().postDataJSON();
+      } catch {
+        // Leave malformed/non-JSON requests to the backend.
+      }
+      if (!interrupted && body.type === "arrow") {
+        interrupted = true;
+        await route.abort("connectionreset");
+      } else {
+        await route.continue();
+      }
+    });
+
+    await page.goto(BASE_URL);
+    await waitForDataRender(page);
+
+    expect(interrupted).toBe(true);
+    expect(warnings.some((text) => text.includes("arrow transport interrupted; retrying once"))).toBe(true);
+    expect(await page.locator("canvas").count()).toBeGreaterThan(0);
+  });
+
   test("app loads and renders a scatter canvas", async ({ page }) => {
     await page.goto(BASE_URL);
     await waitForCanvas(page);
@@ -202,6 +232,7 @@ test.describe("Basemap Alignment", () => {
     // default viewport (which auto-fits to the data extent) should contain
     // drawn pixels.
     const result = await page.evaluate(() => {
+      const webgpuUnavailable = document.body.textContent?.includes("WebGPU is unavailable") ?? false;
       const canvases = document.querySelectorAll("canvas");
       // Find the scatter/WebGPU canvas (not the MapLibre one)
       for (const canvas of canvases) {
@@ -234,6 +265,7 @@ test.describe("Basemap Alignment", () => {
             height: canvas.height,
             sampledPixels: size * size,
             nonTransparentPixels: nonTransparent,
+            webgpuUnavailable,
           };
         }
 
@@ -243,6 +275,7 @@ test.describe("Basemap Alignment", () => {
           height: canvas.height,
           sampledPixels: -1,       // can't easily sample WebGL
           nonTransparentPixels: -1,
+          webgpuUnavailable,
         };
       }
       return null;
@@ -255,7 +288,12 @@ test.describe("Basemap Alignment", () => {
     // For WebGL/WebGPU canvases we can't easily read pixels from Playwright,
     // so we rely on the canvas being rendered at all and having proper dimensions.
     // The coordinate-math test above covers the alignment logic.
-    if (result!.sampledPixels > 0) {
+    if (result!.webgpuUnavailable) {
+      // The default Playwright Chromium project does not expose WebGPU on
+      // every host. In that environment the visible fallback message is the
+      // expected outcome; pixel-level coverage runs in the perf-chrome suite.
+      expect(await page.getByText(/WebGPU is unavailable/).count()).toBeGreaterThan(0);
+    } else if (result!.sampledPixels > 0) {
       // If we could read pixel data, at least some should be drawn
       expect(result!.nonTransparentPixels).toBeGreaterThan(0);
     }
