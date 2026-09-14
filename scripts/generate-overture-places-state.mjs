@@ -19,6 +19,7 @@ const state = {
       data: {
         x: "lon",
         y: "lat",
+        category: "confidence",
         isGis: true,
         viewportHint: {
           centerX: -0.0002186359097180457,
@@ -53,9 +54,22 @@ const state = {
     confidence: liquid(`
       {% if value != nil %}
         {% assign pct = value | times: 100 %}
+        {% if value < 0.2 %}
+          {% assign confidence_color = "#4b4ccb" %}
+        {% elsif value < 0.4 %}
+          {% assign confidence_color = "#26bce1" %}
+        {% elsif value < 0.6 %}
+          {% assign confidence_color = "#57fb7a" %}
+        {% elsif value < 0.8 %}
+          {% assign confidence_color = "#d3e436" %}
+        {% elsif value < 1.0 %}
+          {% assign confidence_color = "#ff821d" %}
+        {% else %}
+          {% assign confidence_color = "#af1a06" %}
+        {% endif %}
         <div style="display:flex;align-items:center;gap:8px;min-width:180px">
           <div style="height:7px;flex:1;background:#e2e8f0;border-radius:999px;overflow:hidden">
-            <div style="height:100%;width:{{ pct }}%;background:#2563eb;border-radius:999px"></div>
+            <div style="height:100%;width:{{ pct }}%;background:{{ confidence_color }};border-radius:999px"></div>
           </div>
           <strong style="font-variant-numeric:tabular-nums">{{ pct | round: 1 }}%</strong>
         </div>
@@ -71,7 +85,7 @@ const state = {
               {{ url | remove: "https://" | remove: "http://" | remove: "www." | truncate: 52 | escape }}
             </a>
           {% endfor %}
-          {% if value.size > 3 %}<small style="opacity:.6">+{{ value.size | minus: 3 }} more</small>{% endif %}
+          {% if value.size > 3 %}<span style="font-size:.82em;opacity:.6">+{{ value.size | minus: 3 }} more</span>{% endif %}
         </div>
       {% else %}<span style="opacity:.45">—</span>{% endif %}
     `),
@@ -81,7 +95,7 @@ const state = {
           {% for email in value limit: 3 %}
             <a href="mailto:{{ email | escape }}" style="color:#2563eb;text-decoration:underline">{{ email | escape }}</a>
           {% endfor %}
-          {% if value.size > 3 %}<small style="opacity:.6">+{{ value.size | minus: 3 }} more</small>{% endif %}
+          {% if value.size > 3 %}<span style="font-size:.82em;opacity:.6">+{{ value.size | minus: 3 }} more</span>{% endif %}
         </div>
       {% else %}<span style="opacity:.45">—</span>{% endif %}
     `),
@@ -93,7 +107,7 @@ const state = {
               {{ url | remove: "https://" | remove: "http://" | remove: "www." | truncate: 52 | escape }}
             </a>
           {% endfor %}
-          {% if value.size > 3 %}<small style="opacity:.6">+{{ value.size | minus: 3 }} more</small>{% endif %}
+          {% if value.size > 3 %}<span style="font-size:.82em;opacity:.6">+{{ value.size | minus: 3 }} more</span>{% endif %}
         </div>
       {% else %}<span style="opacity:.45">—</span>{% endif %}
     `),
@@ -103,7 +117,7 @@ const state = {
           {% for phone in value limit: 3 %}
             <a href="tel:{{ phone | escape }}" style="color:#2563eb;text-decoration:underline">{{ phone | escape }}</a>
           {% endfor %}
-          {% if value.size > 3 %}<small style="opacity:.6">+{{ value.size | minus: 3 }} more</small>{% endif %}
+          {% if value.size > 3 %}<span style="font-size:.82em;opacity:.6">+{{ value.size | minus: 3 }} more</span>{% endif %}
         </div>
       {% else %}<span style="opacity:.45">—</span>{% endif %}
     `),
@@ -112,7 +126,7 @@ const state = {
         <div style="display:flex;align-items:center;gap:8px">
           {% if value.names.primary %}<strong>{{ value.names.primary | escape }}</strong>{% endif %}
           {% if value.wikidata %}
-            <a href="https://www.wikidata.org/wiki/{{ value.wikidata | escape }}" style="font-size:.8em;color:#2563eb;text-decoration:underline">
+            <a href="https://www.wikidata.org/wiki/{{ value.wikidata | escape }}" style="font-size:.82em;color:#2563eb;text-decoration:underline">
               {{ value.wikidata | escape }}
             </a>
           {% endif %}
@@ -129,21 +143,21 @@ const state = {
               {% if address.locality %}{% if address.freeform %}, {% endif %}{{ address.locality | escape }}{% endif %}
               {% if address.region %}, {{ address.region | escape }}{% endif %}
               {% if address.postcode %} {{ address.postcode | escape }}{% endif %}
-              {% if address.country %}<small style="opacity:.65"> · {{ address.country | escape }}</small>{% endif %}
+              {% if address.country %}<span style="font-size:.82em;opacity:.65"> · {{ address.country | escape }}</span>{% endif %}
             </div>
           {% endfor %}
-          {% if value.size > 2 %}<small style="opacity:.6">+{{ value.size | minus: 2 }} more addresses</small>{% endif %}
+          {% if value.size > 2 %}<span style="font-size:.82em;opacity:.6">+{{ value.size | minus: 2 }} more addresses</span>{% endif %}
         </div>
       {% else %}<span style="opacity:.45">No address</span>{% endif %}
     `),
     names: liquid(`
       <div style="line-height:1.35">
-        <div style="font-size:1.12em;font-weight:700">{{ value.primary | default: "Unnamed place" | escape }}</div>
+        <div style="font-weight:700">{{ value.primary | default: "Unnamed place" | escape }}</div>
         {% if value.rules %}
           <div style="display:flex;flex-direction:column;gap:2px;margin-top:4px">
             {% for rule in value.rules limit: 3 %}
               {% if rule.value %}
-                <div style="font-size:.84em;opacity:.72">
+                <div style="font-size:.82em;opacity:.72">
                   {{ rule.variant | default: "alternative" | replace: "_", " " | capitalize | escape }}{% if rule.language %} · {{ rule.language | upcase | escape }}{% endif %}:
                   {{ rule.value | escape }}
                 </div>
@@ -162,7 +176,7 @@ const state = {
               <div>
                 <strong>{{ source.provider | default: source.dataset | default: "unknown" | escape }}</strong>
                 {% if source.resource %} · {{ source.resource | escape }}{% endif %}
-                {% if source.update_time %}<small style="opacity:.65"> · {{ source.update_time | truncate: 10, "" | escape }}</small>{% endif %}
+                {% if source.update_time %}<span style="opacity:.65"> · {{ source.update_time | truncate: 10, "" | escape }}</span>{% endif %}
               </div>
             {% endfor %}
           </div>
@@ -173,14 +187,14 @@ const state = {
       <div style="line-height:1.4">
         <strong>{{ value.primary | replace: "_", " " | capitalize | escape }}</strong>
         {% if value.hierarchy %}
-          <div style="font-size:.84em;opacity:.68">
+          <div style="font-size:.82em;opacity:.68">
             {% for item in value.hierarchy %}
               {% unless forloop.first %} › {% endunless %}{{ item | replace: "_", " " | escape }}
             {% endfor %}
           </div>
         {% endif %}
         {% if value.alternates %}
-          <div style="font-size:.8em;margin-top:3px">Also: {{ value.alternates | join: ", " | replace: "_", " " | escape }}</div>
+          <div style="font-size:.82em;margin-top:3px">Also: {{ value.alternates | join: ", " | replace: "_", " " | escape }}</div>
         {% endif %}
       </div>
     `),
