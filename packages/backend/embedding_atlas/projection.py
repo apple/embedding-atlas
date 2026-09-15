@@ -231,6 +231,37 @@ async def async_compute_projection(
     return nw.to_native(nw_frame.with_columns(new_columns))
 
 
+# Brands of ISO BMFF (`ftyp`) containers that hold still images rather than
+# audio/video: HEIF/HEIC (as produced by iPhones) and AVIF.
+_HEIF_IMAGE_BRANDS = {
+    b"heic",
+    b"heix",
+    b"hevc",
+    b"hevx",
+    b"heim",
+    b"heis",
+    b"hevm",
+    b"hevs",
+    b"mif1",
+    b"msf1",
+    b"avif",
+    b"avis",
+}
+
+
+def _ftyp_brands(data: bytes) -> set[bytes]:
+    """Return the major and compatible brands of a leading ISO BMFF `ftyp` box."""
+    if len(data) < 12 or data[4:8] != b"ftyp":
+        return set()
+    box_size = int.from_bytes(data[:4], "big")
+    end = min(len(data), box_size) if box_size >= 16 else len(data)
+    brands = {data[8:12]}
+    # Compatible brands follow the 4-byte minor version at offset 12.
+    for offset in range(16, end - 3, 4):
+        brands.add(data[offset : offset + 4])
+    return brands
+
+
 def _detect_binary_modality(data: bytes) -> str:
     """Detect whether binary data is an image or audio based on magic bytes."""
     # Image formats
@@ -248,6 +279,8 @@ def _detect_binary_modality(data: bytes) -> str:
         return "image"
     if data[:4] in (b"II\x2a\x00", b"MM\x00\x2a"):  # TIFF
         return "image"
+    if _ftyp_brands(data) & _HEIF_IMAGE_BRANDS:  # HEIF / HEIC / AVIF
+        return "image"
 
     # Audio formats
     if data[:4] == b"RIFF" and data[8:12] == b"WAVE":  # WAV
@@ -258,7 +291,7 @@ def _detect_binary_modality(data: bytes) -> str:
         return "audio"
     if data[:3] == b"ID3" or data[:2] == b"\xff\xfb":  # MP3 (ID3 tag or sync frame)
         return "audio"
-    if len(data) >= 12 and data[4:8] == b"ftyp":  # MP4/M4A container
+    if len(data) >= 12 and data[4:8] == b"ftyp":  # MP4/M4A container (non-image brands)
         return "audio"
     if data[:4] == b".snd":  # AU
         return "audio"
