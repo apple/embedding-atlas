@@ -90,6 +90,7 @@ def _start_parent_watchdog(parent_pid_env: Optional[str]) -> None:
     # immediately after its env dump with no further progress. The
     # ctypes-based pid watchdog below replaces this safeguard on Windows.
     if sys.platform != "win32":
+
         def _watch_stdin() -> None:
             try:
                 while True:
@@ -101,7 +102,9 @@ def _start_parent_watchdog(parent_pid_env: Optional[str]) -> None:
             _log("stdin closed, shutting down")
             os._exit(0)
 
-        threading.Thread(target=_watch_stdin, name="stdin-watchdog", daemon=True).start()
+        threading.Thread(
+            target=_watch_stdin, name="stdin-watchdog", daemon=True
+        ).start()
     try:
         parent_pid = int(parent_pid_env)
     except ValueError:
@@ -112,13 +115,16 @@ def _start_parent_watchdog(parent_pid_env: Optional[str]) -> None:
         import select
 
         if hasattr(select, "kqueue"):
+
             def _watch_kq() -> None:
                 try:
                     kq = select.kqueue()
                     ev = select.kevent(
                         parent_pid,
                         filter=select.KQ_FILTER_PROC,
-                        flags=select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_ONESHOT,
+                        flags=select.KQ_EV_ADD
+                        | select.KQ_EV_ENABLE
+                        | select.KQ_EV_ONESHOT,
                         fflags=select.KQ_NOTE_EXIT,
                     )
                     kq.control([ev], 0, None)
@@ -163,6 +169,7 @@ def _start_parent_watchdog(parent_pid_env: Optional[str]) -> None:
             finally:
                 _kernel32.CloseHandle(h)
     else:
+
         def _parent_alive(pid: int) -> bool:
             try:
                 os.kill(pid, 0)
@@ -351,7 +358,7 @@ def _fast_load(
         x_scale = 65535 / (x_max - x_min)
         y_scale = 65535 / (y_max - y_min)
         prewarm_sql = (
-            f'SELECT '
+            f"SELECT "
             f'((COALESCE("{result.x_column}", {x_min}) - {x_min}) * {x_scale})::USMALLINT AS "x", '
             f'((COALESCE("{result.y_column}", {y_min}) - {y_min}) * {y_scale})::USMALLINT AS "y" '
             f'FROM "{result.table}"'
@@ -388,7 +395,9 @@ def main() -> int:
     _install_signal_handlers()
     _start_parent_watchdog(os.environ.get("GEOSPATIAL_ATLAS_PARENT_PID"))
     # Log received env + argv to aid debugging when the app UI is opaque.
-    env_dump = {k: v for k, v in os.environ.items() if k.startswith("GEOSPATIAL_ATLAS_")}
+    env_dump = {
+        k: v for k, v in os.environ.items() if k.startswith("GEOSPATIAL_ATLAS_")
+    }
     _log(f"argv={sys.argv!r}")
     _log(f"env={env_dump!r}")
 

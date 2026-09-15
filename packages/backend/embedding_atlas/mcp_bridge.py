@@ -75,14 +75,18 @@ class MCPBridge:
         # its own schema validation; running it twice just forbids
         # perfectly good payloads on the Python side.
         @self.server.call_tool(validate_input=False)
-        async def _call(name: str, arguments: dict[str, Any]) -> list[types.ContentBlock]:
+        async def _call(
+            name: str, arguments: dict[str, Any]
+        ) -> list[types.ContentBlock]:
             return await self._call_tool(name, arguments)
 
-        self.session_manager: StreamableHTTPSessionManager = StreamableHTTPSessionManager(
-            app=self.server,
-            event_store=None,
-            json_response=False,  # use SSE streaming for long tool calls
-            stateless=True,  # no per-client state — every call forwards anyway
+        self.session_manager: StreamableHTTPSessionManager = (
+            StreamableHTTPSessionManager(
+                app=self.server,
+                event_store=None,
+                json_response=False,  # use SSE streaming for long tool calls
+                stateless=True,  # no per-client state — every call forwards anyway
+            )
         )
 
     async def _list_tools(self) -> list[types.Tool]:
@@ -170,7 +174,9 @@ class MCPBridge:
                 continue
             ct = block.get("type")
             if ct == "text":
-                content.append(types.TextContent(type="text", text=str(block.get("text", ""))))
+                content.append(
+                    types.TextContent(type="text", text=str(block.get("text", "")))
+                )
             elif ct == "image":
                 content.append(
                     types.ImageContent(
@@ -188,9 +194,10 @@ class MCPBridge:
             # lowlevel Server interprets a raised exception as isError=True,
             # but we've captured a viewer-emitted error. Surface as text so
             # Claude sees what happened.
-            msg = "".join(
-                b.text for b in content if isinstance(b, types.TextContent)
-            ) or "tool reported isError without content"
+            msg = (
+                "".join(b.text for b in content if isinstance(b, types.TextContent))
+                or "tool reported isError without content"
+            )
             raise RuntimeError(msg)
         return content
 

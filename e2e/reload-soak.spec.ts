@@ -42,15 +42,20 @@ interface Snapshot {
 
 async function waitForFirstFrame(page: Page, timeoutMs: number): Promise<number> {
   const t0 = Date.now();
-  await page.waitForFunction(
-    () => (window as any).__atlasFirstBigRenderGpuLogged === true,
-    null,
-    { timeout: timeoutMs, polling: 200 },
-  );
+  await page.waitForFunction(() => (window as any).__atlasFirstBigRenderGpuLogged === true, null, {
+    timeout: timeoutMs,
+    polling: 200,
+  });
   return Date.now() - t0;
 }
 
-async function snapshot(page: Page, iter: number, url: string, tFirstFrameMs: number | null, consoleErrors: string[]): Promise<Snapshot> {
+async function snapshot(
+  page: Page,
+  iter: number,
+  url: string,
+  tFirstFrameMs: number | null,
+  consoleErrors: string[],
+): Promise<Snapshot> {
   const data = await page.evaluate(() => {
     const cs = Array.from(document.querySelectorAll("canvas")) as HTMLCanvasElement[];
     let primaryCanvasNonZero = false;
@@ -67,11 +72,13 @@ async function snapshot(page: Page, iter: number, url: string, tFirstFrameMs: nu
     // LEAST 1 (predicates) + 1 column chart once discovery fires.
     const titleEls = Array.from(document.querySelectorAll(".font-mono.font-medium"));
     const titles = titleEls.map((e) => e.textContent?.trim() || "");
-    const heap = (performance as any).memory ? {
-      usedMb: ((performance as any).memory.usedJSHeapSize / 1024 / 1024) | 0,
-      totalMb: ((performance as any).memory.totalJSHeapSize / 1024 / 1024) | 0,
-      limitMb: ((performance as any).memory.jsHeapSizeLimit / 1024 / 1024) | 0,
-    } : null;
+    const heap = (performance as any).memory
+      ? {
+          usedMb: ((performance as any).memory.usedJSHeapSize / 1024 / 1024) | 0,
+          totalMb: ((performance as any).memory.totalJSHeapSize / 1024 / 1024) | 0,
+          limitMb: ((performance as any).memory.jsHeapSizeLimit / 1024 / 1024) | 0,
+        }
+      : null;
     return {
       gpuErrors: (window as any).__atlasGpuErrors ?? [],
       canvasCount: cs.length,
@@ -105,7 +112,9 @@ test("reload soak — no metal cascade, side panel mounts on plain URL", async (
     const text = msg.text();
     browserLines.push(`[${t}] ${text}`);
     if (t === "error") consoleErrors.push(text);
-    if (/atlas-stage|atlas-gpu|first-big-render|deferred-density|scatter|RangeError|out of memory|ArrayBuffer/i.test(text)) {
+    if (
+      /atlas-stage|atlas-gpu|first-big-render|deferred-density|scatter|RangeError|out of memory|ArrayBuffer/i.test(text)
+    ) {
       process.stdout.write(`[browser] ${text}\n`);
     }
   };
@@ -160,16 +169,20 @@ test("reload soak — no metal cascade, side panel mounts on plain URL", async (
   mkdirSync(outDir, { recursive: true });
   writeFileSync(
     path.join(outDir, `reload-soak-${TAG}.json`),
-    JSON.stringify({
-      tag: TAG,
-      baseUrl: BASE_URL,
-      reloads: RELOADS,
-      settleMs: SETTLE_MS,
-      snapshots,
-      consoleErrorCount: consoleErrors.length,
-      consoleErrorsSample: consoleErrors.slice(0, 50),
-      browserLinesTail: browserLines.slice(-200),
-    }, null, 2),
+    JSON.stringify(
+      {
+        tag: TAG,
+        baseUrl: BASE_URL,
+        reloads: RELOADS,
+        settleMs: SETTLE_MS,
+        snapshots,
+        consoleErrorCount: consoleErrors.length,
+        consoleErrorsSample: consoleErrors.slice(0, 50),
+        browserLinesTail: browserLines.slice(-200),
+      },
+      null,
+      2,
+    ),
   );
   await page.screenshot({ path: path.join(outDir, `reload-soak-${TAG}.png`), fullPage: false });
 

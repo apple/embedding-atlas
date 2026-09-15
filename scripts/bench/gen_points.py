@@ -93,9 +93,7 @@ def gen_polars(rows: int, out: str) -> None:
         ]
     )
     cats = np.array(CATEGORIES)
-    writer = pq.ParquetWriter(
-        out, schema, compression="zstd", use_dictionary=True
-    )
+    writer = pq.ParquetWriter(out, schema, compression="zstd", use_dictionary=True)
     try:
         written = 0
         while written < rows:

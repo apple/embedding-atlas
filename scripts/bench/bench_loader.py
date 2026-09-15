@@ -90,9 +90,7 @@ def variant_ctas_default(con: duckdb.DuckDBPyConnection, path: str, t: Timer) ->
     con.sql("SELECT COUNT(*) FROM dataset").fetchone()
     t.stop()
     t.start("bounds")
-    con.sql(
-        "SELECT MIN(lon), MAX(lon), MIN(lat), MAX(lat) FROM dataset"
-    ).fetchone()
+    con.sql("SELECT MIN(lon), MAX(lon), MIN(lat), MAX(lat) FROM dataset").fetchone()
     t.stop()
 
 
@@ -112,9 +110,7 @@ def variant_view(con: duckdb.DuckDBPyConnection, path: str, t: Timer) -> None:
     con.sql("SELECT COUNT(*) FROM dataset").fetchone()
     t.stop()
     t.start("bounds")
-    con.sql(
-        "SELECT MIN(lon), MAX(lon), MIN(lat), MAX(lat) FROM dataset"
-    ).fetchone()
+    con.sql("SELECT MIN(lon), MAX(lon), MIN(lat), MAX(lat) FROM dataset").fetchone()
     t.stop()
 
 
@@ -125,18 +121,13 @@ def variant_ctas_no_id(con: duckdb.DuckDBPyConnection, path: str, t: Timer) -> N
     con.sql(f"DESCRIBE SELECT * FROM read_parquet('{path}') LIMIT 0").fetchall()
     t.stop()
     t.start("ctas")
-    con.sql(
-        f"CREATE OR REPLACE TABLE dataset AS "
-        f"SELECT * FROM read_parquet('{path}')"
-    )
+    con.sql(f"CREATE OR REPLACE TABLE dataset AS SELECT * FROM read_parquet('{path}')")
     t.stop()
     t.start("count")
     con.sql("SELECT COUNT(*) FROM dataset").fetchone()
     t.stop()
     t.start("bounds")
-    con.sql(
-        "SELECT MIN(lon), MAX(lon), MIN(lat), MAX(lat) FROM dataset"
-    ).fetchone()
+    con.sql("SELECT MIN(lon), MAX(lon), MIN(lat), MAX(lat) FROM dataset").fetchone()
     t.stop()
 
 
@@ -157,9 +148,7 @@ def variant_ctas_window_id(con: duckdb.DuckDBPyConnection, path: str, t: Timer) 
     con.sql("SELECT COUNT(*) FROM dataset").fetchone()
     t.stop()
     t.start("bounds")
-    con.sql(
-        "SELECT MIN(lon), MAX(lon), MIN(lat), MAX(lat) FROM dataset"
-    ).fetchone()
+    con.sql("SELECT MIN(lon), MAX(lon), MIN(lat), MAX(lat) FROM dataset").fetchone()
     t.stop()
 
 

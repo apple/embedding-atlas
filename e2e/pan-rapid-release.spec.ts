@@ -65,11 +65,10 @@ test("rapid pan-release storm — backpressure keeps Chrome responsive on 322M",
   console.log(`[pan-rapid] loading ${BASE_URL}/?perf=1`);
   await page.goto(`${BASE_URL}/?perf=1`, { waitUntil: "domcontentloaded" });
 
-  await page.waitForFunction(
-    () => (window as any).__atlasFirstBigRenderGpuLogged === true,
-    null,
-    { timeout: 6 * 60 * 1000, polling: 250 },
-  );
+  await page.waitForFunction(() => (window as any).__atlasFirstBigRenderGpuLogged === true, null, {
+    timeout: 6 * 60 * 1000,
+    polling: 250,
+  });
   console.log(`[pan-rapid] first big render landed`);
 
   // Locate primary canvas (largest = scatter surface).
@@ -80,7 +79,10 @@ test("rapid pan-release storm — backpressure keeps Chrome responsive on 322M",
     for (const c of cs) {
       const r = (c as HTMLCanvasElement).getBoundingClientRect();
       const a = r.width * r.height;
-      if (a > bestArea) { bestArea = a; best = { x: r.x, y: r.y, w: r.width, h: r.height }; }
+      if (a > bestArea) {
+        bestArea = a;
+        best = { x: r.x, y: r.y, w: r.width, h: r.height };
+      }
     }
     return best;
   });
@@ -123,10 +125,15 @@ test("rapid pan-release storm — backpressure keeps Chrome responsive on 322M",
       })),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), RESPONSIVENESS_TIMEOUT_MS)),
     ]);
-    expect(respCheck, `iter ${i}: page unresponsive (page.evaluate did not return inside ${RESPONSIVENESS_TIMEOUT_MS}ms)`).not.toBeNull();
+    expect(
+      respCheck,
+      `iter ${i}: page unresponsive (page.evaluate did not return inside ${RESPONSIVENESS_TIMEOUT_MS}ms)`,
+    ).not.toBeNull();
     expect(respCheck!.canvasW, `iter ${i}: canvas dead`).toBeGreaterThan(0);
     expect(respCheck!.gpuErrors, `iter ${i}: GPU error cascade`).toBe(0);
-    console.log(`[pan-rapid] iter ${i} — page responsive, canvas alive (${respCheck!.canvasW}px), gpuErrors=${respCheck!.gpuErrors}`);
+    console.log(
+      `[pan-rapid] iter ${i} — page responsive, canvas alive (${respCheck!.canvasW}px), gpuErrors=${respCheck!.gpuErrors}`,
+    );
   }
 
   // Final settle: wait for backpressure-coalesced renders to drain, then

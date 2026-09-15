@@ -9,13 +9,7 @@ import { test, expect } from "@playwright/test";
 import { type ChildProcess, spawn } from "child_process";
 import path from "path";
 import { inflateRawSync } from "zlib";
-import {
-  waitForServer,
-  teardown,
-  waitForCanvas,
-  waitForDataRender,
-  projectLat,
-} from "./helpers.js";
+import { waitForServer, teardown, waitForCanvas, waitForDataRender, projectLat } from "./helpers.js";
 import { E2E_CONSTANTS } from "../playwright.config.js";
 
 const FIXTURES = path.resolve(__dirname, ".data/fixtures");
@@ -86,9 +80,7 @@ test.describe.serial("GeoParquet Server Mode", () => {
     await new Promise((r) => setTimeout(r, 2_000));
   });
 
-  test("detects geometry column and extracts lon/lat from geoparquet", async ({
-    request,
-  }) => {
+  test("detects geometry column and extracts lon/lat from geoparquet", async ({ request }) => {
     server = startServerWithFixture(path.join(FIXTURES, "geoparquet_points.parquet"));
     await waitForServer(`${BASE_URL}/data/metadata.json`);
 
@@ -166,9 +158,7 @@ test.describe.serial("GeoParquet Server Mode", () => {
   });
 
   test("longitude/latitude columns detected", async ({ request }) => {
-    server = startServerWithFixture(
-      path.join(FIXTURES, "longitude_latitude_columns.parquet"),
-    );
+    server = startServerWithFixture(path.join(FIXTURES, "longitude_latitude_columns.parquet"));
     await waitForServer(`${BASE_URL}/data/metadata.json`);
 
     const res = await request.get(`${BASE_URL}/data/metadata.json`);
@@ -190,15 +180,11 @@ test.describe("Frontend Auto GIS Detection", () => {
   let devServer: ChildProcess;
 
   test.beforeAll(async () => {
-    devServer = spawn(
-      "npm",
-      ["run", "dev", "--", "--port", String(E2E_CONSTANTS.DEV_PORT)],
-      {
-        stdio: ["ignore", "pipe", "pipe"],
-        cwd: path.resolve(__dirname, "../packages/viewer"),
-        env: { ...process.env },
-      },
-    );
+    devServer = spawn("npm", ["run", "dev", "--", "--port", String(E2E_CONSTANTS.DEV_PORT)], {
+      stdio: ["ignore", "pipe", "pipe"],
+      cwd: path.resolve(__dirname, "../packages/viewer"),
+      env: { ...process.env },
+    });
     await waitForServer(`http://localhost:${E2E_CONSTANTS.DEV_PORT}/`);
   });
 
@@ -240,55 +226,37 @@ test.describe("Frontend Auto GIS Detection", () => {
   }
 
   test("auto-detects lon/lat columns and pre-fills settings", async ({ page }) => {
-    const ok = await uploadAndWaitForSettings(
-      page,
-      path.join(FIXTURES, "latlon_columns.parquet"),
-    );
+    const ok = await uploadAndWaitForSettings(page, path.join(FIXTURES, "latlon_columns.parquet"));
     if (!ok) {
       test.skip();
       return;
     }
 
-    await expect(
-      page.locator("text=Auto-detected GIS columns"),
-    ).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator("text=Auto-detected GIS columns")).toBeVisible({ timeout: 5_000 });
   });
 
   test("auto-detects longitude/latitude columns", async ({ page }) => {
-    const ok = await uploadAndWaitForSettings(
-      page,
-      path.join(FIXTURES, "longitude_latitude_columns.parquet"),
-    );
+    const ok = await uploadAndWaitForSettings(page, path.join(FIXTURES, "longitude_latitude_columns.parquet"));
     if (!ok) {
       test.skip();
       return;
     }
 
-    await expect(
-      page.locator("text=Auto-detected GIS columns"),
-    ).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator("text=Auto-detected GIS columns")).toBeVisible({ timeout: 5_000 });
   });
 
   test("auto-detects fuzzy lon/lat column names", async ({ page }) => {
-    const ok = await uploadAndWaitForSettings(
-      page,
-      path.join(FIXTURES, "fuzzy_latlon_columns.parquet"),
-    );
+    const ok = await uploadAndWaitForSettings(page, path.join(FIXTURES, "fuzzy_latlon_columns.parquet"));
     if (!ok) {
       test.skip();
       return;
     }
 
-    await expect(
-      page.locator("text=Auto-detected GIS columns"),
-    ).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator("text=Auto-detected GIS columns")).toBeVisible({ timeout: 5_000 });
   });
 
   test("no detection banner for non-GIS data", async ({ page }) => {
-    const ok = await uploadAndWaitForSettings(
-      page,
-      path.join(FIXTURES, "no_gis_columns.parquet"),
-    );
+    const ok = await uploadAndWaitForSettings(page, path.join(FIXTURES, "no_gis_columns.parquet"));
     if (!ok) {
       test.skip();
       return;
@@ -299,18 +267,13 @@ test.describe("Frontend Auto GIS Detection", () => {
   });
 
   test("auto-detects geometry column in geoparquet", async ({ page }) => {
-    const ok = await uploadAndWaitForSettings(
-      page,
-      path.join(FIXTURES, "geoparquet_points.parquet"),
-    );
+    const ok = await uploadAndWaitForSettings(page, path.join(FIXTURES, "geoparquet_points.parquet"));
     if (!ok) {
       test.skip();
       return;
     }
 
-    await expect(
-      page.locator("text=geometry column"),
-    ).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator("text=geometry column")).toBeVisible({ timeout: 5_000 });
   });
 
   test("imports Point geometry from WKB byte lists and GeoJSON", async ({ browser }) => {

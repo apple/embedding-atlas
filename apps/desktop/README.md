@@ -35,7 +35,7 @@ Lifecycle:
    redirects the webview to `http://127.0.0.1:<PORT>`.
 6. On quit the main process kills the sidecar. Belt-and-suspenders: the
    sidecar also runs three parallel watchdogs (stdin-EOF, `kqueue
-   NOTE_EXIT`, and a getppid poll).
+NOTE_EXIT`, and a getppid poll).
 
 ## Prerequisites
 
@@ -136,6 +136,6 @@ bundled Python interpreter under hardened runtime:
 - macOS Intel (`x86_64`) pre-built bundles were dropped starting v0.0.2
   because `macos-13` GitHub runners sit in queue for hours. Intel-Mac
   users should use the `uv run geospatial-atlas ...` CLI path.
-- Embedding projection (UMAP) is *not* bundled — this build is a GIS
+- Embedding projection (UMAP) is _not_ bundled — this build is a GIS
   viewer. Install the Python CLI (`uv tool install embedding-atlas`) if
   you need that pipeline.

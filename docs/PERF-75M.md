@@ -9,12 +9,12 @@ per-frame draw set may shrink while the user is actively interacting.
 
 ## Result
 
-| view          |     fps |  interval mean | p95   |
-| ------------- | ------: | -------------: | ----: |
-| world         |   123.7 |          8.1ms | 10.2ms |
-| region (0.5×) |   124.2 |          8.1ms | 10.3ms |
-| city   (5×)   |   124.6 |          8.0ms | 10.2ms |
-| neighborhood  |   124.3 |          8.0ms | 10.0ms |
+| view          |   fps | interval mean |    p95 |
+| ------------- | ----: | ------------: | -----: |
+| world         | 123.7 |         8.1ms | 10.2ms |
+| region (0.5×) | 124.2 |         8.1ms | 10.3ms |
+| city (5×)     | 124.6 |         8.0ms | 10.2ms |
+| neighborhood  | 124.3 |         8.0ms | 10.0ms |
 
 All four zoom levels are display-capped (the 14" MacBook Pro panel
 runs at ~120 Hz; ~125 fps measured includes RAF jitter). The same
@@ -133,7 +133,7 @@ release, whichever comes first.
 Conceptually this is the Datashader trade: at world view, 75M
 points cannot map to the screen's ~1M pixels anyway, so during
 motion we render a representative sample weighted by local density.
-The data isn't dropped; the *visualisation* is sampled, with the
+The data isn't dropped; the _visualisation_ is sampled, with the
 sample set refreshed often enough to feel continuous.
 
 ## Measurement
@@ -151,7 +151,7 @@ Per config, the test:
 3. Issues `setViewport()` via real `page.mouse.wheel()` to the
    target zoom (skipping for world).
 4. Calls `dragPan()`, which dispatches mousedown/mousemove/mouseup
-   *from inside `page.evaluate`* via a RAF loop on `window`.
+   _from inside `page.evaluate`_ via a RAF loop on `window`.
    Doing this in-page is the difference between 14 fps (Playwright
    IPC capping at one event per ~50 ms) and 124 fps (true RAF
    cadence).
@@ -178,12 +178,12 @@ this hook work without leaking the device.
 
 ## Headline progression (world view, 75M)
 
-| stage                            |    fps |   interval | speedup |
-| -------------------------------- | -----: | ---------: | ------: |
-| baseline                         |    5.3 |     189 ms |     1× |
-| + compaction + indirect draw     |    9.4 |     106 ms |   1.8× |
-| + adaptive cap (200K) on gesture |   23.3 |      43 ms |   4.4× |
-| + skip compute during gesture    |  123.7 |       8 ms |    23× |
+| stage                            |   fps | interval | speedup |
+| -------------------------------- | ----: | -------: | ------: |
+| baseline                         |   5.3 |   189 ms |      1× |
+| + compaction + indirect draw     |   9.4 |   106 ms |    1.8× |
+| + adaptive cap (200K) on gesture |  23.3 |    43 ms |    4.4× |
+| + skip compute during gesture    | 123.7 |     8 ms |     23× |
 
 City / region / neighbourhood views all cap at ~124 fps with the
 final stack — display-bound. Density-mode at 75M is 9 fps and is

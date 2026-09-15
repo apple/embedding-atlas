@@ -5,11 +5,11 @@ GitHub integration archives clean version strings like `v0.0.7`); the
 Python package and static web viewer keep prefixed tags to avoid
 colliding with the repo-wide desktop scheme.
 
-| Stream | Tag prefix | Distro | Workflow |
-|---|---|---|---|
-| Desktop app | `v*` | `.dmg` / `.AppImage` / `.deb` / `.msi` / `.exe` | `.github/workflows/app-release.yml` |
-| Python package | `py-v*` | PyPI wheel (`geospatial-atlas`) | (add later — see *Python release* below) |
-| Static web viewer | `web-v*` | GitHub Pages | `.github/workflows/deploy-gh-pages.sh` (manual for now) |
+| Stream            | Tag prefix | Distro                                          | Workflow                                                |
+| ----------------- | ---------- | ----------------------------------------------- | ------------------------------------------------------- |
+| Desktop app       | `v*`       | `.dmg` / `.AppImage` / `.deb` / `.msi` / `.exe` | `.github/workflows/app-release.yml`                     |
+| Python package    | `py-v*`    | PyPI wheel (`geospatial-atlas`)                 | (add later — see _Python release_ below)                |
+| Static web viewer | `web-v*`   | GitHub Pages                                    | `.github/workflows/deploy-gh-pages.sh` (manual for now) |
 
 Desktop releases up through `app-v0.0.6` used the `app-v*` prefix; the
 scheme switched at v0.0.7 when the Zenodo auto-DOI integration went
@@ -59,7 +59,7 @@ these user-facing caveats:
 - **macOS**: First-launch warning: right-click → Open. Or after Sequoia
   (15.1+): System Settings → Privacy & Security → "Open Anyway".
 - **Windows**: SmartScreen will show "Windows protected your PC — Don't
-  run". Users click *More info → Run anyway*. This goes away once you
+  run". Users click _More info → Run anyway_. This goes away once you
   have an EV code-signing cert.
 - **Linux**: No prompt. `.AppImage` should be `chmod +x`'d before run.
 
@@ -113,6 +113,7 @@ vars are present.
 ### Windows
 
 EV code-signing certs cost $200–400/year. Then:
+
 - `CSC_LINK` (Windows runner) = base64 of `.pfx`
 - `CSC_KEY_PASSWORD` = the `.pfx` password
 
@@ -133,6 +134,7 @@ Keep a top-level `CHANGELOG.md`. Prepend on each release:
 **Desktop release.**
 
 ### Added
+
 - Native macOS / Linux / Windows app (Electron + PyInstaller sidecar).
 - Fast path for GeoParquet files via DuckDB spatial (`ST_X`/`ST_Y`).
 - Live progress bar during load (DuckDB `query_progress()`).
@@ -141,6 +143,7 @@ Keep a top-level `CHANGELOG.md`. Prepend on each release:
 - Row-limit input for sampling large files.
 
 ### Known issues
+
 - Unsigned: first-launch warnings on macOS + Windows.
 - iOS / Android not yet shipped — see docs/MOBILE.md.
 ```
@@ -158,6 +161,7 @@ git push origin py-v0.20.1
 ```
 
 A future `py-release.yml` workflow would:
+
 - `uv build --wheel --sdist` in `packages/backend/`.
 - Publish via `twine` using `PYPI_TOKEN` secret.
 

@@ -18,10 +18,7 @@ const bridge = {
   invoke<T = unknown>(cmd: string, args?: unknown): Promise<T> {
     return ipcRenderer.invoke(`cmd:${cmd}`, args);
   },
-  listen<T = unknown>(
-    event: string,
-    cb: (ev: BridgeEvent<T>) => void
-  ): () => void {
+  listen<T = unknown>(event: string, cb: (ev: BridgeEvent<T>) => void): () => void {
     const channel = `evt:${event}`;
     const handler = (_e: IpcRendererEvent, payload: T) => cb({ payload });
     ipcRenderer.on(channel, handler);
@@ -63,9 +60,7 @@ function installPageGlue() {
   const save = () => {
     if (pending) clearTimeout(pending);
     pending = setTimeout(() => {
-      bridge
-        .invoke("save_viewer_state", { hash: location.hash || "" })
-        .catch(() => {});
+      bridge.invoke("save_viewer_state", { hash: location.hash || "" }).catch(() => {});
     }, 400);
   };
   window.addEventListener("hashchange", save);
@@ -92,8 +87,12 @@ function installPageGlue() {
       b.title = "Back to dataset picker";
       b.innerHTML = HOME_SVG;
       b.style.cssText = [
-        "display:inline-flex", "align-items:center", "justify-content:center",
-        "width:32px", "height:32px", "flex:0 0 auto",
+        "display:inline-flex",
+        "align-items:center",
+        "justify-content:center",
+        "width:32px",
+        "height:32px",
+        "flex:0 0 auto",
         "border-radius:6px",
         "border:1px solid rgba(100,116,139,0.35)",
         "background:transparent",
@@ -102,8 +101,12 @@ function installPageGlue() {
         "padding:0",
         "margin:0",
       ].join(";");
-      b.onmouseenter = () => { b.style.background = "rgba(100,116,139,0.18)"; };
-      b.onmouseleave = () => { b.style.background = "transparent"; };
+      b.onmouseenter = () => {
+        b.style.background = "rgba(100,116,139,0.18)";
+      };
+      b.onmouseleave = () => {
+        b.style.background = "transparent";
+      };
       b.onclick = () => {
         bridge.invoke("return_home").catch(() => {});
       };
@@ -114,8 +117,7 @@ function installPageGlue() {
       const input = document.querySelector('input[type="search"]');
       if (!input) return false;
       const leftSide = input.closest(".flex-1");
-      const toolbar =
-        (leftSide && leftSide.parentElement) || input.parentElement;
+      const toolbar = (leftSide && leftSide.parentElement) || input.parentElement;
       if (!toolbar) return false;
       if (toolbar.querySelector("#gsa-home-btn")) return true;
       toolbar.insertBefore(makeBtn(), toolbar.firstChild);
@@ -142,13 +144,18 @@ function installPageGlue() {
   // OS path via webUtils.getPathForFile(), and hand it off to main.
   const overlay = document.createElement("div");
   overlay.style.cssText = [
-    "position:fixed", "inset:0", "z-index:2147483646",
+    "position:fixed",
+    "inset:0",
+    "z-index:2147483646",
     "background:rgba(37,99,235,0.18)",
     "border:3px dashed rgba(96,165,250,0.9)",
     "box-sizing:border-box",
-    "display:none", "align-items:center", "justify-content:center",
+    "display:none",
+    "align-items:center",
+    "justify-content:center",
     "font:600 18px -apple-system,BlinkMacSystemFont,sans-serif",
-    "color:#dbeafe", "pointer-events:none",
+    "color:#dbeafe",
+    "pointer-events:none",
   ].join(";");
   overlay.textContent = "Drop a dataset to open";
   const attachOverlay = () => {
@@ -157,8 +164,14 @@ function installPageGlue() {
   };
   attachOverlay();
 
-  window.addEventListener("dragenter", (e) => { e.preventDefault(); overlay.style.display = "flex"; });
-  window.addEventListener("dragover",  (e) => { e.preventDefault(); overlay.style.display = "flex"; });
+  window.addEventListener("dragenter", (e) => {
+    e.preventDefault();
+    overlay.style.display = "flex";
+  });
+  window.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    overlay.style.display = "flex";
+  });
   window.addEventListener("dragleave", (e) => {
     if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
       overlay.style.display = "none";

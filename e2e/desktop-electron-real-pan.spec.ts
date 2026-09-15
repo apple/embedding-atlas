@@ -38,13 +38,9 @@ import { join } from "node:path";
 
 const REPO = join(__dirname, "..");
 const DESKTOP = join(REPO, "apps/desktop");
-const DATASET =
-  process.env.DATASET ?? "/Users/dome/work/general/eubucco/eubucco_lat_lon.parquet";
+const DATASET = process.env.DATASET ?? "/Users/dome/work/general/eubucco/eubucco_lat_lon.parquet";
 
-const PACKAGED_BIN = join(
-  DESKTOP,
-  "release/mac-arm64/Geospatial Atlas.app/Contents/MacOS/Geospatial Atlas",
-);
+const PACKAGED_BIN = join(DESKTOP, "release/mac-arm64/Geospatial Atlas.app/Contents/MacOS/Geospatial Atlas");
 
 const OUT_DIR = join(REPO, "e2e/test-results/real-pan");
 mkdirSync(OUT_DIR, { recursive: true });
@@ -152,11 +148,10 @@ test("desktop electron real-pan crash harness", async () => {
     // Wait for first big render (the embedding scatter actually paints
     // pixels). 5 min is generous for the 322 M-row eubucco bootstrap.
     try {
-      await win.waitForFunction(
-        () => (window as any).__atlasFirstBigRenderGpuLogged === true,
-        null,
-        { timeout: 5 * 60 * 1000, polling: 250 },
-      );
+      await win.waitForFunction(() => (window as any).__atlasFirstBigRenderGpuLogged === true, null, {
+        timeout: 5 * 60 * 1000,
+        polling: 250,
+      });
       renderLanded = true;
       console.log(`[harness] first big render landed at +${Date.now() - t0}ms`);
     } catch (e) {
@@ -185,7 +180,10 @@ test("desktop electron real-pan crash harness", async () => {
           ),
         );
         const sidePanelTexts: string[] = [];
-        const allText = document.body.innerText.split("\n").map((s) => s.trim()).filter(Boolean);
+        const allText = document.body.innerText
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean);
         // Look for known side-panel tags.
         const knownTags = ["+ Add", "SQL Predicates", "+ Add Predicate", "Color"];
         for (const t of allText) {
@@ -219,9 +217,7 @@ test("desktop electron real-pan crash harness", async () => {
           return { x: r.x, y: r.y, w: r.width, h: r.height };
         });
       });
-      const target = canvases.length > 0
-        ? canvases.reduce((a, b) => (a.w * a.h > b.w * b.h ? a : b))
-        : null;
+      const target = canvases.length > 0 ? canvases.reduce((a, b) => (a.w * a.h > b.w * b.h ? a : b)) : null;
       console.log(`[harness] pan target: ${JSON.stringify(target)}`);
 
       if (target) {
@@ -235,26 +231,29 @@ test("desktop electron real-pan crash harness", async () => {
         const sampleCoverage = async (): Promise<number> => {
           try {
             const png = await win.screenshot({ fullPage: false });
-            return await win.evaluate(async (b64) => {
-              const img = new Image();
-              await new Promise<void>((res, rej) => {
-                img.onload = () => res();
-                img.onerror = () => rej(new Error("img load"));
-                img.src = b64;
-              });
-              const cv = document.createElement("canvas");
-              cv.width = 800;
-              cv.height = 600;
-              const ctx = cv.getContext("2d", { willReadFrequently: true });
-              if (!ctx) return -1;
-              ctx.drawImage(img, 0, 0, 800, 600);
-              const d = ctx.getImageData(0, 0, 800, 600).data;
-              let nonWhite = 0;
-              for (let p = 0; p < d.length; p += 4) {
-                if (d[p] < 240 || d[p + 1] < 240 || d[p + 2] < 240) nonWhite++;
-              }
-              return nonWhite / (800 * 600);
-            }, `data:image/png;base64,${png.toString("base64")}`);
+            return await win.evaluate(
+              async (b64) => {
+                const img = new Image();
+                await new Promise<void>((res, rej) => {
+                  img.onload = () => res();
+                  img.onerror = () => rej(new Error("img load"));
+                  img.src = b64;
+                });
+                const cv = document.createElement("canvas");
+                cv.width = 800;
+                cv.height = 600;
+                const ctx = cv.getContext("2d", { willReadFrequently: true });
+                if (!ctx) return -1;
+                ctx.drawImage(img, 0, 0, 800, 600);
+                const d = ctx.getImageData(0, 0, 800, 600).data;
+                let nonWhite = 0;
+                for (let p = 0; p < d.length; p += 4) {
+                  if (d[p] < 240 || d[p + 1] < 240 || d[p + 2] < 240) nonWhite++;
+                }
+                return nonWhite / (800 * 600);
+              },
+              `data:image/png;base64,${png.toString("base64")}`,
+            );
           } catch {
             return -1;
           }
@@ -365,7 +364,12 @@ test("desktop electron real-pan crash harness", async () => {
             chartTitles: Array.from(
               new Set(
                 chartEls
-                  .map((el) => (el.closest("[data-chart], section, .chart-card") as any)?.textContent?.split("\n")[0]?.trim?.() ?? "")
+                  .map(
+                    (el) =>
+                      (el.closest("[data-chart], section, .chart-card") as any)?.textContent
+                        ?.split("\n")[0]
+                        ?.trim?.() ?? "",
+                  )
                   .filter(Boolean),
               ),
             ).slice(0, 30),
@@ -412,13 +416,10 @@ test("desktop electron real-pan crash harness", async () => {
   for (const c of crashes.slice(0, 20)) {
     console.log(`  CRASH(${c.kind}) +${c.t - t0}ms ${c.source}: ${c.line}`);
   }
-  console.log(
-    `[harness] artefacts: ${OUT_DIR}/{01-baseline.png, 02..05, stdout.log, stderr.log, summary.json}`,
-  );
+  console.log(`[harness] artefacts: ${OUT_DIR}/{01-baseline.png, 02..05, stdout.log, stderr.log, summary.json}`);
 
   expect(renderLanded, "first big render never landed").toBe(true);
-  expect(
-    crashes.length,
-    `${crashes.length} crash signals detected; first: ${JSON.stringify(crashes[0] ?? null)}`,
-  ).toBe(0);
+  expect(crashes.length, `${crashes.length} crash signals detected; first: ${JSON.stringify(crashes[0] ?? null)}`).toBe(
+    0,
+  );
 });

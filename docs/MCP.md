@@ -24,7 +24,7 @@ copy button) in the status panel. Uncheck to run without MCP. The
 preference is per-launch — closing the app returns to the default
 on/off you last set.
 
-The URL banner printed on launch is where the viewer *and* MCP clients connect:
+The URL banner printed on launch is where the viewer _and_ MCP clients connect:
 
 ```
   ➜ URL: http://localhost:5055
@@ -94,21 +94,25 @@ That returns the live tools list as JSON.
 ## The tools
 
 ### Data
+
 - `get_data_schema` — table name + column list (names, types)
 - `run_sql_query` — readonly SQL against the loaded DuckDB
 
 ### Charts
+
 - `list_charts`, `add_chart`, `delete_chart`
 - `get_chart_spec`, `set_chart_spec`
 - `get_chart_state`, `set_chart_state`, `clear_chart_state`
 - `get_chart_screenshot` — PNG of one chart
 
 ### Layout
+
 - `get_layout_type`, `set_layout_type` (`"list"` / `"dashboard"`)
 - `get_layout_state`, `set_layout_state`
 - `get_full_screenshot` — PNG of the entire viewer
 
 ### Rendering
+
 - `list_renderers` — column renderer types (text, number, timestamp, bar, …)
 - `get_column_styles`, `set_column_style`
 
@@ -116,43 +120,44 @@ That returns the live tools list as JSON.
 
 The geo tools operate on whichever embedding chart has `data.isGis = true`
 — they locate it by scanning `charts` and drive the MapLibre basemap
-+ scatter overlay in lockstep by setting chart state. Screenshots only
-capture the rendered basemap after calling `map.once('idle')`, so tiles
-are guaranteed loaded before the PNG is produced.
 
-- `get_map_viewport` — current center (lon/lat), MapLibre zoom, bbox
+- scatter overlay in lockstep by setting chart state. Screenshots only
+  capture the rendered basemap after calling `map.once('idle')`, so tiles
+  are guaranteed loaded before the PNG is produced.
+
+* `get_map_viewport` — current center (lon/lat), MapLibre zoom, bbox
   (west/south/east/north), canvas size in CSS pixels, and the chart id.
   Always the first tool to call when doing anything geographic.
-- `fly_to_point` — `{lon, lat, zoom?}`; zoom defaults to 10, clamped to
+* `fly_to_point` — `{lon, lat, zoom?}`; zoom defaults to 10, clamped to
   `[1, 19]`. Uses `jumpTo` internally so it's instantaneous.
-- `fly_to_bbox` — fit a `{west, south, east, north, padding?}` region.
+* `fly_to_bbox` — fit a `{west, south, east, north, padding?}` region.
   Honours the viewport aspect ratio; `padding` is a fraction of the
   smaller side.
-- `get_map_screenshot` — PNG of *just* the map canvas (scatter overlay +
+* `get_map_screenshot` — PNG of _just_ the map canvas (scatter overlay +
   basemap + markers), without the sidebar / charts / etc.
-- `get_map_screenshot_at` — composite: set viewport (either `{lon, lat,
-  zoom?}` or `{west, south, east, north, padding?}`), wait for the map
+* `get_map_screenshot_at` — composite: set viewport (either `{lon, lat,
+zoom?}` or `{west, south, east, north, padding?}`), wait for the map
   to become idle, then screenshot. Accepts an optional `settle_ms`
   that adds fixed wait after tile idle (default 0).
-- `select_bbox` — cross-filter the whole viewer to rows whose `(lon, lat)`
+* `select_bbox` — cross-filter the whole viewer to rows whose `(lon, lat)`
   falls in the bbox; sets the GIS chart's `brush`. Returns
   `{applied, brush, matched_count}` where `matched_count` is a SQL
   `COUNT(*)` inside the bbox (not the downsampled render count).
-- `clear_selection` — clear the brush.
-- `count_in_bbox` — read-only: just the row count inside a bbox. Does
-  *not* touch the brush. Use this when you're probing many candidate
+* `clear_selection` — clear the brush.
+* `count_in_bbox` — read-only: just the row count inside a bbox. Does
+  _not_ touch the brush. Use this when you're probing many candidate
   regions.
-- `find_nearby` — `{lon, lat, radius_km?, limit?, columns?, where?}`.
+* `find_nearby` — `{lon, lat, radius_km?, limit?, columns?, where?}`.
   Returns the nearest rows with great-circle distance. Pre-filters with
   a degree-sized bbox so it's fast even on 75 M rows; requires an ad-hoc
   SQL `where` fragment for extra filtering.
-- `density_grid` — `{west, south, east, north, nx?, ny?, top_k?}` —
+* `density_grid` — `{west, south, east, north, nx?, ny?, top_k?}` —
   bucket rows into an `nx × ny` grid and return per-cell counts. Great
   for finding density outliers inside a specific region.
-- `highlight_points` — draw temporary circular markers (with optional
+* `highlight_points` — draw temporary circular markers (with optional
   colour + label) at `{points: [{lon, lat, label?, color?, radius?}]}`.
   Appears on the next `get_map_screenshot`. Pass `{points: []}` to clear.
-- `set_basemap_style` — `{style}` accepts a MapLibre style URL or one of
+* `set_basemap_style` — `{style}` accepts a MapLibre style URL or one of
   the built-in keys: `"openfreemap-liberty"` (default),
   `"openfreemap-positron"`, `"openfreemap-bright"`, `"osm-raster"`,
   `"none"`.
@@ -206,6 +211,7 @@ becomes available to MCP clients automatically with zero Python changes.
 ## Example prompt
 
 > I just loaded an Overture Places parquet file. Use the geospatial-atlas tools to:
+>
 > 1. Describe the schema.
 > 2. Count rows per `primary_category` and show me the top 10.
 > 3. Add a density plot coloured by category.

@@ -72,11 +72,10 @@ test("tooltip latency — 322M scatter hovers under budget after eager-swap", as
   console.log(`[tooltip] loading ${BASE_URL}/?perf=1`);
   await page.goto(`${BASE_URL}/?perf=1`, { waitUntil: "domcontentloaded" });
 
-  await page.waitForFunction(
-    () => (window as any).__atlasFirstBigRenderGpuLogged === true,
-    null,
-    { timeout: 6 * 60 * 1000, polling: 250 },
-  );
+  await page.waitForFunction(() => (window as any).__atlasFirstBigRenderGpuLogged === true, null, {
+    timeout: 6 * 60 * 1000,
+    polling: 250,
+  });
   console.log(`[tooltip] first big render landed; waiting up to ${SWAP_WAIT_MS}ms for bg-mat eager-swap`);
 
   // Poll until the dataset is a BASE TABLE (eager-swap done) or budget
@@ -106,7 +105,10 @@ test("tooltip latency — 322M scatter hovers under budget after eager-swap", as
     for (const c of cs) {
       const r = (c as HTMLCanvasElement).getBoundingClientRect();
       const a = r.width * r.height;
-      if (a > bestArea) { bestArea = a; best = { x: r.x, y: r.y, w: r.width, h: r.height }; }
+      if (a > bestArea) {
+        bestArea = a;
+        best = { x: r.x, y: r.y, w: r.width, h: r.height };
+      }
     }
     return best;
   });
@@ -168,8 +170,13 @@ test("tooltip latency — 322M scatter hovers under budget after eager-swap", as
   // produce a tooltip inside the budget. Sparse zones in eubucco mean
   // it's reasonable for 1–2 to miss; the median latency is what
   // matters.
-  expect(latencies.length, `only ${latencies.length}/${offsets.length} hovers produced a tooltip`).toBeGreaterThanOrEqual(3);
+  expect(
+    latencies.length,
+    `only ${latencies.length}/${offsets.length} hovers produced a tooltip`,
+  ).toBeGreaterThanOrEqual(3);
   const median = [...latencies].sort((a, b) => a - b)[Math.floor(latencies.length / 2)];
   console.log(`[tooltip] median latency over ${latencies.length} hovers: ${median}ms (budget ${TOOLTIP_BUDGET_MS}ms)`);
-  expect(median, `tooltip median latency ${median}ms exceeds budget ${TOOLTIP_BUDGET_MS}ms`).toBeLessThanOrEqual(TOOLTIP_BUDGET_MS);
+  expect(median, `tooltip median latency ${median}ms exceeds budget ${TOOLTIP_BUDGET_MS}ms`).toBeLessThanOrEqual(
+    TOOLTIP_BUDGET_MS,
+  );
 });

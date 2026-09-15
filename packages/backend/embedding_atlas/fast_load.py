@@ -306,7 +306,12 @@ def _detect_columns(
     col_types = {r[0]: r[1] for r in schema}
     cols_lower = {c.lower(): c for c in cols}
 
-    for xc, yc in [("longitude", "latitude"), ("lon", "lat"), ("lng", "lat"), ("x", "y")]:
+    for xc, yc in [
+        ("longitude", "latitude"),
+        ("lon", "lat"),
+        ("lng", "lat"),
+        ("x", "y"),
+    ]:
         if xc in cols_lower and yc in cols_lower:
             return "xy", (cols_lower[xc], cols_lower[yc]), cols, col_types
 
@@ -510,7 +515,11 @@ def fast_load_parquet(
         ]
         if varchar_cols:
             try:
-                emit("enum_prefilter", 9.5, f"Sampling {len(varchar_cols)} VARCHAR columns")
+                emit(
+                    "enum_prefilter",
+                    9.5,
+                    f"Sampling {len(varchar_cols)} VARCHAR columns",
+                )
                 # Stage 1: cheap LIMIT prefilter. 2× slack accounts for
                 # cardinality under-estimation in a small sample.
                 slack = max(2 * enum_threshold, enum_threshold + 64)
@@ -523,7 +532,11 @@ def fast_load_parquet(
                     f"SELECT {sel} FROM s"
                 ).fetchone()
                 survivors = (
-                    [c for c, n in zip(varchar_cols, row) if n is not None and n <= slack]
+                    [
+                        c
+                        for c, n in zip(varchar_cols, row)
+                        if n is not None and n <= slack
+                    ]
                     if row is not None
                     else []
                 )
@@ -537,7 +550,11 @@ def fast_load_parquet(
                     )
                     row = con.sql(f"SELECT {sel} FROM {read}").fetchone()
                     keepers = (
-                        [c for c, n in zip(survivors, row) if n is not None and n <= enum_threshold]
+                        [
+                            c
+                            for c, n in zip(survivors, row)
+                            if n is not None and n <= enum_threshold
+                        ]
                         if row is not None
                         else []
                     )
@@ -571,9 +588,7 @@ def fast_load_parquet(
     # active transaction``. Cast each GEOMETRY column to TEXT (WKT) in the
     # view: same data, Arrow-IPC-safe, and the per-row WKT string only
     # materialises when a query actually selects the column.
-    geom_columns = [
-        c for c, t in col_types.items() if t.upper().startswith("GEOMETRY")
-    ]
+    geom_columns = [c for c, t in col_types.items() if t.upper().startswith("GEOMETRY")]
 
     if enum_columns or geom_columns:
         # Create one ENUM type per encoded column. Names are scoped by
@@ -582,12 +597,16 @@ def fast_load_parquet(
         for col, values in enum_columns.items():
             type_name = _enum_type_name(table, col)
             literal_list = ", ".join("'" + v.replace("'", "''") + "'" for v in values)
-            con.sql(f"CREATE OR REPLACE TYPE {quote_ident(type_name)} AS ENUM ({literal_list})")
+            con.sql(
+                f"CREATE OR REPLACE TYPE {quote_ident(type_name)} AS ENUM ({literal_list})"
+            )
         # Replace the passthrough * with explicit projections so we can
         # cast just the ENUM and GEOMETRY cols. Anything else passes
         # through unchanged.
         rewritten = list(enum_columns.keys()) + geom_columns
-        excludes = (["file_row_number"] + rewritten) if not has_frn_collision else rewritten
+        excludes = (
+            (["file_row_number"] + rewritten) if not has_frn_collision else rewritten
+        )
         passthrough = "* EXCLUDE (" + ", ".join(quote_ident(e) for e in excludes) + ")"
         casts = []
         for col in enum_columns:
@@ -605,7 +624,9 @@ def fast_load_parquet(
     merc_y_bounds: tuple[float, float] | None = None
     if precompute_quantised and x_bounds is not None and y_bounds is not None:
         quant_x_col = _unused_name(columns + [id_column, x_out, y_out], "__x_u32__")
-        quant_y_col = _unused_name(columns + [id_column, x_out, y_out, quant_x_col], "__y_u32__")
+        quant_y_col = _unused_name(
+            columns + [id_column, x_out, y_out, quant_x_col], "__y_u32__"
+        )
         x_min, x_max = x_bounds
         y_min, y_max = y_bounds
         # u32 quant: 4 294 967 295 = 2³² − 1 distinct buckets per axis.
@@ -644,8 +665,13 @@ def fast_load_parquet(
         is_lat_like = -90.5 <= y_min <= y_max <= 90.5
         if is_lat_like:
             import math
-            merc_y_min = math.log(math.tan(math.pi / 4 + y_min * math.pi / 360)) * 180 / math.pi
-            merc_y_max = math.log(math.tan(math.pi / 4 + y_max * math.pi / 360)) * 180 / math.pi
+
+            merc_y_min = (
+                math.log(math.tan(math.pi / 4 + y_min * math.pi / 360)) * 180 / math.pi
+            )
+            merc_y_max = (
+                math.log(math.tan(math.pi / 4 + y_max * math.pi / 360)) * 180 / math.pi
+            )
             if merc_y_max > merc_y_min:
                 merc_y_scale = U32_MAX / (merc_y_max - merc_y_min)
                 quant_merc_y_col = _unused_name(
@@ -716,7 +742,11 @@ def fast_load_parquet(
             pass
 
     emit("ready", 100.0, f"Loaded {row_count:,} rows")
-    extra_cols = [c for c in (x_out, y_out, id_column, quant_x_col, quant_y_col, quant_merc_y_col) if c is not None and c not in columns]
+    extra_cols = [
+        c
+        for c in (x_out, y_out, id_column, quant_x_col, quant_y_col, quant_merc_y_col)
+        if c is not None and c not in columns
+    ]
 
     # Kick off background materialisation when we returned a VIEW. The
     # CTAS runs in parallel with the first read queries and the server's
@@ -850,4 +880,6 @@ def quote_ident(s: str) -> str:
 
 def progress_line(stage: str, percent: float, detail: str) -> str:
     """Serialize a progress event for pipe-based transport (Rust parses this)."""
-    return "GSA_PROGRESS " + json.dumps({"stage": stage, "percent": percent, "detail": detail})
+    return "GSA_PROGRESS " + json.dumps(
+        {"stage": stage, "percent": percent, "detail": detail}
+    )

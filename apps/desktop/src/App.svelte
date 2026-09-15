@@ -8,10 +8,7 @@
     | { kind: "ready"; url: string; dataset: string }
     | { kind: "error"; message: string };
 
-  type WebGPU =
-    | { state: "probing" }
-    | { state: "ok"; adapter: string }
-    | { state: "missing"; reason: string };
+  type WebGPU = { state: "probing" } | { state: "ok"; adapter: string } | { state: "missing"; reason: string };
 
   type Progress = { stage: string; percent: number; detail: string };
 
@@ -59,22 +56,21 @@
     checkWebGPU();
 
     // Load the persisted MCP preference (default: enabled).
-    invoke<boolean>("get_mcp_enabled").then((v) => {
-      mcpEnabled = v;
-    }).catch(() => {});
+    invoke<boolean>("get_mcp_enabled")
+      .then((v) => {
+        mcpEnabled = v;
+      })
+      .catch(() => {});
 
-    const unlistenReady = listen<{ url: string; mcp_url: string }>(
-      "sidecar-ready",
-      async (event) => {
-        const prev = status;
-        const dataset = prev.kind === "loading" ? prev.dataset : "";
-        const savedHash = await invoke<string | null>("load_viewer_state").catch(() => null);
-        const target = event.payload.url + (savedHash ? `#${savedHash}` : "");
-        mcpUrl = event.payload.mcp_url ?? "";
-        status = { kind: "ready", url: target, dataset };
-        window.location.replace(target);
-      },
-    );
+    const unlistenReady = listen<{ url: string; mcp_url: string }>("sidecar-ready", async (event) => {
+      const prev = status;
+      const dataset = prev.kind === "loading" ? prev.dataset : "";
+      const savedHash = await invoke<string | null>("load_viewer_state").catch(() => null);
+      const target = event.payload.url + (savedHash ? `#${savedHash}` : "");
+      mcpUrl = event.payload.mcp_url ?? "";
+      status = { kind: "ready", url: target, dataset };
+      window.location.replace(target);
+    });
 
     const unlistenError = listen<{ message: string }>("sidecar-error", (event) => {
       status = { kind: "error", message: event.payload.message };
@@ -164,9 +160,7 @@
         />
       </div>
       <div class="topn-row mcp-row">
-        <label class="topn-label" for="mcp-toggle">
-          Expose MCP (Model Context Protocol) endpoint
-        </label>
+        <label class="topn-label" for="mcp-toggle"> Expose MCP (Model Context Protocol) endpoint </label>
         <input
           id="mcp-toggle"
           type="checkbox"
@@ -178,22 +172,21 @@
       </div>
       <p class="hint mcp-hint">
         When enabled, Claude Desktop / Cursor / Continue can connect to
-        <code>http://127.0.0.1:&lt;port&gt;/mcp</code>. The port is picked
-        fresh each launch; it will be shown below once the viewer is up.
+        <code>http://127.0.0.1:&lt;port&gt;/mcp</code>. The port is picked fresh each launch; it will be shown below
+        once the viewer is up.
       </p>
       <button onclick={pickDataset}>Open dataset…</button>
       <p class="hint">
         Choose a Parquet, GeoParquet, CSV, or Arrow file containing
         <code>lon</code>/<code>lat</code> (or a WKB/native <code>geometry</code>) column.
         <br />
-        Set a <em>row limit</em> for a quick glimpse of a large file —
-        DuckDB reads only the first&nbsp;N rows (SQL&nbsp;<code>LIMIT</code>).
+        Set a <em>row limit</em> for a quick glimpse of a large file — DuckDB reads only the first&nbsp;N rows
+        (SQL&nbsp;<code>LIMIT</code>).
         <br />
-        Set a <em>text column</em> (mirrors <code>--text</code>) to pick
-        which column feeds tooltips and search.
+        Set a <em>text column</em> (mirrors <code>--text</code>) to pick which column feeds tooltips and search.
         <br />
-        You can also drag &amp; drop a file anywhere on the window.
-        The view state is saved per dataset and restored on next open.
+        You can also drag &amp; drop a file anywhere on the window. The view state is saved per dataset and restored on next
+        open.
       </p>
     </section>
   {:else if status.kind === "loading"}
@@ -365,7 +358,9 @@
     margin: 0 auto 1rem;
   }
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
   .progress-wrap {
     width: 100%;
@@ -379,8 +374,13 @@
     margin-bottom: 0.35rem;
     color: #d0d4db;
   }
-  .progress-stage { font-weight: 500; }
-  .progress-pct { color: #a0a4ab; font-variant-numeric: tabular-nums; }
+  .progress-stage {
+    font-weight: 500;
+  }
+  .progress-pct {
+    color: #a0a4ab;
+    font-variant-numeric: tabular-nums;
+  }
   .progress-bar {
     height: 8px;
     background: #1f232a;
@@ -398,8 +398,12 @@
     animation: indeterminate 1.2s ease-in-out infinite;
   }
   @keyframes indeterminate {
-    0%   { transform: translateX(-120%); }
-    100% { transform: translateX(320%); }
+    0% {
+      transform: translateX(-120%);
+    }
+    100% {
+      transform: translateX(320%);
+    }
   }
   .progress-detail {
     font-size: 0.75rem;

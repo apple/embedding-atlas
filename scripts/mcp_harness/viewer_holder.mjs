@@ -15,11 +15,7 @@ async function main() {
     headless: true,
     // WebGPU headless needs angle/vulkan swiftshader; use WebGL2 fallback
     // (the viewer falls back automatically).
-    args: [
-      "--enable-unsafe-webgpu",
-      "--use-angle=swiftshader",
-      "--enable-features=Vulkan,UseSkiaRenderer",
-    ],
+    args: ["--enable-unsafe-webgpu", "--use-angle=swiftshader", "--enable-features=Vulkan,UseSkiaRenderer"],
   });
   const context = await browser.newContext({
     viewport: { width: 1600, height: 1000 },

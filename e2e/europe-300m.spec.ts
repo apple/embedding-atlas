@@ -75,7 +75,10 @@ test("europe 300m frontend fluency", async ({ page }) => {
   while (Date.now() < POLL_DEADLINE) {
     await page.waitForTimeout(3_000);
     lastInfo = await inspectCanvases(page);
-    const headerText = await page.locator("body").innerText().catch(() => "");
+    const headerText = await page
+      .locator("body")
+      .innerText()
+      .catch(() => "");
     mosaicReady = /300,000,000\s*points/.test(headerText);
     if (mosaicReady && lastInfo.hasNonZero) break;
   }
@@ -94,14 +97,16 @@ test("europe 300m frontend fluency", async ({ page }) => {
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
 
-  await page.evaluate(() => { (window as any).__atlasPanDbg = undefined; });
+  await page.evaluate(() => {
+    (window as any).__atlasPanDbg = undefined;
+  });
   await page.mouse.move(cx, cy);
   await page.mouse.down();
   const PAN_MS = 10_000;
   const t0 = Date.now();
   let dx = 0;
   while (Date.now() - t0 < PAN_MS) {
-    dx = (dx + 17) % 200 - 100;
+    dx = ((dx + 17) % 200) - 100;
     const dy = (dx * 0.3) | 0;
     await page.mouse.move(cx + dx, cy + dy);
     await page.waitForTimeout(50);
@@ -116,8 +121,9 @@ test("europe 300m frontend fluency", async ({ page }) => {
   // After the recompute-during-pan fix, mid-gesture renderCalls should be
   // tiny (just the release frame). Keep the bound generous to avoid
   // flakiness on slower CI: at least a 5× ratio of CSS-pans to renders.
-  expect(dbg.renderCalls, `too many real renders mid-pan (${dbg.renderCalls})`)
-    .toBeLessThan(Math.max(5, dbg.cssPanApplied / 5));
+  expect(dbg.renderCalls, `too many real renders mid-pan (${dbg.renderCalls})`).toBeLessThan(
+    Math.max(5, dbg.cssPanApplied / 5),
+  );
 
   // Tab survived the pan.
   const info2 = await inspectCanvases(page);
@@ -125,7 +131,10 @@ test("europe 300m frontend fluency", async ({ page }) => {
   await page.screenshot({ path: "e2e/test-results/europe-300m-after-pan.png", fullPage: true });
 
   // Phase C: trigger color-by on `category`.
-  const colorSelect = page.locator('select').filter({ hasText: /category|^--$/ }).first();
+  const colorSelect = page
+    .locator("select")
+    .filter({ hasText: /category|^--$/ })
+    .first();
   await colorSelect.selectOption({ label: /category/ }).catch(async () => {
     // fallback: enumerate
     const selects = await page.locator("select").all();

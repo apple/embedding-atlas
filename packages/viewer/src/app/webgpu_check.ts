@@ -27,8 +27,7 @@ export async function probeWebGPU(): Promise<WebGPUStatus> {
       return { kind: "unsupported", reason: "no compatible GPU adapter" };
     }
     const info: any = (await adapter.requestAdapterInfo?.()) ?? {};
-    const adapterName =
-      info.description || info.device || info.vendor || info.architecture || "";
+    const adapterName = info.description || info.device || info.vendor || info.architecture || "";
     return { kind: "ok", adapterName, device: info.device ?? "" };
   } catch (e) {
     return { kind: "unsupported", reason: `requestAdapter failed: ${String(e)}` };

@@ -31,13 +31,9 @@ import { join } from "node:path";
 
 const REPO = join(__dirname, "..");
 const DESKTOP = join(REPO, "apps/desktop");
-const DATASET =
-  process.env.DATASET ?? "/Users/dome/work/general/eubucco/eubucco_lat_lon.parquet";
+const DATASET = process.env.DATASET ?? "/Users/dome/work/general/eubucco/eubucco_lat_lon.parquet";
 
-const PACKAGED_BIN = join(
-  DESKTOP,
-  "release/mac-arm64/Geospatial Atlas.app/Contents/MacOS/Geospatial Atlas",
-);
+const PACKAGED_BIN = join(DESKTOP, "release/mac-arm64/Geospatial Atlas.app/Contents/MacOS/Geospatial Atlas");
 
 const OUT_DIR = join(REPO, "e2e/test-results/aggressive-pan");
 mkdirSync(OUT_DIR, { recursive: true });
@@ -136,11 +132,10 @@ test("aggressive pan crash repro", async () => {
 
     // Wait for first big render (5 min generous on the 322M bootstrap).
     try {
-      await win.waitForFunction(
-        () => (window as any).__atlasFirstBigRenderGpuLogged === true,
-        null,
-        { timeout: 5 * 60 * 1000, polling: 250 },
-      );
+      await win.waitForFunction(() => (window as any).__atlasFirstBigRenderGpuLogged === true, null, {
+        timeout: 5 * 60 * 1000,
+        polling: 250,
+      });
       renderLanded = true;
       console.log(`[harness] first big render landed at +${Date.now() - t0}ms`);
     } catch (e) {
@@ -148,9 +143,7 @@ test("aggressive pan crash repro", async () => {
     }
 
     if (crashes.length > 0) {
-      throw new Error(
-        `crash during cold load: ${JSON.stringify(crashes[0])}`,
-      );
+      throw new Error(`crash during cold load: ${JSON.stringify(crashes[0])}`);
     }
 
     if (renderLanded) {
@@ -164,9 +157,7 @@ test("aggressive pan crash repro", async () => {
           return { x: r.x, y: r.y, w: r.width, h: r.height };
         });
       });
-      const target = canvases.length > 0
-        ? canvases.reduce((a, b) => (a.w * a.h > b.w * b.h ? a : b))
-        : null;
+      const target = canvases.length > 0 ? canvases.reduce((a, b) => (a.w * a.h > b.w * b.h ? a : b)) : null;
       console.log(`[harness] target canvas: ${JSON.stringify(target)}`);
       expect(target, "no canvas found").not.toBeNull();
       const cx = target!.x + target!.w / 2;
@@ -175,26 +166,29 @@ test("aggressive pan crash repro", async () => {
       // Helper: dump app metrics as a side-channel diagnostic.
       const sample = async (label: string) => {
         const cov = await win.screenshot({ fullPage: false }).then((png) =>
-          win.evaluate(async (b64) => {
-            const img = new Image();
-            await new Promise<void>((res, rej) => {
-              img.onload = () => res();
-              img.onerror = () => rej(new Error("img"));
-              img.src = b64;
-            });
-            const cv = document.createElement("canvas");
-            cv.width = 800;
-            cv.height = 600;
-            const ctx = cv.getContext("2d", { willReadFrequently: true });
-            if (!ctx) return -1;
-            ctx.drawImage(img, 0, 0, 800, 600);
-            const d = ctx.getImageData(0, 0, 800, 600).data;
-            let nonWhite = 0;
-            for (let p = 0; p < d.length; p += 4) {
-              if (d[p] < 240 || d[p + 1] < 240 || d[p + 2] < 240) nonWhite++;
-            }
-            return nonWhite / (800 * 600);
-          }, `data:image/png;base64,${png.toString("base64")}`),
+          win.evaluate(
+            async (b64) => {
+              const img = new Image();
+              await new Promise<void>((res, rej) => {
+                img.onload = () => res();
+                img.onerror = () => rej(new Error("img"));
+                img.src = b64;
+              });
+              const cv = document.createElement("canvas");
+              cv.width = 800;
+              cv.height = 600;
+              const ctx = cv.getContext("2d", { willReadFrequently: true });
+              if (!ctx) return -1;
+              ctx.drawImage(img, 0, 0, 800, 600);
+              const d = ctx.getImageData(0, 0, 800, 600).data;
+              let nonWhite = 0;
+              for (let p = 0; p < d.length; p += 4) {
+                if (d[p] < 240 || d[p + 1] < 240 || d[p + 2] < 240) nonWhite++;
+              }
+              return nonWhite / (800 * 600);
+            },
+            `data:image/png;base64,${png.toString("base64")}`,
+          ),
         );
         console.log(`[harness] ${label} coverage=${(cov * 100).toFixed(1)}%`);
         return cov;
@@ -202,9 +196,7 @@ test("aggressive pan crash repro", async () => {
 
       const checkCrash = (label: string) => {
         if (crashes.length > 0) {
-          throw new Error(
-            `CRASH after ${label}: ${JSON.stringify(crashes[0])}`,
-          );
+          throw new Error(`CRASH after ${label}: ${JSON.stringify(crashes[0])}`);
         }
       };
 
@@ -285,7 +277,7 @@ test("aggressive pan crash repro", async () => {
         // Pan
         await win.mouse.down();
         for (let s = 1; s <= 20; s++) {
-          await win.mouse.move(cx + s * 10 * ((cyc % 2) ? 1 : -1), cy);
+          await win.mouse.move(cx + s * 10 * (cyc % 2 ? 1 : -1), cy);
         }
         await win.mouse.up();
         await win.waitForTimeout(300);
@@ -334,8 +326,5 @@ test("aggressive pan crash repro", async () => {
   }
 
   expect(renderLanded, "first big render never landed").toBe(true);
-  expect(
-    crashes.length,
-    `${crashes.length} crash signals; first: ${JSON.stringify(crashes[0] ?? null)}`,
-  ).toBe(0);
+  expect(crashes.length, `${crashes.length} crash signals; first: ${JSON.stringify(crashes[0] ?? null)}`).toBe(0);
 });

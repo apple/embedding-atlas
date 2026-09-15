@@ -16,3 +16,6 @@ packages/umap/benchmark/
 packages/umap/umap-wasm/pkg
 
 packages/density-clustering/density_clustering_wasm/pkg/
+
+apps/desktop/release/
+apps/desktop/resources/sidecar/

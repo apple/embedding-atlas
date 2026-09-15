@@ -60,9 +60,7 @@ test.describe("File Upload", () => {
     await expect(page.locator('input[type="text"]')).toBeVisible();
   });
 
-  test("uploading a parquet file transitions past the drop zone", async ({
-    page,
-  }) => {
+  test("uploading a parquet file transitions past the drop zone", async ({ page }) => {
     await page.goto(`${BASE_URL}/#/file`);
     await expect(page.locator("text=Drag & drop")).toBeVisible({ timeout: 10_000 });
 
@@ -110,7 +108,10 @@ test.describe("GIS Visualization (frontend)", () => {
 
   test("renders a scatter canvas after file upload", async ({ page }) => {
     const ok = await loadGisFixture(page);
-    if (!ok) { test.skip(); return; }
+    if (!ok) {
+      test.skip();
+      return;
+    }
 
     const canvasCount = await page.locator("canvas").count();
     expect(canvasCount).toBeGreaterThan(0);
@@ -118,7 +119,10 @@ test.describe("GIS Visualization (frontend)", () => {
 
   test("scatter canvas has non-trivial dimensions", async ({ page }) => {
     const ok = await loadGisFixture(page);
-    if (!ok) { test.skip(); return; }
+    if (!ok) {
+      test.skip();
+      return;
+    }
 
     const box = await page.locator("canvas").first().boundingBox();
     expect(box).not.toBeNull();
@@ -128,17 +132,21 @@ test.describe("GIS Visualization (frontend)", () => {
 
   test("MapLibre basemap canvas is present in GIS mode", async ({ page }) => {
     const ok = await loadGisFixture(page);
-    if (!ok) { test.skip(); return; }
+    if (!ok) {
+      test.skip();
+      return;
+    }
 
-    const mapCanvasCount = await page
-      .locator(".maplibregl-canvas, .mapboxgl-canvas")
-      .count();
+    const mapCanvasCount = await page.locator(".maplibregl-canvas, .mapboxgl-canvas").count();
     expect(mapCanvasCount).toBeGreaterThan(0);
   });
 
   test("sidebar contains interactive controls", async ({ page }) => {
     const ok = await loadGisFixture(page);
-    if (!ok) { test.skip(); return; }
+    if (!ok) {
+      test.skip();
+      return;
+    }
 
     expect(await page.locator("button").count()).toBeGreaterThan(0);
   });
@@ -147,19 +155,25 @@ test.describe("GIS Visualization (frontend)", () => {
 
   test("Viewport.projectLat matches standard Web Mercator", async ({ page }) => {
     const ok = await loadGisFixture(page);
-    if (!ok) { test.skip(); return; }
+    if (!ok) {
+      test.skip();
+      return;
+    }
 
-    const results = await page.evaluate((refs: typeof ALIGNMENT_REFERENCE_POINTS) => {
-      function standardMercatorY(lat: number): number {
-        const latRad = (lat * Math.PI) / 180;
-        return (Math.log(Math.tan(Math.PI / 4 + latRad / 2)) * 180) / Math.PI;
-      }
-      return refs.map((ref) => ({
-        name: ref.name,
-        lat: ref.lat,
-        expectedY: standardMercatorY(ref.lat),
-      }));
-    }, [...ALIGNMENT_REFERENCE_POINTS]);
+    const results = await page.evaluate(
+      (refs: typeof ALIGNMENT_REFERENCE_POINTS) => {
+        function standardMercatorY(lat: number): number {
+          const latRad = (lat * Math.PI) / 180;
+          return (Math.log(Math.tan(Math.PI / 4 + latRad / 2)) * 180) / Math.PI;
+        }
+        return refs.map((ref) => ({
+          name: ref.name,
+          lat: ref.lat,
+          expectedY: standardMercatorY(ref.lat),
+        }));
+      },
+      [...ALIGNMENT_REFERENCE_POINTS],
+    );
 
     for (const r of results) {
       const ours = projectLat(r.lat);
@@ -169,16 +183,22 @@ test.describe("GIS Visualization (frontend)", () => {
 
   test("scatter points align with MapLibre basemap", async ({ page }) => {
     const ok = await loadGisFixture(page);
-    if (!ok) { test.skip(); return; }
+    if (!ok) {
+      test.skip();
+      return;
+    }
 
-    const positions = await page.evaluate((refs: typeof ALIGNMENT_REFERENCE_POINTS) => {
-      const map = (window as any).__geospatialAtlasMap;
-      if (!map?.project) return null;
-      return refs.map((ref) => {
-        const px = map.project([ref.lon, ref.lat]);
-        return { name: ref.name, x: px.x, y: px.y };
-      });
-    }, [...ALIGNMENT_REFERENCE_POINTS]);
+    const positions = await page.evaluate(
+      (refs: typeof ALIGNMENT_REFERENCE_POINTS) => {
+        const map = (window as any).__geospatialAtlasMap;
+        if (!map?.project) return null;
+        return refs.map((ref) => {
+          const px = map.project([ref.lon, ref.lat]);
+          return { name: ref.name, x: px.x, y: px.y };
+        });
+      },
+      [...ALIGNMENT_REFERENCE_POINTS],
+    );
 
     if (positions === null) {
       // Fallback: verify Mercator round-trip
@@ -186,8 +206,7 @@ test.describe("GIS Visualization (frontend)", () => {
         const mercY = projectLat(ref.lat);
         expect(Math.abs(mercY)).toBeLessThan(200);
         const yRad = (mercY * Math.PI) / 180;
-        const roundTrip =
-          (2 * Math.atan(Math.exp(yRad)) - Math.PI / 2) * (180 / Math.PI);
+        const roundTrip = (2 * Math.atan(Math.exp(yRad)) - Math.PI / 2) * (180 / Math.PI);
         expect(roundTrip).toBeCloseTo(ref.lat, 6);
       }
       return;
@@ -203,7 +222,10 @@ test.describe("GIS Visualization (frontend)", () => {
 
   test("scroll-to-zoom changes the viewport", async ({ page }) => {
     const ok = await loadGisFixture(page);
-    if (!ok) { test.skip(); return; }
+    if (!ok) {
+      test.skip();
+      return;
+    }
 
     const canvas = page.locator("canvas").first();
     const box = await canvas.boundingBox();
@@ -223,11 +245,12 @@ test.describe("GIS Visualization (frontend)", () => {
 
   // -- Zoom Drift --
 
-  test("scatter and MapLibre positions stay aligned across zoom levels", async ({
-    page,
-  }) => {
+  test("scatter and MapLibre positions stay aligned across zoom levels", async ({ page }) => {
     const ok = await loadGisFixture(page);
-    if (!ok) { test.skip(); return; }
+    if (!ok) {
+      test.skip();
+      return;
+    }
 
     const MAX_DRIFT_PX = 2;
     const ZOOM_STEPS = 3;
@@ -293,7 +316,10 @@ test.describe("GIS Visualization (frontend)", () => {
     }
 
     const initial = await measureDrift("default zoom");
-    if (initial === null) { test.skip(); return; }
+    if (initial === null) {
+      test.skip();
+      return;
+    }
     snapshots.push(initial);
 
     const canvas = page.locator("canvas").first();
@@ -322,33 +348,33 @@ test.describe("GIS Visualization (frontend)", () => {
 
     for (const snap of snapshots) {
       for (const d of snap.drifts) {
-        expect(
-          d.dx,
-          `X drift for ${d.name} at "${snap.label}"`,
-        ).toBeLessThan(MAX_DRIFT_PX);
-        expect(
-          d.dy,
-          `Y drift for ${d.name} at "${snap.label}"`,
-        ).toBeLessThan(MAX_DRIFT_PX);
+        expect(d.dx, `X drift for ${d.name} at "${snap.label}"`).toBeLessThan(MAX_DRIFT_PX);
+        expect(d.dy, `Y drift for ${d.name} at "${snap.label}"`).toBeLessThan(MAX_DRIFT_PX);
       }
     }
   });
 
   test("pairwise point distances scale uniformly on zoom", async ({ page }) => {
     const ok = await loadGisFixture(page);
-    if (!ok) { test.skip(); return; }
+    if (!ok) {
+      test.skip();
+      return;
+    }
 
     type Positions = { name: string; x: number; y: number }[];
 
     async function getMapLibrePositions(): Promise<Positions | null> {
-      return page.evaluate((refs: typeof ALIGNMENT_REFERENCE_POINTS) => {
-        const map = (window as any).__geospatialAtlasMap;
-        if (!map?.project) return null;
-        return refs.map((ref) => {
-          const px = map.project([ref.lon, ref.lat]);
-          return { name: ref.name, x: px.x, y: px.y };
-        });
-      }, [...ALIGNMENT_REFERENCE_POINTS]);
+      return page.evaluate(
+        (refs: typeof ALIGNMENT_REFERENCE_POINTS) => {
+          const map = (window as any).__geospatialAtlasMap;
+          if (!map?.project) return null;
+          return refs.map((ref) => {
+            const px = map.project([ref.lon, ref.lat]);
+            return { name: ref.name, x: px.x, y: px.y };
+          });
+        },
+        [...ALIGNMENT_REFERENCE_POINTS],
+      );
     }
 
     function pairwiseDistances(pos: Positions): number[] {
@@ -364,7 +390,10 @@ test.describe("GIS Visualization (frontend)", () => {
     }
 
     const posBefore = await getMapLibrePositions();
-    if (posBefore === null) { test.skip(); return; }
+    if (posBefore === null) {
+      test.skip();
+      return;
+    }
     const distsBefore = pairwiseDistances(posBefore);
 
     const canvas = page.locator("canvas").first();

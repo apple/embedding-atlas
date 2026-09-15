@@ -23,17 +23,13 @@ import { join } from "node:path";
 
 const REPO = join(__dirname, "..");
 const DESKTOP = join(REPO, "apps/desktop");
-const DATASET =
-  process.env.DATASET ?? "/Users/dome/work/general/eubucco/eubucco_lat_lon.parquet";
+const DATASET = process.env.DATASET ?? "/Users/dome/work/general/eubucco/eubucco_lat_lon.parquet";
 
 // Prefer the PACKAGED .app binary over node_modules/electron — the
 // regression we're chasing only manifests in the packaged bundle, not
 // the dev shell. Falls back to dev electron if the packaged build is
 // missing.
-const PACKAGED_BIN = join(
-  DESKTOP,
-  "release/mac-arm64/Geospatial Atlas.app/Contents/MacOS/Geospatial Atlas",
-);
+const PACKAGED_BIN = join(DESKTOP, "release/mac-arm64/Geospatial Atlas.app/Contents/MacOS/Geospatial Atlas");
 const ELECTRON_BIN: string = (() => {
   if (existsSync(PACKAGED_BIN)) return PACKAGED_BIN;
   const req = createRequire(join(DESKTOP, "package.json"));
@@ -152,11 +148,10 @@ test("desktop electron eubucco diagnostic", async () => {
     // failing queries, short enough that iteration is fast.
     let renderLanded = false;
     try {
-      await window.waitForFunction(
-        () => (window as any).__atlasFirstBigRenderGpuLogged === true,
-        null,
-        { timeout: 90_000, polling: 250 },
-      );
+      await window.waitForFunction(() => (window as any).__atlasFirstBigRenderGpuLogged === true, null, {
+        timeout: 90_000,
+        polling: 250,
+      });
       renderLanded = true;
       console.log(`[diag] first big render flag SET at t=${Date.now()}`);
     } catch (e) {
@@ -175,24 +170,21 @@ test("desktop electron eubucco diagnostic", async () => {
     // Window-side state probe.
     const probe = await window.evaluate(() => {
       const w = window as any;
-      const canvases = Array.from(document.querySelectorAll("canvas")).map(
-        (c) => {
-          const r = (c as HTMLCanvasElement).getBoundingClientRect();
-          return {
-            w: r.width,
-            h: r.height,
-            cw: (c as HTMLCanvasElement).width,
-            ch: (c as HTMLCanvasElement).height,
-          };
-        },
-      );
+      const canvases = Array.from(document.querySelectorAll("canvas")).map((c) => {
+        const r = (c as HTMLCanvasElement).getBoundingClientRect();
+        return {
+          w: r.width,
+          h: r.height,
+          cw: (c as HTMLCanvasElement).width,
+          ch: (c as HTMLCanvasElement).height,
+        };
+      });
       return {
         firstBigRender: w.__atlasFirstBigRenderGpuLogged ?? null,
         firstBigRenderMs: w.__atlasFirstBigRenderGpuMs ?? null,
         atlasStage: w.__atlasStageMarks ?? null,
         canvases,
-        scatterPoints:
-          (document.querySelector("[aria-label='points']")?.textContent ?? null),
+        scatterPoints: document.querySelector("[aria-label='points']")?.textContent ?? null,
       };
     });
     console.log(`[diag] probe: ${JSON.stringify(probe, null, 2)}`);
@@ -234,14 +226,16 @@ test("desktop electron eubucco diagnostic", async () => {
         // Short settle so the next pan's first move isn't coalesced
         // with this pan's last move into a flick gesture.
         await window.waitForTimeout(400);
-        const errs = await window.evaluate(() => {
-          const w = window as any;
-          return (w.__atlasGpuErrors ?? []).map((r: any) => ({
-            kind: r.kind,
-            message: String(r.message ?? "").slice(0, 200),
-            reason: r.reason ?? null,
-          }));
-        }).catch(() => null);
+        const errs = await window
+          .evaluate(() => {
+            const w = window as any;
+            return (w.__atlasGpuErrors ?? []).map((r: any) => ({
+              kind: r.kind,
+              message: String(r.message ?? "").slice(0, 200),
+              reason: r.reason ?? null,
+            }));
+          })
+          .catch(() => null);
         console.log(`[diag] pan ${i} done; gpuErrors=${errs ? errs.length : "probe-failed"}`);
         if (errs && errs.length > 0) {
           for (const e of errs) console.log(`  GPUERR: ${e.kind} ${e.reason ?? ""} ${e.message}`);
@@ -256,28 +250,31 @@ test("desktop electron eubucco diagnostic", async () => {
       const repaintDeadline = Date.now() + 60_000;
       const sample = async (): Promise<number> => {
         const png = await window.screenshot({ fullPage: false });
-        return await window.evaluate(async (b64) => {
-          const img = new Image();
-          await new Promise<void>((res, rej) => {
-            img.onload = () => res();
-            img.onerror = () => rej(new Error("img load failed"));
-            img.src = b64;
-          });
-          const cv = document.createElement("canvas");
-          cv.width = 800;
-          cv.height = 600;
-          const ctx = cv.getContext("2d", { willReadFrequently: true });
-          if (!ctx) return -1;
-          ctx.drawImage(img, 0, 0, 800, 600);
-          const data = ctx.getImageData(0, 0, 800, 600).data;
-          const total = 800 * 600;
-          // Count pixels darker than near-white background.
-          let nonWhite = 0;
-          for (let p = 0; p < data.length; p += 4) {
-            if (data[p] < 240 || data[p + 1] < 240 || data[p + 2] < 240) nonWhite++;
-          }
-          return nonWhite / total;
-        }, `data:image/png;base64,${png.toString("base64")}`);
+        return await window.evaluate(
+          async (b64) => {
+            const img = new Image();
+            await new Promise<void>((res, rej) => {
+              img.onload = () => res();
+              img.onerror = () => rej(new Error("img load failed"));
+              img.src = b64;
+            });
+            const cv = document.createElement("canvas");
+            cv.width = 800;
+            cv.height = 600;
+            const ctx = cv.getContext("2d", { willReadFrequently: true });
+            if (!ctx) return -1;
+            ctx.drawImage(img, 0, 0, 800, 600);
+            const data = ctx.getImageData(0, 0, 800, 600).data;
+            const total = 800 * 600;
+            // Count pixels darker than near-white background.
+            let nonWhite = 0;
+            for (let p = 0; p < data.length; p += 4) {
+              if (data[p] < 240 || data[p + 1] < 240 || data[p + 2] < 240) nonWhite++;
+            }
+            return nonWhite / total;
+          },
+          `data:image/png;base64,${png.toString("base64")}`,
+        );
       };
       while (Date.now() < repaintDeadline) {
         postPanCoverage = await sample().catch(() => -1);
@@ -305,21 +302,16 @@ test("desktop electron eubucco diagnostic", async () => {
     console.log(`[diag] page errors: ${pageErrors.length}`);
     for (const e of pageErrors.slice(0, 20)) console.log(`  PAGEERR: ${e.slice(0, 400)}`);
     console.log(`[diag] request failures: ${requestFailures.length}`);
-    for (const f of requestFailures.slice(0, 20))
-      console.log(`  REQFAIL: ${f.url.slice(0, 200)} -> ${f.failure}`);
+    for (const f of requestFailures.slice(0, 20)) console.log(`  REQFAIL: ${f.url.slice(0, 200)} -> ${f.failure}`);
     console.log(`[diag] /data/query responses: ${slowRequests.length}`);
-    for (const r of slowRequests)
-      console.log(`  QUERY: ${r.status} ${r.size}B ${r.ms}ms`);
+    for (const r of slowRequests) console.log(`  QUERY: ${r.status} ${r.size}B ${r.ms}ms`);
 
     console.log(
       `[diag] FINAL: renderLanded=${renderLanded} panGpuErrors=${panGpuErrors.length} postPanCoverage=${(postPanCoverage * 100).toFixed(2)}%`,
     );
 
     expect(renderLanded, "first big render never landed in Electron").toBe(true);
-    expect(
-      panGpuErrors.length,
-      `pan storm produced GPU errors: ${JSON.stringify(panGpuErrors).slice(0, 400)}`,
-    ).toBe(0);
+    expect(panGpuErrors.length, `pan storm produced GPU errors: ${JSON.stringify(panGpuErrors).slice(0, 400)}`).toBe(0);
     expect(
       postPanCoverage,
       `scatter never repainted after pan (final coverage ${(postPanCoverage * 100).toFixed(2)}%) — likely Metal watchdog crash`,

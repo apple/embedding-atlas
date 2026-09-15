@@ -19,16 +19,16 @@ from PIL import Image, ImageDraw, ImageFilter
 HERE = pathlib.Path(__file__).resolve().parent
 
 # Palette
-BG_TOP = (11, 16, 31, 255)       # #0B101F — near-black navy
-BG_BOT = (17, 24, 39, 255)       # #111827 — slate-900
-ACCENT = (249, 115, 22, 255)     # #F97316 — amber-500 (the warm anchor)
+BG_TOP = (11, 16, 31, 255)  # #0B101F — near-black navy
+BG_BOT = (17, 24, 39, 255)  # #111827 — slate-900
+ACCENT = (249, 115, 22, 255)  # #F97316 — amber-500 (the warm anchor)
 FOREGROUND = (248, 250, 252, 255)  # #F8FAFC — off-white
 
 # Circle positions & sizes (fractions of canvas width/height and radius).
 # The layout is the whole identity — tuned to look balanced at every scale.
 CIRCLES = [
     # (cx_frac, cy_frac, r_frac, fill)
-    (0.58, 0.46, 0.155, ACCENT),      # anchor — largest, amber
+    (0.58, 0.46, 0.155, ACCENT),  # anchor — largest, amber
     (0.30, 0.30, 0.075, FOREGROUND),  # companion — upper-left
     (0.76, 0.74, 0.055, FOREGROUND),  # outlier — lower-right
 ]
@@ -39,9 +39,9 @@ def _gradient(size: int) -> Image.Image:
     grad = Image.new("RGBA", (1, size))
     for y in range(size):
         t = y / max(size - 1, 1)
-        pixel = tuple(
-            int(BG_TOP[i] * (1 - t) + BG_BOT[i] * t) for i in range(3)
-        ) + (255,)
+        pixel = tuple(int(BG_TOP[i] * (1 - t) + BG_BOT[i] * t) for i in range(3)) + (
+            255,
+        )
         grad.putpixel((0, y), pixel)
     return grad.resize((size, size))
 
@@ -54,11 +54,15 @@ def _mask_rounded_square(size: int, radius_frac: float = 0.225) -> Image.Image:
     return mask
 
 
-def _draw_dot(img: Image.Image, cx: int, cy: int, r: int, fill: tuple[int, int, int, int]) -> None:
+def _draw_dot(
+    img: Image.Image, cx: int, cy: int, r: int, fill: tuple[int, int, int, int]
+) -> None:
     """A flat, anti-aliased filled circle. No highlights, no gradients."""
     # Super-sample 4× for clean edges at small sizes.
     scale = 4
-    big = Image.new("RGBA", (r * 2 * scale + scale, r * 2 * scale + scale), (0, 0, 0, 0))
+    big = Image.new(
+        "RGBA", (r * 2 * scale + scale, r * 2 * scale + scale), (0, 0, 0, 0)
+    )
     ImageDraw.Draw(big).ellipse(
         [0, 0, r * 2 * scale, r * 2 * scale],
         fill=fill,
@@ -104,9 +108,7 @@ def main() -> None:
     # Windows .ico — multi-resolution container readable on all OSes.
     ico_sizes = [16, 24, 32, 48, 64, 128, 256]
     ico_path = HERE / "icon.ico"
-    make_base(256).save(
-        ico_path, format="ICO", sizes=[(s, s) for s in ico_sizes]
-    )
+    make_base(256).save(ico_path, format="ICO", sizes=[(s, s) for s in ico_sizes])
     print(f"wrote {ico_path}")
 
     # macOS .icns — only build when iconutil is available (macOS host).

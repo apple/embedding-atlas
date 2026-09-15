@@ -47,7 +47,10 @@ test("u32 quantisation — precomputed columns reconstruct lon/lat to <10 cm", a
   const projection = metadata?.props?.data?.projection ?? {};
   const precomputed = projection.precomputed;
   const bounds = projection.bounds;
-  expect(precomputed, "server did not advertise precomputed columns — sidecar may be running pre-u32 code").toBeTruthy();
+  expect(
+    precomputed,
+    "server did not advertise precomputed columns — sidecar may be running pre-u32 code",
+  ).toBeTruthy();
   expect(bounds, "server did not advertise bounds — required to reconstruct lon/lat").toBeTruthy();
   const xCol = precomputed.x_u16; // opaque API key — actual column is __x_u32__
   const yCol = precomputed.y_u16;
@@ -86,7 +89,9 @@ test("u32 quantisation — precomputed columns reconstruct lon/lat to <10 cm", a
   const xQuantumDeg = (xMax - xMin) / U32_MAX;
   const xQuantumM = xQuantumDeg * METERS_PER_DEGREE;
   console.log(`[precision] x quantum: ${xQuantumDeg.toExponential(3)}° = ${(xQuantumM * 1000).toFixed(3)} mm`);
-  expect(xQuantumM, `x quantum ${xQuantumM.toFixed(4)} m exceeds budget ${MAX_RECON_ERROR_M} m`).toBeLessThan(MAX_RECON_ERROR_M);
+  expect(xQuantumM, `x quantum ${xQuantumM.toFixed(4)} m exceeds budget ${MAX_RECON_ERROR_M} m`).toBeLessThan(
+    MAX_RECON_ERROR_M,
+  );
 
   let xErrors: number[] = [];
   for (const row of samples) {
@@ -103,7 +108,10 @@ test("u32 quantisation — precomputed columns reconstruct lon/lat to <10 cm", a
   console.log(
     `[precision] x reconstruction over ${xErrors.length} rows: max=${(maxErr * 1000).toFixed(3)} mm, mean=${(meanErr * 1000).toFixed(3)} mm`,
   );
-  expect(maxErr, `max x reconstruction error ${maxErr.toFixed(4)} m exceeds budget ${MAX_RECON_ERROR_M} m`).toBeLessThan(MAX_RECON_ERROR_M);
+  expect(
+    maxErr,
+    `max x reconstruction error ${maxErr.toFixed(4)} m exceeds budget ${MAX_RECON_ERROR_M} m`,
+  ).toBeLessThan(MAX_RECON_ERROR_M);
 
   if (!yIsMerc) {
     const yMin = bounds.y[0];
@@ -111,7 +119,9 @@ test("u32 quantisation — precomputed columns reconstruct lon/lat to <10 cm", a
     const yQuantumDeg = (yMax - yMin) / U32_MAX;
     const yQuantumM = yQuantumDeg * METERS_PER_DEGREE;
     console.log(`[precision] y quantum: ${yQuantumDeg.toExponential(3)}° = ${(yQuantumM * 1000).toFixed(3)} mm`);
-    expect(yQuantumM, `y quantum ${yQuantumM.toFixed(4)} m exceeds budget ${MAX_RECON_ERROR_M} m`).toBeLessThan(MAX_RECON_ERROR_M);
+    expect(yQuantumM, `y quantum ${yQuantumM.toFixed(4)} m exceeds budget ${MAX_RECON_ERROR_M} m`).toBeLessThan(
+      MAX_RECON_ERROR_M,
+    );
     let yErrors: number[] = [];
     for (const row of samples) {
       const lat = row.lat;
@@ -123,6 +133,9 @@ test("u32 quantisation — precomputed columns reconstruct lon/lat to <10 cm", a
     }
     const maxYErr = Math.max(...yErrors);
     console.log(`[precision] y reconstruction over ${yErrors.length} rows: max=${(maxYErr * 1000).toFixed(3)} mm`);
-    expect(maxYErr, `max y reconstruction error ${maxYErr.toFixed(4)} m exceeds budget ${MAX_RECON_ERROR_M} m`).toBeLessThan(MAX_RECON_ERROR_M);
+    expect(
+      maxYErr,
+      `max y reconstruction error ${maxYErr.toFixed(4)} m exceeds budget ${MAX_RECON_ERROR_M} m`,
+    ).toBeLessThan(MAX_RECON_ERROR_M);
   }
 });

@@ -118,9 +118,7 @@ test.describe("Rendering", () => {
     await page.goto(BASE_URL);
     await waitForDataRender(page);
 
-    const mapCanvasCount = await page
-      .locator(".maplibregl-canvas, .mapboxgl-canvas")
-      .count();
+    const mapCanvasCount = await page.locator(".maplibregl-canvas, .mapboxgl-canvas").count();
     expect(mapCanvasCount).toBeGreaterThan(0);
   });
 
@@ -155,31 +153,32 @@ test.describe("Basemap Alignment", () => {
    *
    * This catches both Mercator formula mismatches and viewport sync bugs.
    */
-  test("scatter points align with MapLibre basemap for known European cities", async ({
-    page,
-  }) => {
+  test("scatter points align with MapLibre basemap for known European cities", async ({ page }) => {
     await page.goto(BASE_URL);
     await waitForDataRender(page);
 
     // Collect MapLibre screen-space positions for reference points
-    const positions = await page.evaluate((refs) => {
-      // Find the MapLibre map instance by walking through the maplibregl-canvas
-      const mapCanvas = document.querySelector(".maplibregl-canvas") as HTMLCanvasElement | null;
-      if (!mapCanvas) return null;
+    const positions = await page.evaluate(
+      (refs) => {
+        // Find the MapLibre map instance by walking through the maplibregl-canvas
+        const mapCanvas = document.querySelector(".maplibregl-canvas") as HTMLCanvasElement | null;
+        if (!mapCanvas) return null;
 
-      // MapLibre stores its Map instance as a property on the canvas's parent container
-      const container = mapCanvas.closest(".maplibregl-map");
-      if (!container) return null;
+        // MapLibre stores its Map instance as a property on the canvas's parent container
+        const container = mapCanvas.closest(".maplibregl-map");
+        if (!container) return null;
 
-      // Access the map via the internal _map reference (maplibre-gl stores it on the container)
-      const map = (container as any)._map ?? (container as any).__map;
-      if (!map?.project) return null;
+        // Access the map via the internal _map reference (maplibre-gl stores it on the container)
+        const map = (container as any)._map ?? (container as any).__map;
+        if (!map?.project) return null;
 
-      return refs.map((ref) => {
-        const px = map.project([ref.lon, ref.lat]);
-        return { name: ref.name, lon: ref.lon, lat: ref.lat, x: px.x, y: px.y };
-      });
-    }, [...ALIGNMENT_REFERENCE_POINTS]);
+        return refs.map((ref) => {
+          const px = map.project([ref.lon, ref.lat]);
+          return { name: ref.name, lon: ref.lon, lat: ref.lat, x: px.x, y: px.y };
+        });
+      },
+      [...ALIGNMENT_REFERENCE_POINTS],
+    );
 
     // Fallback: if we can't access the map internals, use a mathematical check
     // to verify the Mercator projection is consistent between scatter and map.
@@ -221,9 +220,7 @@ test.describe("Basemap Alignment", () => {
    * even if projections agree mathematically, this catches rendering bugs
    * where the GPU draw call places data at the wrong position.
    */
-  test("scatter canvas has drawn pixels at known European population centers", async ({
-    page,
-  }) => {
+  test("scatter canvas has drawn pixels at known European population centers", async ({ page }) => {
     await page.goto(BASE_URL);
     await waitForDataRender(page);
 
@@ -239,9 +236,10 @@ test.describe("Basemap Alignment", () => {
         if (canvas.classList.contains("maplibregl-canvas")) continue;
         if (canvas.classList.contains("mapboxgl-canvas")) continue;
 
-        const ctx = canvas.getContext("2d", { willReadFrequently: true })
-          ?? canvas.getContext("webgl2")
-          ?? canvas.getContext("webgl");
+        const ctx =
+          canvas.getContext("2d", { willReadFrequently: true }) ??
+          canvas.getContext("webgl2") ??
+          canvas.getContext("webgl");
 
         if (!ctx) continue;
 
@@ -250,12 +248,7 @@ test.describe("Basemap Alignment", () => {
           const cx = Math.floor(canvas.width / 2);
           const cy = Math.floor(canvas.height / 2);
           const size = 100; // sample a 100x100 region around center
-          const imageData = ctx.getImageData(
-            cx - size / 2,
-            cy - size / 2,
-            size,
-            size,
-          );
+          const imageData = ctx.getImageData(cx - size / 2, cy - size / 2, size, size);
           let nonTransparent = 0;
           for (let i = 3; i < imageData.data.length; i += 4) {
             if (imageData.data[i] > 0) nonTransparent++;
@@ -273,7 +266,7 @@ test.describe("Basemap Alignment", () => {
         return {
           width: canvas.width,
           height: canvas.height,
-          sampledPixels: -1,       // can't easily sample WebGL
+          sampledPixels: -1, // can't easily sample WebGL
           nonTransparentPixels: -1,
           webgpuUnavailable,
         };
@@ -311,19 +304,22 @@ test.describe("Basemap Alignment", () => {
     await page.goto(BASE_URL);
     await waitForDataRender(page);
 
-    const results = await page.evaluate((refs) => {
-      // Standard Web Mercator formula (same as EPSG:3857 / MapLibre)
-      function standardMercatorY(lat: number): number {
-        const latRad = (lat * Math.PI) / 180;
-        return (Math.log(Math.tan(Math.PI / 4 + latRad / 2)) * 180) / Math.PI;
-      }
+    const results = await page.evaluate(
+      (refs) => {
+        // Standard Web Mercator formula (same as EPSG:3857 / MapLibre)
+        function standardMercatorY(lat: number): number {
+          const latRad = (lat * Math.PI) / 180;
+          return (Math.log(Math.tan(Math.PI / 4 + latRad / 2)) * 180) / Math.PI;
+        }
 
-      return refs.map((ref) => {
-        const expected = standardMercatorY(ref.lat);
-        // Read toDataURL to force a render, then check the formula matches
-        return { name: ref.name, lat: ref.lat, expectedY: expected };
-      });
-    }, [...ALIGNMENT_REFERENCE_POINTS]);
+        return refs.map((ref) => {
+          const expected = standardMercatorY(ref.lat);
+          // Read toDataURL to force a render, then check the formula matches
+          return { name: ref.name, lat: ref.lat, expectedY: expected };
+        });
+      },
+      [...ALIGNMENT_REFERENCE_POINTS],
+    );
 
     for (const r of results) {
       // Our projectLat (from helpers.ts, same formula as viewport_utils.ts)
@@ -393,9 +389,7 @@ test.describe("Zoom Drift", () => {
    * A tolerance of 2 px catches real drift while allowing for sub-pixel
    * rounding differences between the two rendering paths.
    */
-  test("scatter and MapLibre positions stay aligned across zoom levels", async ({
-    page,
-  }) => {
+  test("scatter and MapLibre positions stay aligned across zoom levels", async ({ page }) => {
     await page.goto(BASE_URL);
     await waitForDataRender(page);
 
@@ -406,7 +400,15 @@ test.describe("Zoom Drift", () => {
 
     type Snapshot = {
       label: string;
-      drifts: { name: string; scatterX: number; scatterY: number; mapX: number; mapY: number; dx: number; dy: number }[];
+      drifts: {
+        name: string;
+        scatterX: number;
+        scatterY: number;
+        mapX: number;
+        mapY: number;
+        dx: number;
+        dy: number;
+      }[];
     };
 
     const snapshots: Snapshot[] = [];
@@ -525,15 +527,18 @@ test.describe("Zoom Drift", () => {
     type Positions = { name: string; x: number; y: number }[];
 
     async function getMapLibrePositions(): Promise<Positions | null> {
-      return page.evaluate((refs) => {
-        const map = (window as any).__geospatialAtlasMap;
-        if (!map?.project) return null;
+      return page.evaluate(
+        (refs) => {
+          const map = (window as any).__geospatialAtlasMap;
+          if (!map?.project) return null;
 
-        return refs.map((ref: { name: string; lon: number; lat: number }) => {
-          const px = map.project([ref.lon, ref.lat]);
-          return { name: ref.name, x: px.x, y: px.y };
-        });
-      }, [...ALIGNMENT_REFERENCE_POINTS]);
+          return refs.map((ref: { name: string; lon: number; lat: number }) => {
+            const px = map.project([ref.lon, ref.lat]);
+            return { name: ref.name, x: px.x, y: px.y };
+          });
+        },
+        [...ALIGNMENT_REFERENCE_POINTS],
+      );
     }
 
     function pairwiseDistances(pos: Positions): number[] {

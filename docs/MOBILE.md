@@ -19,11 +19,13 @@ This is already working today in Safari / Chrome on iOS / Android. The
 remaining work for Tauri-wrapped mobile builds is:
 
 1. **Tauri Mobile init**:
+
    ```bash
    cd apps/desktop/src-tauri
    cargo tauri ios init
    cargo tauri android init
    ```
+
    (Requires Xcode + Apple Developer account for iOS, Android Studio + NDK
    for Android.)
 

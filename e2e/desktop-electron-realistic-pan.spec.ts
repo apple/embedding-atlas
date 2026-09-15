@@ -29,13 +29,9 @@ import { join } from "node:path";
 
 const REPO = join(__dirname, "..");
 const DESKTOP = join(REPO, "apps/desktop");
-const DATASET =
-  process.env.DATASET ?? "/Users/dome/work/general/eubucco/eubucco_lat_lon.parquet";
+const DATASET = process.env.DATASET ?? "/Users/dome/work/general/eubucco/eubucco_lat_lon.parquet";
 
-const PACKAGED_BIN = join(
-  DESKTOP,
-  "release/mac-arm64/Geospatial Atlas.app/Contents/MacOS/Geospatial Atlas",
-);
+const PACKAGED_BIN = join(DESKTOP, "release/mac-arm64/Geospatial Atlas.app/Contents/MacOS/Geospatial Atlas");
 
 const OUT_DIR = join(REPO, "e2e/test-results/realistic-pan");
 mkdirSync(OUT_DIR, { recursive: true });
@@ -134,11 +130,10 @@ test("realistic single-pan + 30s settle", async () => {
 
     // First big render.
     try {
-      await win.waitForFunction(
-        () => (window as any).__atlasFirstBigRenderGpuLogged === true,
-        null,
-        { timeout: 5 * 60 * 1000, polling: 250 },
-      );
+      await win.waitForFunction(() => (window as any).__atlasFirstBigRenderGpuLogged === true, null, {
+        timeout: 5 * 60 * 1000,
+        polling: 250,
+      });
       renderLanded = true;
       console.log(`[harness] first big render landed at +${Date.now() - t0}ms`);
     } catch (e) {
@@ -159,9 +154,7 @@ test("realistic single-pan + 30s settle", async () => {
           return { x: r.x, y: r.y, w: r.width, h: r.height };
         }),
       );
-      const target = canvases.length > 0
-        ? canvases.reduce((a, b) => (a.w * a.h > b.w * b.h ? a : b))
-        : null;
+      const target = canvases.length > 0 ? canvases.reduce((a, b) => (a.w * a.h > b.w * b.h ? a : b)) : null;
       expect(target).not.toBeNull();
       const cx = target!.x + target!.w / 2;
       const cy = target!.y + target!.h / 2;

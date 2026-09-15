@@ -63,9 +63,7 @@ class TestFindGeometryColumn:
         assert find_geometry_column(df) == "geometry"
 
     def test_detects_geom_column(self):
-        df = pd.DataFrame(
-            {"geom": [_make_wkb_point(2.35, 48.86)], "name": ["Paris"]}
-        )
+        df = pd.DataFrame({"geom": [_make_wkb_point(2.35, 48.86)], "name": ["Paris"]})
         assert find_geometry_column(df) == "geom"
 
     def test_ignores_non_binary_geometry(self):

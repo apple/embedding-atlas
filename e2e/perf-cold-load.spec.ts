@@ -40,10 +40,15 @@ test.beforeAll(async () => {
       BACKEND_DIR,
       "geospatial-atlas",
       PARQUET,
-      "--x", "lon", "--y", "lat",
-      "--port", String(SERVER_PORT),
+      "--x",
+      "lon",
+      "--y",
+      "lat",
+      "--port",
+      String(SERVER_PORT),
       "--no-auto-port",
-      "--static", STATIC_DIR,
+      "--static",
+      STATIC_DIR,
       "--disable-projection",
       "--no-mcp",
     ],
@@ -136,7 +141,10 @@ test("cold-load granular", async ({ page }) => {
     tag: TAG,
     parquet: PARQUET,
     iterations: summaries,
-    serverLines: serverLines.join("").split("\n").filter((s) => s.length),
+    serverLines: serverLines
+      .join("")
+      .split("\n")
+      .filter((s) => s.length),
     browserLines,
     timestamp: new Date().toISOString(),
   };

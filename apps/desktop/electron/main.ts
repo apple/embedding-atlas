@@ -15,9 +15,7 @@ import { pathToFileURL } from "node:url";
 
 // ---------- constants ----------
 
-const SUPPORTED_EXTENSIONS = [
-  "parquet", "geoparquet", "csv", "tsv", "json", "jsonl", "arrow", "feather",
-];
+const SUPPORTED_EXTENSIONS = ["parquet", "geoparquet", "csv", "tsv", "json", "jsonl", "arrow", "feather"];
 
 const isDev = !app.isPackaged;
 // 30 min — large parquets (tens of GB / 100M+ rows) cold-load well past the
@@ -64,10 +62,7 @@ function pickFreePort(): Promise<number> {
 
 function sidecarBinaryPath(): string {
   // Packaged: <resources>/sidecar/<bin>. Dev: apps/desktop/resources/sidecar/<bin>.
-  const binName =
-    process.platform === "win32"
-      ? "geospatial-atlas-sidecar.exe"
-      : "geospatial-atlas-sidecar";
+  const binName = process.platform === "win32" ? "geospatial-atlas-sidecar.exe" : "geospatial-atlas-sidecar";
   if (app.isPackaged) {
     return join(process.resourcesPath, "sidecar", binName);
   }
@@ -193,28 +188,22 @@ async function launchSidecar(dataset: string, limit: number, text: string): Prom
   const binPath = sidecarBinaryPath();
 
   if (!existsSync(binPath)) {
-    throw new Error(
-      `sidecar binary not found at ${binPath} — did you run the python-sidecar build?`
-    );
+    throw new Error(`sidecar binary not found at ${binPath} — did you run the python-sidecar build?`);
   }
 
   const mcpOn = state.mcpEnabled;
-  const child = spawn(
-    binPath,
-    [dataset, String(limit), text],
-    {
-      env: {
-        ...process.env,
-        GEOSPATIAL_ATLAS_HOST: host,
-        GEOSPATIAL_ATLAS_PORT: String(port),
-        GEOSPATIAL_ATLAS_PARENT_PID: String(process.pid),
-        GEOSPATIAL_ATLAS_MCP: mcpOn ? "1" : "0",
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-      // Windows: detach so the console window doesn't flash.
-      windowsHide: true,
-    }
-  );
+  const child = spawn(binPath, [dataset, String(limit), text], {
+    env: {
+      ...process.env,
+      GEOSPATIAL_ATLAS_HOST: host,
+      GEOSPATIAL_ATLAS_PORT: String(port),
+      GEOSPATIAL_ATLAS_PARENT_PID: String(process.pid),
+      GEOSPATIAL_ATLAS_MCP: mcpOn ? "1" : "0",
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+    // Windows: detach so the console window doesn't flash.
+    windowsHide: true,
+  });
 
   const intentionalKill = { value: false };
   state.running = { child, intentionalKill };
@@ -240,7 +229,7 @@ async function launchSidecar(dataset: string, limit: number, text: string): Prom
     },
     (err) => {
       emit("sidecar-error", { message: String(err.message ?? err) });
-    }
+    },
   );
 }
 
@@ -257,8 +246,7 @@ function returnHome() {
 async function handleDroppedFile(path: string) {
   if (!isSupportedDataset(path)) {
     emit("sidecar-error", {
-      message:
-        "Dropped file is not a supported dataset (.parquet, .csv, .json, .arrow …)",
+      message: "Dropped file is not a supported dataset (.parquet, .csv, .json, .arrow …)",
     });
     return;
   }
@@ -277,12 +265,9 @@ async function handleDroppedFile(path: string) {
 function registerIpcHandlers() {
   ipcMain.handle(
     "cmd:launch_sidecar",
-    async (
-      _e: IpcMainInvokeEvent,
-      args: { dataset: string; limit: number; text: string }
-    ) => {
+    async (_e: IpcMainInvokeEvent, args: { dataset: string; limit: number; text: string }) => {
       await launchSidecar(args.dataset, args.limit, args.text);
-    }
+    },
   );
 
   ipcMain.handle("cmd:return_home", () => returnHome());
@@ -295,29 +280,23 @@ function registerIpcHandlers() {
     return map[state.currentDataset] ?? null;
   });
 
-  ipcMain.handle(
-    "cmd:save_viewer_state",
-    (_e: IpcMainInvokeEvent, args: { hash: string }) => {
-      if (!state.currentDataset) return;
-      const map = loadStateMap();
-      const cleaned = (args.hash ?? "").replace(/^#/, "");
-      if (cleaned === "") {
-        delete map[state.currentDataset];
-      } else {
-        map[state.currentDataset] = cleaned;
-      }
-      saveStateMap(map);
+  ipcMain.handle("cmd:save_viewer_state", (_e: IpcMainInvokeEvent, args: { hash: string }) => {
+    if (!state.currentDataset) return;
+    const map = loadStateMap();
+    const cleaned = (args.hash ?? "").replace(/^#/, "");
+    if (cleaned === "") {
+      delete map[state.currentDataset];
+    } else {
+      map[state.currentDataset] = cleaned;
     }
-  );
+    saveStateMap(map);
+  });
 
   ipcMain.handle("cmd:get_mcp_enabled", () => state.mcpEnabled);
-  ipcMain.handle(
-    "cmd:set_mcp_enabled",
-    (_e: IpcMainInvokeEvent, args: { enabled: boolean }) => {
-      state.mcpEnabled = !!args.enabled;
-      return state.mcpEnabled;
-    }
-  );
+  ipcMain.handle("cmd:set_mcp_enabled", (_e: IpcMainInvokeEvent, args: { enabled: boolean }) => {
+    state.mcpEnabled = !!args.enabled;
+    return state.mcpEnabled;
+  });
   ipcMain.handle("cmd:get_mcp_url", () => state.mcpUrl);
 
   // File-picker dialog (Tauri plugin-dialog equivalent).
@@ -329,7 +308,7 @@ function registerIpcHandlers() {
         multiple?: boolean;
         directory?: boolean;
         filters?: Array<{ name: string; extensions: string[] }>;
-      }
+      },
     ) => {
       if (!mainWindow) return null;
       const result = await dialog.showOpenDialog(mainWindow, {
@@ -341,16 +320,13 @@ function registerIpcHandlers() {
       });
       if (result.canceled || result.filePaths.length === 0) return null;
       return options.multiple ? result.filePaths : result.filePaths[0];
-    }
+    },
   );
 
   // Called from the renderer when a file is dropped on the window.
-  ipcMain.handle(
-    "cmd:dropped_file",
-    async (_e: IpcMainInvokeEvent, args: { path: string }) => {
-      await handleDroppedFile(args.path);
-    }
-  );
+  ipcMain.handle("cmd:dropped_file", async (_e: IpcMainInvokeEvent, args: { path: string }) => {
+    await handleDroppedFile(args.path);
+  });
 }
 
 // ---------- CLI / argv bootstrap ----------
@@ -432,9 +408,7 @@ function createWindow() {
     process.stdout.write(`[renderer-responsive]\n`);
   });
   wc.on("did-fail-load", (_e, errorCode, errorDescription, url) => {
-    process.stdout.write(
-      `[renderer-load-fail] code=${errorCode} desc=${errorDescription} url=${url}\n`,
-    );
+    process.stdout.write(`[renderer-load-fail] code=${errorCode} desc=${errorDescription} url=${url}\n`);
   });
   wc.on("preload-error", (_e, preloadPath, error) => {
     process.stdout.write(`[preload-error] path=${preloadPath} ${error.message}\n`);
@@ -545,18 +519,14 @@ if (!gotLock) {
       try {
         const m = app.getAppMetrics();
         const cumCpu = m.reduce((s, p) => s + (p.cpu?.percentCPUUsage ?? 0), 0);
-        const cumRssMib = Math.round(
-          m.reduce((s, p) => s + (p.memory?.workingSetSize ?? 0), 0) / 1024,
-        );
+        const cumRssMib = Math.round(m.reduce((s, p) => s + (p.memory?.workingSetSize ?? 0), 0) / 1024);
         const detail = m
           .map(
             (p) =>
               `${p.type}${p.serviceName ? ":" + p.serviceName : ""}=${(p.cpu?.percentCPUUsage ?? 0).toFixed(1)}%/${Math.round((p.memory?.workingSetSize ?? 0) / 1024)}MiB`,
           )
           .join(" ");
-        process.stdout.write(
-          `[metrics] cumCpu=${cumCpu.toFixed(1)}% cumRssMiB=${cumRssMib} ${detail}\n`,
-        );
+        process.stdout.write(`[metrics] cumCpu=${cumCpu.toFixed(1)}% cumRssMiB=${cumRssMib} ${detail}\n`);
       } catch (e) {
         process.stdout.write(`[metrics-err] ${(e as Error).message}\n`);
       }

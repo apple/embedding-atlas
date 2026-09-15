@@ -62,11 +62,10 @@ test("pan-twice + zoom-out — backpressure recovers from device.lost / Metal wa
   console.log(`[pan-zoom] loading ${BASE_URL}/?perf=1`);
   await page.goto(`${BASE_URL}/?perf=1`, { waitUntil: "domcontentloaded" });
 
-  await page.waitForFunction(
-    () => (window as any).__atlasFirstBigRenderGpuLogged === true,
-    null,
-    { timeout: 6 * 60 * 1000, polling: 250 },
-  );
+  await page.waitForFunction(() => (window as any).__atlasFirstBigRenderGpuLogged === true, null, {
+    timeout: 6 * 60 * 1000,
+    polling: 250,
+  });
   console.log(`[pan-zoom] first big render landed`);
 
   const targetBox = await page.evaluate(() => {
@@ -76,7 +75,10 @@ test("pan-twice + zoom-out — backpressure recovers from device.lost / Metal wa
     for (const c of cs) {
       const r = (c as HTMLCanvasElement).getBoundingClientRect();
       const a = r.width * r.height;
-      if (a > bestArea) { bestArea = a; best = { x: r.x, y: r.y, w: r.width, h: r.height }; }
+      if (a > bestArea) {
+        bestArea = a;
+        best = { x: r.x, y: r.y, w: r.width, h: r.height };
+      }
     }
     return best;
   });
@@ -162,9 +164,7 @@ test("pan-twice + zoom-out — backpressure recovers from device.lost / Metal wa
     renderCalls: (window as any).__atlasPanDbg?.renderCalls ?? 0,
   }));
   expect(finalCheck.canvasAlive, "canvas dead at end").toBe(true);
-  const fatalConsole = consoleErrors.filter((e) =>
-    /external Instance|kIOGPU|ignored submissions/i.test(e),
-  );
+  const fatalConsole = consoleErrors.filter((e) => /external Instance|kIOGPU|ignored submissions/i.test(e));
   expect(fatalConsole, `fatal errors: ${JSON.stringify(fatalConsole)}`).toEqual([]);
   const watchdogFired = consoleWarns.filter((w) => /watchdog fired/i.test(w));
   console.log(

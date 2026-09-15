@@ -35,6 +35,7 @@ def peak_rss_mib() -> float:
 
 def make_con(threads: int = 8):
     import duckdb
+
     con = duckdb.connect(":memory:")
     con.sql("SET memory_limit = '32GB'")
     con.sql("SET temp_directory = '/tmp/duckdb_bench_opts'")
@@ -47,9 +48,7 @@ def make_con(threads: int = 8):
 
 def setup_view(con, path: str) -> None:
     """The current loader path: VIEW, no row index, no pre-quantise."""
-    con.sql(
-        f"CREATE OR REPLACE VIEW dataset AS SELECT * FROM read_parquet('{path}')"
-    )
+    con.sql(f"CREATE OR REPLACE VIEW dataset AS SELECT * FROM read_parquet('{path}')")
 
 
 def setup_ctas(con, path: str) -> None:
@@ -80,9 +79,7 @@ def setup_ctas_pre_quantised(con, path: str) -> None:
 
 def setup_ctas_enum(con, path: str) -> None:
     """CTAS with category column re-encoded as ENUM (8 cats, 1-byte ordinal)."""
-    con.sql(
-        "CREATE OR REPLACE TYPE cat_enum AS ENUM ('A','B','C','D','E','F','G','H')"
-    )
+    con.sql("CREATE OR REPLACE TYPE cat_enum AS ENUM ('A','B','C','D','E','F','G','H')")
     con.sql(
         f"CREATE OR REPLACE TABLE dataset AS "
         f"SELECT * EXCLUDE (category, file_row_number), "
@@ -296,8 +293,13 @@ def run_subprocess(experiment: str, path: str) -> dict:
     cmd = [PYBIN, str(THIS), "--worker", "--experiment", experiment, "--path", path]
     out = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if out.returncode != 0:
-        return {"experiment": experiment, "elapsed_s": float("nan"), "rss_mib": 0,
-                "digest_repr": "", "error": (out.stderr or out.stdout)[-400:]}
+        return {
+            "experiment": experiment,
+            "elapsed_s": float("nan"),
+            "rss_mib": 0,
+            "digest_repr": "",
+            "error": (out.stderr or out.stdout)[-400:],
+        }
     return json.loads(out.stdout.strip().splitlines()[-1])
 
 
@@ -340,7 +342,11 @@ def main() -> None:
     results: list[dict] = []
     for trial in range(args.trials):
         for exp in experiments:
-            print(f"  trial {trial+1}/{args.trials}  {exp:<24s} ...", end=" ", flush=True)
+            print(
+                f"  trial {trial + 1}/{args.trials}  {exp:<24s} ...",
+                end=" ",
+                flush=True,
+            )
             r = run_subprocess(exp, args.path)
             r["trial"] = trial
             results.append(r)
@@ -351,7 +357,9 @@ def main() -> None:
                 print(f"{r['elapsed_s']:6.2f}s  rss={r['rss_mib']:7.1f} MiB{extra}")
 
     print("\n=== summary (median over trials) ===")
-    print(f"{'experiment':<24s} {'median':>8s} {'min':>8s} {'max':>8s} {'rss_mib':>10s}  digest")
+    print(
+        f"{'experiment':<24s} {'median':>8s} {'min':>8s} {'max':>8s} {'rss_mib':>10s}  digest"
+    )
     for exp in experiments:
         triplet = [r for r in results if r["experiment"] == exp and "error" not in r]
         if not triplet:
@@ -361,41 +369,83 @@ def main() -> None:
         med = elapsed[len(elapsed) // 2]
         rss = max(r["rss_mib"] for r in triplet)
         digest = triplet[0]["digest_repr"]
-        print(f"{exp:<24s} {med:8.3f} {min(elapsed):8.3f} {max(elapsed):8.3f} {rss:10.1f}  {digest[:55]}")
+        print(
+            f"{exp:<24s} {med:8.3f} {min(elapsed):8.3f} {max(elapsed):8.3f} {rss:10.1f}  {digest[:55]}"
+        )
 
     # Speedup tables
     print("\n=== scatter_q deltas vs baseline ===")
-    base = [r["elapsed_s"] for r in results if r["experiment"] == "scatter_q_baseline" and "error" not in r]
+    base = [
+        r["elapsed_s"]
+        for r in results
+        if r["experiment"] == "scatter_q_baseline" and "error" not in r
+    ]
     base_med = sorted(base)[len(base) // 2] if base else float("nan")
     print(f"  baseline: {base_med:.3f}s")
-    for exp in ["scatter_q_noclamp", "scatter_q_fma", "scatter_q_floor", "scatter_q_combined", "scatter_q_pre"]:
-        t = [r["elapsed_s"] for r in results if r["experiment"] == exp and "error" not in r]
+    for exp in [
+        "scatter_q_noclamp",
+        "scatter_q_fma",
+        "scatter_q_floor",
+        "scatter_q_combined",
+        "scatter_q_pre",
+    ]:
+        t = [
+            r["elapsed_s"]
+            for r in results
+            if r["experiment"] == exp and "error" not in r
+        ]
         med = sorted(t)[len(t) // 2] if t else float("nan")
         speedup = base_med / med if med else float("inf")
-        print(f"  {exp:<24s} {med:6.3f}s  ({speedup:.2f}x faster, saves {base_med - med:.3f}s)")
+        print(
+            f"  {exp:<24s} {med:6.3f}s  ({speedup:.2f}x faster, saves {base_med - med:.3f}s)"
+        )
 
     print("\n=== cat_count deltas vs varchar ===")
-    base = [r["elapsed_s"] for r in results if r["experiment"] == "cat_count_varchar" and "error" not in r]
+    base = [
+        r["elapsed_s"]
+        for r in results
+        if r["experiment"] == "cat_count_varchar" and "error" not in r
+    ]
     base_med = sorted(base)[len(base) // 2] if base else float("nan")
     print(f"  varchar: {base_med:.3f}s")
-    t = [r["elapsed_s"] for r in results if r["experiment"] == "cat_count_enum" and "error" not in r]
+    t = [
+        r["elapsed_s"]
+        for r in results
+        if r["experiment"] == "cat_count_enum" and "error" not in r
+    ]
     med = sorted(t)[len(t) // 2] if t else float("nan")
     speedup = base_med / med if med else float("inf")
-    print(f"  enum   : {med:6.3f}s  ({speedup:.2f}x faster, saves {base_med - med:.3f}s)")
+    print(
+        f"  enum   : {med:6.3f}s  ({speedup:.2f}x faster, saves {base_med - med:.3f}s)"
+    )
 
     print("\n=== colorby deltas vs ALTER+UPDATE ===")
-    base = [r["elapsed_s"] for r in results if r["experiment"] == "colorby_alter_update" and "error" not in r]
+    base = [
+        r["elapsed_s"]
+        for r in results
+        if r["experiment"] == "colorby_alter_update" and "error" not in r
+    ]
     base_med = sorted(base)[len(base) // 2] if base else float("nan")
     print(f"  alter_update: {base_med:.3f}s")
     for exp in ["colorby_view", "colorby_enum"]:
-        t = [r["elapsed_s"] for r in results if r["experiment"] == exp and "error" not in r]
+        t = [
+            r["elapsed_s"]
+            for r in results
+            if r["experiment"] == exp and "error" not in r
+        ]
         med = sorted(t)[len(t) // 2] if t else float("nan")
         speedup = base_med / med if med else float("inf")
-        print(f"  {exp:<14s} {med:6.3f}s  ({speedup:.2f}x faster, saves {base_med - med:.3f}s)")
+        print(
+            f"  {exp:<14s} {med:6.3f}s  ({speedup:.2f}x faster, saves {base_med - med:.3f}s)"
+        )
 
     print("\n=== ctas variants (one-time loader cost) ===")
     for exp in ["ctas_baseline", "ctas_pre_quantised", "ctas_enum"]:
-        t = [r["elapsed_s"] for r in results if r["experiment"] == exp and "error" not in r]
+        t = [
+            r["elapsed_s"]
+            for r in results
+            if r["experiment"] == exp and "error" not in r
+        ]
         med = sorted(t)[len(t) // 2] if t else float("nan")
         print(f"  {exp:<22s} {med:6.3f}s")
 

@@ -26,13 +26,9 @@ import { join } from "node:path";
 
 const REPO = join(__dirname, "..");
 const DESKTOP = join(REPO, "apps/desktop");
-const DATASET =
-  process.env.DATASET ?? "/Users/dome/work/general/eubucco/eubucco_lat_lon.parquet";
+const DATASET = process.env.DATASET ?? "/Users/dome/work/general/eubucco/eubucco_lat_lon.parquet";
 
-const PACKAGED_BIN = join(
-  DESKTOP,
-  "release/mac-arm64/Geospatial Atlas.app/Contents/MacOS/Geospatial Atlas",
-);
+const PACKAGED_BIN = join(DESKTOP, "release/mac-arm64/Geospatial Atlas.app/Contents/MacOS/Geospatial Atlas");
 
 const OUT_DIR = join(REPO, "e2e/test-results/multi-zoom-pan");
 mkdirSync(OUT_DIR, { recursive: true });
@@ -155,11 +151,10 @@ test("multi-zoom 10s-interval pan", async () => {
 
     // First big render.
     try {
-      await win.waitForFunction(
-        () => (window as any).__atlasFirstBigRenderGpuLogged === true,
-        null,
-        { timeout: 5 * 60 * 1000, polling: 250 },
-      );
+      await win.waitForFunction(() => (window as any).__atlasFirstBigRenderGpuLogged === true, null, {
+        timeout: 5 * 60 * 1000,
+        polling: 250,
+      });
       renderLanded = true;
       console.log(`[harness] first big render landed at +${Date.now() - t0}ms`);
     } catch (e) {
@@ -182,9 +177,7 @@ test("multi-zoom 10s-interval pan", async () => {
         return { x: r.x, y: r.y, w: r.width, h: r.height };
       }),
     );
-    const target = canvases.length > 0
-      ? canvases.reduce((a, b) => (a.w * a.h > b.w * b.h ? a : b))
-      : null;
+    const target = canvases.length > 0 ? canvases.reduce((a, b) => (a.w * a.h > b.w * b.h ? a : b)) : null;
     expect(target).not.toBeNull();
     const cx = target!.x + target!.w / 2;
     const cy = target!.y + target!.h / 2;
@@ -201,39 +194,44 @@ test("multi-zoom 10s-interval pan", async () => {
           fullPage: false,
           clip: { x: canvasRect.x, y: canvasRect.y, width: canvasRect.w, height: canvasRect.h },
         });
-        return await win.evaluate(async (b64) => {
-          const img = new Image();
-          await new Promise<void>((res, rej) => {
-            img.onload = () => res();
-            img.onerror = () => rej(new Error("img"));
-            img.src = b64;
-          });
-          const W = img.width;
-          const H = img.height;
-          const cv = document.createElement("canvas");
-          cv.width = W;
-          cv.height = H;
-          const ctx = cv.getContext("2d", { willReadFrequently: true });
-          if (!ctx) return -1;
-          // Pre-fill white so any transparent pixels in the screenshot
-          // (Playwright sometimes emits alpha=0 from a hung renderer) are
-          // forced opaque-white, not opaque-zero. Without this, an all-
-          // transparent canvas would read as RGBA(0,0,0,0) → counted as
-          // pure black and report 100 % "dark coverage".
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, W, H);
-          ctx.drawImage(img, 0, 0, W, H);
-          const d = ctx.getImageData(0, 0, W, H).data;
-          let dark = 0;
-          for (let p = 0; p < d.length; p += 4) {
-            const r = d[p], g = d[p + 1], b = d[p + 2];
-            // Truly dark (cores, borders, labels) OR saturated blue
-            // (additive scatter blend over basemap). Basemap ocean is
-            // light blue (B-R ≈ 45) so it fails the B > R+60 test.
-            if (r + g + b < 120 || (b > r + 60 && r + g + b < 500)) dark++;
-          }
-          return dark / (W * H);
-        }, `data:image/png;base64,${png.toString("base64")}`);
+        return await win.evaluate(
+          async (b64) => {
+            const img = new Image();
+            await new Promise<void>((res, rej) => {
+              img.onload = () => res();
+              img.onerror = () => rej(new Error("img"));
+              img.src = b64;
+            });
+            const W = img.width;
+            const H = img.height;
+            const cv = document.createElement("canvas");
+            cv.width = W;
+            cv.height = H;
+            const ctx = cv.getContext("2d", { willReadFrequently: true });
+            if (!ctx) return -1;
+            // Pre-fill white so any transparent pixels in the screenshot
+            // (Playwright sometimes emits alpha=0 from a hung renderer) are
+            // forced opaque-white, not opaque-zero. Without this, an all-
+            // transparent canvas would read as RGBA(0,0,0,0) → counted as
+            // pure black and report 100 % "dark coverage".
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, W, H);
+            ctx.drawImage(img, 0, 0, W, H);
+            const d = ctx.getImageData(0, 0, W, H).data;
+            let dark = 0;
+            for (let p = 0; p < d.length; p += 4) {
+              const r = d[p],
+                g = d[p + 1],
+                b = d[p + 2];
+              // Truly dark (cores, borders, labels) OR saturated blue
+              // (additive scatter blend over basemap). Basemap ocean is
+              // light blue (B-R ≈ 45) so it fails the B > R+60 test.
+              if (r + g + b < 120 || (b > r + 60 && r + g + b < 500)) dark++;
+            }
+            return dark / (W * H);
+          },
+          `data:image/png;base64,${png.toString("base64")}`,
+        );
       } catch {
         return -1;
       }
@@ -260,8 +258,8 @@ test("multi-zoom 10s-interval pan", async () => {
     };
 
     const ZOOM_LEVELS = [
-      { label: "world-out", setupZoom: 30, deltaY: 80 },     // zoom OUT (deltaY > 0)
-      { label: "country-mid", setupZoom: 15, deltaY: -40 },   // zoom IN partially
+      { label: "world-out", setupZoom: 30, deltaY: 80 }, // zoom OUT (deltaY > 0)
+      { label: "country-mid", setupZoom: 15, deltaY: -40 }, // zoom IN partially
       // city-in: 10 ticks → "town/district" scale (~10 km viewport).
       // Earlier 20 ticks landed us at <1 km, where rural pans dropped
       // outside any building cluster and the renderer correctly drew
@@ -285,7 +283,9 @@ test("multi-zoom 10s-interval pan", async () => {
       await win.waitForTimeout(10_000);
       const cov = await sampleCoverage(target!);
       const setupOk = crashes.length === 0 && cov >= MIN_COVERAGE;
-      console.log(`[harness] zoom ${zoom.label} settle: cov=${(cov * 100).toFixed(2)}% crashes=${crashes.length} ok=${setupOk}`);
+      console.log(
+        `[harness] zoom ${zoom.label} settle: cov=${(cov * 100).toFixed(2)}% crashes=${crashes.length} ok=${setupOk}`,
+      );
       await win.screenshot({
         path: join(OUT_DIR, `${String(screenshotIdx++).padStart(2, "0")}-zoom-${zoom.label}.png`),
       });
@@ -296,7 +296,7 @@ test("multi-zoom 10s-interval pan", async () => {
         dirY: 0,
         coverage: cov,
         ok: setupOk,
-        reason: setupOk ? undefined : (crashes.length > 0 ? "crash" : "low-coverage"),
+        reason: setupOk ? undefined : crashes.length > 0 ? "crash" : "low-coverage",
       });
       if (!setupOk) {
         if (crashes.length > 0) throw new Error(`CRASH after ${zoom.label} setup: ${JSON.stringify(crashes[0])}`);
@@ -311,7 +311,9 @@ test("multi-zoom 10s-interval pan", async () => {
         await win.waitForTimeout(10_000);
         const cov = await sampleCoverage(target!);
         const ok = crashes.length === 0 && cov >= MIN_COVERAGE;
-        console.log(`[harness]   ${zoom.label} pan ${p + 1} done: cov=${(cov * 100).toFixed(2)}% crashes=${crashes.length} ok=${ok}`);
+        console.log(
+          `[harness]   ${zoom.label} pan ${p + 1} done: cov=${(cov * 100).toFixed(2)}% crashes=${crashes.length} ok=${ok}`,
+        );
         await win.screenshot({
           path: join(OUT_DIR, `${String(screenshotIdx++).padStart(2, "0")}-${zoom.label}-pan-${p + 1}.png`),
         });
@@ -322,7 +324,7 @@ test("multi-zoom 10s-interval pan", async () => {
           dirY: dy,
           coverage: cov,
           ok,
-          reason: ok ? undefined : (crashes.length > 0 ? "crash" : "low-coverage"),
+          reason: ok ? undefined : crashes.length > 0 ? "crash" : "low-coverage",
         });
         if (!ok) {
           if (crashes.length > 0) {
@@ -364,7 +366,9 @@ test("multi-zoom 10s-interval pan", async () => {
   console.log(`[harness] FINAL results:`);
   for (const r of results) {
     const tag = r.panIdx < 0 ? `${r.zoomLevel} setup` : `${r.zoomLevel} pan${r.panIdx + 1}`;
-    console.log(`  ${tag.padEnd(24)} cov=${(r.coverage * 100).toFixed(1).padStart(5)}% ok=${r.ok}${r.reason ? ` reason=${r.reason}` : ""}`);
+    console.log(
+      `  ${tag.padEnd(24)} cov=${(r.coverage * 100).toFixed(1).padStart(5)}% ok=${r.ok}${r.reason ? ` reason=${r.reason}` : ""}`,
+    );
   }
   console.log(`[harness] FINAL crashes: ${crashes.length}`);
   for (const c of crashes.slice(0, 20)) {

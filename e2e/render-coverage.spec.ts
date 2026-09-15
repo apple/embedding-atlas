@@ -22,9 +22,7 @@
 import { test, expect, type ConsoleMessage } from "@playwright/test";
 
 const BASE_URL = process.env.RENDER_COVERAGE_URL ?? "http://127.0.0.1:5088";
-const FIRST_RENDER_TIMEOUT_MS = Number(
-  process.env.RENDER_COVERAGE_FIRST_RENDER_MS ?? 6 * 60 * 1000,
-);
+const FIRST_RENDER_TIMEOUT_MS = Number(process.env.RENDER_COVERAGE_FIRST_RENDER_MS ?? 6 * 60 * 1000);
 // Post-first-render wait. Enough to let any deferred refinement, side-
 // panel discovery, or rebind chain finish writing pixels.
 const QUIESCE_MS = Number(process.env.RENDER_COVERAGE_QUIESCE_MS ?? 5_000);
@@ -58,11 +56,10 @@ test("render coverage — scatter actually paints points on the canvas", async (
   console.log(`[render] loading ${BASE_URL}/?perf=1`);
   await page.goto(`${BASE_URL}/?perf=1`, { waitUntil: "domcontentloaded" });
 
-  await page.waitForFunction(
-    () => (window as any).__atlasFirstBigRenderGpuLogged === true,
-    null,
-    { timeout: FIRST_RENDER_TIMEOUT_MS, polling: 250 },
-  );
+  await page.waitForFunction(() => (window as any).__atlasFirstBigRenderGpuLogged === true, null, {
+    timeout: FIRST_RENDER_TIMEOUT_MS,
+    polling: 250,
+  });
   console.log(`[render] first big render landed; quiescing ${QUIESCE_MS}ms`);
   await page.waitForTimeout(QUIESCE_MS);
 

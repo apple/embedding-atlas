@@ -65,11 +65,13 @@ async function snapshot(
         alive = c.width > 0 && c.height > 0;
       }
     }
-    const heap = (performance as any).memory ? {
-      usedMb: ((performance as any).memory.usedJSHeapSize / 1024 / 1024) | 0,
-      totalMb: ((performance as any).memory.totalJSHeapSize / 1024 / 1024) | 0,
-      limitMb: ((performance as any).memory.jsHeapSizeLimit / 1024 / 1024) | 0,
-    } : null;
+    const heap = (performance as any).memory
+      ? {
+          usedMb: ((performance as any).memory.usedJSHeapSize / 1024 / 1024) | 0,
+          totalMb: ((performance as any).memory.totalJSHeapSize / 1024 / 1024) | 0,
+          limitMb: ((performance as any).memory.jsHeapSizeLimit / 1024 / 1024) | 0,
+        }
+      : null;
     return {
       gpuErrors: (window as any).__atlasGpuErrors ?? [],
       canvasAlive: alive,
@@ -99,8 +101,9 @@ test("pan-release soak — 322M scatter survives discrete pan-release cycles", a
     browserLines.push(`[${t}] ${text}`);
     if (t === "error") consoleErrors.push(text);
     if (
-      /atlas-stage|atlas-gpu|first-big-render|deferred-density|scatter|RangeError|out of memory|ArrayBuffer|kIOGPU|ignored submissions|device.*lost|destroyed|MTLDevice|WebGPU/i
-        .test(text)
+      /atlas-stage|atlas-gpu|first-big-render|deferred-density|scatter|RangeError|out of memory|ArrayBuffer|kIOGPU|ignored submissions|device.*lost|destroyed|MTLDevice|WebGPU/i.test(
+        text,
+      )
     ) {
       process.stdout.write(`[browser] ${text}\n`);
     }
@@ -126,11 +129,10 @@ test("pan-release soak — 322M scatter survives discrete pan-release cycles", a
   console.log(`[pan-soak] loading ${BASE_URL}/?perf=1`);
   await page.goto(`${BASE_URL}/?perf=1`, { waitUntil: "domcontentloaded" });
 
-  await page.waitForFunction(
-    () => (window as any).__atlasFirstBigRenderGpuLogged === true,
-    null,
-    { timeout: 6 * 60 * 1000, polling: 250 },
-  );
+  await page.waitForFunction(() => (window as any).__atlasFirstBigRenderGpuLogged === true, null, {
+    timeout: 6 * 60 * 1000,
+    polling: 250,
+  });
   console.log(`[pan-soak] first big render at +${Date.now() - t0}ms`);
 
   // Locate primary canvas (largest = scatter surface).
@@ -141,7 +143,10 @@ test("pan-release soak — 322M scatter survives discrete pan-release cycles", a
     for (const c of cs) {
       const r = (c as HTMLCanvasElement).getBoundingClientRect();
       const a = r.width * r.height;
-      if (a > bestArea) { bestArea = a; best = { x: r.x, y: r.y, w: r.width, h: r.height }; }
+      if (a > bestArea) {
+        bestArea = a;
+        best = { x: r.x, y: r.y, w: r.width, h: r.height };
+      }
     }
     return best;
   });
@@ -209,7 +214,9 @@ test("pan-release soak — 322M scatter survives discrete pan-release cycles", a
     );
 
     // Snapshot the screen after the pan so I can inspect what flicker looks like.
-    await page.screenshot({ path: path.join(outDir, `pan-release-${TAG}-${String(i).padStart(2, "0")}.png`), fullPage: false }).catch(() => {});
+    await page
+      .screenshot({ path: path.join(outDir, `pan-release-${TAG}-${String(i).padStart(2, "0")}.png`), fullPage: false })
+      .catch(() => {});
 
     if (snap.gpuErrors.length > 0 || !snap.canvasAlive) {
       console.error(`[pan-soak] iter ${i} — CASCADE OR DEAD CANVAS, halting soak`);
@@ -224,18 +231,22 @@ test("pan-release soak — 322M scatter survives discrete pan-release cycles", a
   // Persist artifacts.
   writeFileSync(
     path.join(outDir, `pan-release-${TAG}.json`),
-    JSON.stringify({
-      tag: TAG,
-      baseUrl: BASE_URL,
-      iters: ITERS,
-      settleMs: SETTLE_MS,
-      dragMs: DRAG_DURATION_MS,
-      panStepPx: PAN_STEP_PX,
-      snapshots,
-      consoleErrorCount: consoleErrors.length,
-      consoleErrorsSample: consoleErrors.slice(0, 50),
-      browserLinesTail: browserLines.slice(-300),
-    }, null, 2),
+    JSON.stringify(
+      {
+        tag: TAG,
+        baseUrl: BASE_URL,
+        iters: ITERS,
+        settleMs: SETTLE_MS,
+        dragMs: DRAG_DURATION_MS,
+        panStepPx: PAN_STEP_PX,
+        snapshots,
+        consoleErrorCount: consoleErrors.length,
+        consoleErrorsSample: consoleErrors.slice(0, 50),
+        browserLinesTail: browserLines.slice(-300),
+      },
+      null,
+      2,
+    ),
   );
 
   console.log(`[pan-soak] FINAL — ${snapshots.length} snapshots, consoleErrors=${consoleErrors.length}`);

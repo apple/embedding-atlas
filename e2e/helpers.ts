@@ -47,19 +47,21 @@ function download(url: string, dest: string, maxRedirects = 5): Promise<void> {
   return new Promise((resolve, reject) => {
     const attempt = (currentUrl: string, redirectsLeft: number) => {
       const mod = currentUrl.startsWith("https") ? require("https") : require("http");
-      mod.get(currentUrl, (res: any) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          if (redirectsLeft <= 0) return reject(new Error("Too many redirects"));
-          return attempt(res.headers.location, redirectsLeft - 1);
-        }
-        if (res.statusCode !== 200) {
-          return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
-        }
-        const file = createWriteStream(dest);
-        res.pipe(file);
-        file.on("finish", () => file.close(() => resolve()));
-        file.on("error", reject);
-      }).on("error", reject);
+      mod
+        .get(currentUrl, (res: any) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            if (redirectsLeft <= 0) return reject(new Error("Too many redirects"));
+            return attempt(res.headers.location, redirectsLeft - 1);
+          }
+          if (res.statusCode !== 200) {
+            return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+          }
+          const file = createWriteStream(dest);
+          res.pipe(file);
+          file.on("finish", () => file.close(() => resolve()));
+          file.on("error", reject);
+        })
+        .on("error", reject);
     };
     attempt(url, maxRedirects);
   });
@@ -70,10 +72,7 @@ function download(url: string, dest: string, maxRedirects = 5): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /** Poll `url` until it responds with 2xx, or throw after `timeoutMs`. */
-export async function waitForServer(
-  url: string,
-  timeoutMs = E2E_CONSTANTS.SERVER_STARTUP_TIMEOUT,
-): Promise<void> {
+export async function waitForServer(url: string, timeoutMs = E2E_CONSTANTS.SERVER_STARTUP_TIMEOUT): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -166,11 +165,11 @@ export async function waitForDataRender(page: Page): Promise<void> {
  * projection round-trip is broken.
  */
 export const ALIGNMENT_REFERENCE_POINTS = [
-  { name: "Paris",     lon: 2.35,   lat: 48.86 },
-  { name: "Berlin",    lon: 13.38,  lat: 52.52 },
-  { name: "Rome",      lon: 12.50,  lat: 41.90 },
-  { name: "Madrid",    lon: -3.70,  lat: 40.42 },
-  { name: "Warsaw",    lon: 21.01,  lat: 52.23 },
+  { name: "Paris", lon: 2.35, lat: 48.86 },
+  { name: "Berlin", lon: 13.38, lat: 52.52 },
+  { name: "Rome", lon: 12.5, lat: 41.9 },
+  { name: "Madrid", lon: -3.7, lat: 40.42 },
+  { name: "Warsaw", lon: 21.01, lat: 52.23 },
 ] as const;
 
 /**
@@ -193,11 +192,7 @@ export function projectLat(lat: number): number {
  * Returns true if the app rendered successfully, false if DuckDB WASM
  * failed to load the file (e.g. parquet extension unsigned in dev mode).
  */
-export async function uploadFileAndRender(
-  page: Page,
-  baseUrl: string,
-  filePath: string,
-): Promise<boolean> {
+export async function uploadFileAndRender(page: Page, baseUrl: string, filePath: string): Promise<boolean> {
   await page.goto(`${baseUrl}/#/file`);
   const { expect } = await import("@playwright/test");
 

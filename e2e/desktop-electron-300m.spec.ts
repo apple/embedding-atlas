@@ -79,15 +79,15 @@ test("desktop electron 300m fluency", async () => {
 
     // Wait for canvas to materialise.
     await window.waitForFunction(
-      () => Array.from(document.querySelectorAll("canvas")).some(
-        (c) => (c as HTMLCanvasElement).width > 0,
-      ),
+      () => Array.from(document.querySelectorAll("canvas")).some((c) => (c as HTMLCanvasElement).width > 0),
       null,
       { timeout: 120_000 },
     );
 
     // Reset pan dbg counters.
-    await window.evaluate(() => { (window as any).__atlasPanDbg = undefined; });
+    await window.evaluate(() => {
+      (window as any).__atlasPanDbg = undefined;
+    });
 
     // Find the map region and pan inside it.
     const box = await (await window.locator("canvas").first()).boundingBox();
@@ -99,7 +99,7 @@ test("desktop electron 300m fluency", async () => {
     const t0 = Date.now();
     let dx = 0;
     while (Date.now() - t0 < 10_000) {
-      dx = (dx + 17) % 200 - 100;
+      dx = ((dx + 17) % 200) - 100;
       const dy = (dx * 0.3) | 0;
       await window.mouse.move(cx + dx, cy + dy);
       await window.waitForTimeout(50);
@@ -111,8 +111,9 @@ test("desktop electron 300m fluency", async () => {
     console.log(`pan dbg: ${JSON.stringify(dbg)}`);
     expect(dbg, "pan dbg never registered").not.toBeNull();
     expect(dbg.cssPanApplied, "CSS-pan never triggered").toBeGreaterThan(20);
-    expect(dbg.renderCalls, `too many GPU re-renders (${dbg.renderCalls})`)
-      .toBeLessThan(Math.max(5, dbg.cssPanApplied / 5));
+    expect(dbg.renderCalls, `too many GPU re-renders (${dbg.renderCalls})`).toBeLessThan(
+      Math.max(5, dbg.cssPanApplied / 5),
+    );
 
     await window.screenshot({ path: "e2e/test-results/desktop-300m-after-pan.png" });
   } finally {

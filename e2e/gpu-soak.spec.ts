@@ -62,10 +62,15 @@ test.beforeAll(async () => {
       BACKEND_DIR,
       "geospatial-atlas",
       PARQUET,
-      "--x", X_COL, "--y", Y_COL,
-      "--port", String(SERVER_PORT),
+      "--x",
+      X_COL,
+      "--y",
+      Y_COL,
+      "--port",
+      String(SERVER_PORT),
       "--no-auto-port",
-      "--static", STATIC_DIR,
+      "--static",
+      STATIC_DIR,
       "--disable-projection",
       "--no-mcp",
     ],
@@ -98,7 +103,9 @@ test("gpu soak — no metal cascade after deferred refinement + pan/zoom", async
     const text = msg.text();
     browserLines.push(`[${t}] ${text}`);
     if (t === "error") consoleErrors.push(text);
-    if (/atlas-stage|atlas-gpu|first-big-render|deferred-density|scatter|RangeError|out of memory|ArrayBuffer/i.test(text)) {
+    if (
+      /atlas-stage|atlas-gpu|first-big-render|deferred-density|scatter|RangeError|out of memory|ArrayBuffer/i.test(text)
+    ) {
       process.stdout.write(`[browser] ${text}\n`);
     }
   });
@@ -112,11 +119,10 @@ test("gpu soak — no metal cascade after deferred refinement + pan/zoom", async
   const t0 = Date.now();
   await page.goto(`${BASE_URL}/?perf=1`, { waitUntil: "domcontentloaded" });
 
-  await page.waitForFunction(
-    () => (window as any).__atlasFirstBigRenderGpuLogged === true,
-    null,
-    { timeout: 6 * 60 * 1000, polling: 250 },
-  );
+  await page.waitForFunction(() => (window as any).__atlasFirstBigRenderGpuLogged === true, null, {
+    timeout: 6 * 60 * 1000,
+    polling: 250,
+  });
   const tFirstFrame = Date.now() - t0;
   console.log(`[soak] first-big-render-gpu-done at +${tFirstFrame}ms`);
 
@@ -138,7 +144,10 @@ test("gpu soak — no metal cascade after deferred refinement + pan/zoom", async
     for (const c of cs) {
       const r = (c as HTMLCanvasElement).getBoundingClientRect();
       const a = r.width * r.height;
-      if (a > bestArea) { bestArea = a; best = { x: r.x, y: r.y, w: r.width, h: r.height }; }
+      if (a > bestArea) {
+        bestArea = a;
+        best = { x: r.x, y: r.y, w: r.width, h: r.height };
+      }
     }
     return best;
   });
@@ -215,19 +224,23 @@ test("gpu soak — no metal cascade after deferred refinement + pan/zoom", async
   mkdirSync(outDir, { recursive: true });
   writeFileSync(
     path.join(outDir, `gpu-soak-${TAG}.json`),
-    JSON.stringify({
-      tag: TAG,
-      parquet: PARQUET,
-      durationMs: DURATION_MS,
-      tFirstFrameMs: tFirstFrame,
-      gpuErrors: final.gpuErrors,
-      deviceInfo: final.deviceInfo,
-      canvases: final.canvases,
-      consoleErrorCount: consoleErrors.length,
-      consoleErrorsSample: consoleErrors.slice(0, 25),
-      browserLinesTail: browserLines.slice(-100),
-      serverLinesTail: serverLines.slice(-50),
-    }, null, 2),
+    JSON.stringify(
+      {
+        tag: TAG,
+        parquet: PARQUET,
+        durationMs: DURATION_MS,
+        tFirstFrameMs: tFirstFrame,
+        gpuErrors: final.gpuErrors,
+        deviceInfo: final.deviceInfo,
+        canvases: final.canvases,
+        consoleErrorCount: consoleErrors.length,
+        consoleErrorsSample: consoleErrors.slice(0, 25),
+        browserLinesTail: browserLines.slice(-100),
+        serverLinesTail: serverLines.slice(-50),
+      },
+      null,
+      2,
+    ),
   );
   await page.screenshot({ path: path.join(outDir, `gpu-soak-${TAG}.png`), fullPage: false });
 

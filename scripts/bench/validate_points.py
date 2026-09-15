@@ -28,8 +28,7 @@ def validate(path: str, expected_rows: int) -> None:
     p = Path(path).resolve()
     tbl = f"read_parquet('{p}')"
     cols = {
-        r[0]: r[1]
-        for r in con.sql(f"DESCRIBE SELECT * FROM {tbl} LIMIT 0").fetchall()
+        r[0]: r[1] for r in con.sql(f"DESCRIBE SELECT * FROM {tbl} LIMIT 0").fetchall()
     }
     expected_cols = {"id", "lon", "lat", "category", "value"}
     missing = expected_cols - cols.keys()
@@ -56,7 +55,9 @@ def validate(path: str, expected_rows: int) -> None:
     # id should be a dense [0, n) range. Cheap test: MIN, MAX, and uniqueness.
     id_min, id_max = con.sql(f"SELECT MIN(id), MAX(id) FROM {tbl}").fetchone()
     assert id_min == 0, f"id_min: got {id_min}, want 0"
-    assert id_max == expected_rows - 1, f"id_max: got {id_max}, want {expected_rows-1}"
+    assert id_max == expected_rows - 1, (
+        f"id_max: got {id_max}, want {expected_rows - 1}"
+    )
     distinct_ids = con.sql(f"SELECT COUNT(DISTINCT id) FROM {tbl}").fetchone()[0]
     assert distinct_ids == expected_rows, (
         f"id uniqueness: got {distinct_ids:,} distinct, want {expected_rows:,}"

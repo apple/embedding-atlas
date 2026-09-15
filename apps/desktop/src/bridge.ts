@@ -33,8 +33,8 @@ export function invoke<T = unknown>(cmd: string, args?: Record<string, unknown>)
   if (!hasBridge()) {
     return Promise.reject(
       new Error(
-        `electronAPI unavailable — invoke("${cmd}") called from a context without the preload (likely a non-Electron browser)`
-      )
+        `electronAPI unavailable — invoke("${cmd}") called from a context without the preload (likely a non-Electron browser)`,
+      ),
     );
   }
   return window.electronAPI.invoke<T>(cmd, args);
@@ -44,10 +44,7 @@ export function invoke<T = unknown>(cmd: string, args?: Record<string, unknown>)
 // wrap it so call sites that do `.then(f => f())` still work. In a
 // non-Electron browser, the listener is a no-op — keeps the page loadable
 // in plain Chrome during dev without immediately crashing.
-export function listen<T = unknown>(
-  event: string,
-  cb: (ev: BridgeEvent<T>) => void
-): Promise<() => void> {
+export function listen<T = unknown>(event: string, cb: (ev: BridgeEvent<T>) => void): Promise<() => void> {
   if (!hasBridge()) return Promise.resolve(() => {});
   return Promise.resolve(window.electronAPI.listen<T>(event, cb));
 }
