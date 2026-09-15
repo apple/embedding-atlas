@@ -312,4 +312,54 @@ test.describe("Frontend Auto GIS Detection", () => {
       page.locator("text=geometry column"),
     ).toBeVisible({ timeout: 5_000 });
   });
+
+  test("imports Point geometry from WKB byte lists and GeoJSON", async ({ browser }) => {
+    function wkbPoint(x: number, y: number): number[] {
+      const bytes = Buffer.alloc(21);
+      bytes.writeUInt8(1, 0);
+      bytes.writeUInt32LE(1, 1);
+      bytes.writeDoubleLE(x, 5);
+      bytes.writeDoubleLE(y, 13);
+      return Array.from(bytes);
+    }
+
+    const points = [
+      [-93.434651, 45.0928185],
+      [-73.99006518, 40.755437],
+    ];
+    const cases = [
+      {
+        name: "wkb-list.json",
+        rows: points.map(([x, y], i) => ({ name: `Point ${i}`, geometry: wkbPoint(x, y) })),
+      },
+      {
+        name: "geojson-struct.json",
+        rows: points.map(([x, y], i) => ({ name: `Point ${i}`, geometry: { type: "Point", coordinates: [x, y] } })),
+      },
+      {
+        name: "geojson-string.json",
+        rows: points.map(([x, y], i) => ({
+          name: `Point ${i}`,
+          geometry: JSON.stringify({ type: "Point", coordinates: [x, y] }),
+        })),
+      },
+    ];
+
+    for (const item of cases) {
+      const page = await browser.newPage();
+      await page.goto(`${DEV_URL}/#/file`);
+      await expect(page.locator("text=Drag & drop")).toBeVisible({ timeout: 10_000 });
+      await page.locator('input[type="file"]').setInputFiles({
+        name: item.name,
+        mimeType: "application/json",
+        buffer: Buffer.from(JSON.stringify(item.rows)),
+      });
+
+      await expect(page.locator("text=Auto-detected GIS geometry column")).toBeVisible({ timeout: 30_000 });
+      await page.getByText("Confirm", { exact: true }).click();
+      await expect(page.getByPlaceholder("Go to place...")).toBeVisible({ timeout: 30_000 });
+      expect(await page.locator("canvas").count()).toBeGreaterThan(0);
+      await page.close();
+    }
+  });
 });

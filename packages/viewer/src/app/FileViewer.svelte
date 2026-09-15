@@ -16,6 +16,7 @@
   import { systemColorScheme } from "../utils/color_scheme.js";
   import { initializeDatabase } from "../utils/database.js";
   import { downloadBuffer } from "../utils/download.js";
+  import { pointCoordinatesFromGeometry } from "../utils/geometry.js";
   import { exportMosaicSelection, type ExportFormat } from "../utils/mosaic_exporter.js";
   import { getQueryPayload, setQueryPayload } from "../utils/query_payload.js";
   import { computeProjection } from "./compute_projection.js";
@@ -110,9 +111,8 @@
           const yCol = spec.embedding.precomputed.y;
           logger.info(`Extracting coordinates from geometry column "${geomCol}"...`);
 
-          // Try DuckDB spatial extension first (fastest). Handle both
-          // legacy BLOB/WKB columns (need ST_GeomFromWKB) and native
-          // GeoParquet GEOMETRY columns (ST_X / ST_Y directly).
+          // Try DuckDB spatial extension first (fastest). Handle native
+          // GeoParquet, binary WKB, and GeoJSON strings/structs.
           let extracted = false;
           try {
             await coordinator.exec(`INSTALL spatial; LOAD spatial;`);
@@ -121,8 +121,23 @@
               column_type: string;
             }[];
             const geomType = Array.from(describeRows).find((r) => r.column_name === geomCol)?.column_type;
-            const isNativeGeometry = typeof geomType === "string" && geomType.toUpperCase().startsWith("GEOMETRY");
-            const geomExpr = isNativeGeometry ? `"${geomCol}"` : `ST_GeomFromWKB("${geomCol}")`;
+            const normalizedType = geomType?.toUpperCase() ?? "";
+            let geomExpr: string;
+            if (normalizedType.startsWith("GEOMETRY")) {
+              geomExpr = `"${geomCol}"`;
+            } else if (
+              normalizedType.includes("BLOB") ||
+              normalizedType.includes("BYTEA") ||
+              normalizedType.includes("BINARY")
+            ) {
+              geomExpr = `ST_GeomFromWKB("${geomCol}")`;
+            } else if (normalizedType === "JSON" || normalizedType.startsWith("VARCHAR")) {
+              geomExpr = `ST_GeomFromGeoJSON(CAST("${geomCol}" AS VARCHAR))`;
+            } else if (normalizedType.includes("STRUCT")) {
+              geomExpr = `ST_GeomFromGeoJSON(to_json("${geomCol}"))`;
+            } else {
+              throw new Error(`Use the browser geometry parser for ${geomType}`);
+            }
             await coordinator.exec(
               `ALTER TABLE dataset ADD COLUMN IF NOT EXISTS "${xCol}" DOUBLE;
                ALTER TABLE dataset ADD COLUMN IF NOT EXISTS "${yCol}" DOUBLE;
@@ -135,28 +150,23 @@
             // spatial extension not available in WASM — fall through to JS parsing
           }
 
-          // Fallback: parse WKB in JavaScript, write back as a new table, then join
+          // Fallback: parse WKB / GeoJSON in JavaScript, write back as a new table, then join.
           if (!extracted) {
-            logger.info("Parsing WKB geometry in browser...");
+            logger.info("Parsing geometry in browser...");
             const rows = await coordinator.query(`SELECT __row_index__, "${geomCol}" AS geom FROM dataset`);
             const lons: number[] = [];
             const lats: number[] = [];
             const ids: number[] = [];
             for (const row of rows) {
-              const wkb: Uint8Array | null = row.geom;
-              if (!wkb || wkb.length < 21) continue;
-              const dv = new DataView(wkb.buffer, wkb.byteOffset, wkb.byteLength);
-              const le = dv.getUint8(0) === 1;
-              const geomType = le ? dv.getUint32(1, true) : dv.getUint32(1, false);
-              if ((geomType & 0xff) !== 1) continue; // only Point
-              let off = 5;
-              if (geomType & 0x20000000) off += 4; // skip SRID
-              if (wkb.length < off + 16) continue;
-              const lon = dv.getFloat64(off, le);
-              const lat = dv.getFloat64(off + 8, le);
+              const point = pointCoordinatesFromGeometry(row.geom);
+              if (point == null) continue;
+              const [lon, lat] = point;
               ids.push(row.__row_index__);
               lons.push(lon);
               lats.push(lat);
+            }
+            if (ids.length === 0) {
+              throw new Error(`No Point coordinates could be extracted from geometry column "${geomCol}".`);
             }
             // Write parsed coordinates back via a temp table
             const values = ids.map((id, i) => `(${id}, ${lons[i]}, ${lats[i]})`).join(",");

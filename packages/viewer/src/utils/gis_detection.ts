@@ -4,7 +4,7 @@
  * Implements a priority hierarchy:
  *   1. Exact lon/lat or longitude/latitude column pairs
  *   2. Fuzzy match — first columns whose names contain "lat"/"lon"
- *   3. Geometry column (geoparquet WKB) — requires coordinate extraction
+ *   3. Geometry column (GeoParquet, WKB, or GeoJSON) — requires coordinate extraction
  *
  * The detection result tells the SettingsView which columns to pre-fill
  * and whether geometry extraction is needed before the data can be viewed.
@@ -13,7 +13,7 @@
 export type GisDetectionResult =
   | {
       type: "geometry";
-      /** Name of the WKB geometry column. */
+      /** Name of the geometry column. */
       geometryColumn: string;
       /** Columns to create (lon/lat will be extracted from geometry). */
       xColumn: string;
@@ -79,19 +79,13 @@ export function detectGisColumns(columns: ColumnInfo[]): GisDetectionResult {
     return { type: "columns", xColumn: fuzzyX, yColumn: fuzzyY };
   }
 
-  // --- Priority 3: Geometry column (WKB binary / GEOMETRY type) ---
+  // --- Priority 3: Geometry column ---
   // Checked last because if named lon/lat columns exist, those are preferred.
   const geometryCandidates = ["geometry", "geom", "wkb_geometry", "the_geom", "geo"];
   for (const candidate of geometryCandidates) {
     if (nameSet.has(candidate)) {
       const colType = typeMap.get(candidate) ?? "";
-      // DuckDB reports BLOB for WKB, or GEOMETRY if spatial extension is loaded
-      if (
-        colType.includes("BLOB") ||
-        colType.includes("GEOMETRY") ||
-        colType.includes("blob") ||
-        colType.includes("geometry")
-      ) {
+      if (isSupportedGeometryType(colType)) {
         const originalName = names.find((n) => n.toLowerCase() === candidate)!;
         const xCol = findUniqueName(names, "lon");
         const yCol = findUniqueName(names, "lat");
@@ -101,6 +95,31 @@ export function detectGisColumns(columns: ColumnInfo[]): GisDetectionResult {
   }
 
   return null;
+}
+
+/** Types used for Point geometry by DuckDB's Parquet and JSON readers. */
+function isSupportedGeometryType(dbType: string): boolean {
+  const type = dbType.toUpperCase();
+  const compact = type.replace(/\s/g, "");
+
+  if (
+    type.includes("GEOMETRY") ||
+    type.includes("BLOB") ||
+    type.includes("BYTEA") ||
+    type.includes("VARBINARY") ||
+    type === "JSON" ||
+    /^VARCHAR(?:\(\d+\))?$/.test(type)
+  ) {
+    return true;
+  }
+
+  // Some editors serialize WKB bytes as a Parquet list instead of a binary column.
+  if (/^(U?TINYINT|U?SMALLINT|U?INTEGER|U?BIGINT)\[(\d+)?\]$/.test(compact)) {
+    return true;
+  }
+
+  // DuckDB materializes a GeoJSON object as a struct when reading JSON/Parquet.
+  return type.includes("STRUCT") && type.includes("TYPE") && type.includes("COORDINATES");
 }
 
 /** Find an exact case-insensitive match among numeric columns. */
