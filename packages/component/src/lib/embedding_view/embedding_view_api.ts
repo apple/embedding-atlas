@@ -79,6 +79,10 @@ export interface EmbeddingViewProps {
   /** A callback for when `rangeSelection` changes. */
   onRangeSelection?: ((value: Rectangle | Point[] | null) => void) | null;
 
+  /** A callback fired once, with the final geometry, when the user releases the mouse
+   *  after an actual lasso or rectangle range-selection drag. */
+  onRangeSelectionEnd?: ((value: Rectangle | Point[]) => void) | null;
+
   /** An async function that returns a data point near the given (x, y) location.
    *  The `unitDistance` parameter is the distance of a single pixel in data domain.
    *  You can use this to determine the distance threshold for selecting a point. */

@@ -124,6 +124,10 @@ export interface EmbeddingViewMosaicProps {
   /** A callback for when `rangeSelection` changes. */
   onRangeSelection?: ((value: Rectangle | Point[] | null) => void) | null;
 
+  /** A callback fired once, with the final geometry, when the user releases the mouse
+   *  after an actual lasso or rectangle range-selection drag. */
+  onRangeSelectionEnd?: ((value: Rectangle | Point[]) => void) | null;
+
   /** A custom renderer to draw the tooltip content. */
   customTooltip?: CustomComponent<HTMLDivElement, { tooltip: DataPoint }> | null;
 
