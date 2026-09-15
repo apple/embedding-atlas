@@ -18,7 +18,7 @@ const examples: Record<string, Example[]> = {
     {
       title: "Wine Reviews",
       details: "Data from Hugging Face: spawn99/wine-reviews",
-      image: "/assets/examples/wine-reviews-${colorscheme}.jpg",
+      image: "/assets/examples/wine-reviews-${colorscheme}.avif",
       data: "example://wine-reviews",
       settings: {
         text: "description",
@@ -148,7 +148,7 @@ const examples: Record<string, Example[]> = {
     {
       title: "Visualization Publications",
       details: "Data from vispubdata.org",
-      image: "/assets/examples/vispubdata-${colorscheme}.jpg",
+      image: "/assets/examples/vispubdata-${colorscheme}.avif",
       data: "example://vispubdata",
       settings: {
         text: "Abstract",
@@ -252,7 +252,7 @@ const examples: Record<string, Example[]> = {
     {
       title: "MedMCQA",
       details: "Data from Hugging Face: openlifescienceai/medmcqa",
-      image: "/assets/examples/medmcqa-${colorscheme}.jpg",
+      image: "/assets/examples/medmcqa-${colorscheme}.avif",
       data: "example://medmcqa",
       settings: {
         text: "question",
@@ -295,7 +295,7 @@ const examples: Record<string, Example[]> = {
     {
       title: "SuperGPQA",
       details: "Data from Hugging Face: m-a-p/SuperGPQA",
-      image: "/assets/examples/supergpqa-${colorscheme}.jpg",
+      image: "/assets/examples/supergpqa-${colorscheme}.avif",
       data: "example://SuperGPQA",
       settings: {
         text: "question",
@@ -393,7 +393,7 @@ const examples: Record<string, Example[]> = {
     {
       title: "ImageWoof",
       details: "Data from Hugging Face: frgfm/imagewoof",
-      image: "/assets/examples/imagewoof-${colorscheme}.jpg",
+      image: "/assets/examples/imagewoof-${colorscheme}.avif",
       data: "example://imagewoof",
       settings: {
         embedding: { precomputed: { x: "projection_x", y: "projection_y", neighbors: "neighbors" } },
@@ -443,7 +443,7 @@ const examples: Record<string, Example[]> = {
     {
       title: "Movies Dashboard",
       details: "Data from vega-datasets",
-      image: "/assets/examples/movies-dashboard-${colorscheme}.jpg",
+      image: "/assets/examples/movies-dashboard-${colorscheme}.avif",
       data: "example://movies",
       settings: {},
       state: {
@@ -678,7 +678,7 @@ const examples: Record<string, Example[]> = {
     {
       title: "ScienceQA",
       details: "Data from Hugging Face: derek-thomas/ScienceQA",
-      image: "/assets/examples/scienceqa-${colorscheme}.jpg",
+      image: "/assets/examples/scienceqa-${colorscheme}.avif",
       data: "example://ScienceQA",
       settings: {},
       state: {
@@ -740,7 +740,7 @@ const examples: Record<string, Example[]> = {
     {
       title: "Census Income",
       details: "Data from Hugging Face: scikit-learn/adult-census-income",
-      image: "/assets/examples/census-income-${colorscheme}.jpg",
+      image: "/assets/examples/census-income-${colorscheme}.avif",
       data: "example://census-income",
       settings: {},
       state: {
@@ -850,7 +850,7 @@ const examples: Record<string, Example[]> = {
     {
       title: "California Housing",
       details: "Data from Hugging Face: gvlassis/california_housing",
-      image: "/assets/examples/california-housing-${colorscheme}.jpg",
+      image: "/assets/examples/california-housing-${colorscheme}.avif",
       data: "example://california-housing",
       settings: {},
       state: {
