@@ -451,7 +451,9 @@ class TestUmapWeightCompatibility:
             umap_w = umap_weights.get((src, tgt))
             if umap_w is None:
                 mismatches.append(f"Edge ({src}, {tgt}) not in UMAP output")
-            elif not np.isclose(our_w, umap_w, rtol=1e-7):
+            # NumPy's vectorized exp and UMAP's Numba kernel can differ by a
+            # few float32 ULPs across platforms and compilers.
+            elif not np.isclose(our_w, umap_w, rtol=1e-6):
                 mismatches.append(
                     f"Edge ({src}, {tgt}): ours={our_w:.8f}, umap={umap_w:.8f}"
                 )
