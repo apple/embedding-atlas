@@ -42,12 +42,22 @@ export function isFloatingPointDBType(dbType: string): boolean {
   return floatTypes.has(dbType) || decimalTypeRegex.test(dbType);
 }
 
+/**
+ * Returns true for integer types that may exceed JavaScript's safe integer
+ * range. These values must remain exact when extracted for display.
+ */
+export function isWideIntegerDBType(dbType: string): boolean {
+  return wideIntegerTypes.has(dbType.trim().toUpperCase());
+}
+
 // DuckDB reports decimals as DECIMAL(p) or DECIMAL(p,s), with NUMERIC as an alias.
 // Anchored at both ends so array types such as DECIMAL(18,3)[] are not matched: we
 // only classify plain numeric scalars here, not arrays of them.
 const decimalTypeRegex = /^(DECIMAL|NUMERIC)\(\d+(\s*,\s*\d+)?\)$/;
 
 const floatTypes = new Set(["REAL", "FLOAT4", "FLOAT8", "FLOAT", "DOUBLE"]);
+
+const wideIntegerTypes = new Set(["BIGINT", "INT8", "LONG", "UBIGINT", "HUGEINT", "UHUGEINT"]);
 
 const numberTypes = new Set([
   "REAL",

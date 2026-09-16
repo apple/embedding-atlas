@@ -118,7 +118,7 @@ jobs:
 
       - name: Run tests
         run: |
-          embedding-atlas --help
+          geospatial-atlas --help
 
           python -c "import embedding_atlas"
           python -c "from embedding_atlas.projection import compute_projection"

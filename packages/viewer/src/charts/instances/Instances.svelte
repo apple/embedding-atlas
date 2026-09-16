@@ -15,6 +15,7 @@
   import type { ColumnStyle } from "../../renderers/types.js";
   import { isolatedWritable } from "../../utils/store.js";
   import type { ChartViewProps, RowID } from "../chart.js";
+  import { instancesDisplayQuery } from "./display_query.js";
   import { instancesQuery } from "./query.js";
   import type { InstancesSpec, InstancesState, SortOrder } from "./types.js";
 
@@ -117,6 +118,7 @@
     });
 
     let columnNames: string[] = [];
+    let columnTypes = new Map<string, string>();
     let lastQueryOffset = 0;
     let lastQueryPredicate: SQL.FilterExpr | undefined = undefined;
 
@@ -136,10 +138,9 @@
       selection: context.filter,
       prepare: async () => {
         let desc = await context.coordinator.query(SQL.Query.describe(baseQuery()));
-        columnNames = desc
-          .toArray()
-          .map((x) => x.column_name)
-          .filter((x) => !x.startsWith("__"));
+        let columnDescriptions = desc.toArray();
+        columnTypes = new Map(columnDescriptions.map((x) => [x.column_name, x.column_type]));
+        columnNames = columnDescriptions.map((x) => x.column_name).filter((x) => !x.startsWith("__"));
         if (options.columns) {
           let specifiedColumns = new Set(options.columns);
           columnNames = columnNames.filter((x) => specifiedColumns.has(x));
@@ -148,6 +149,7 @@
         columnNames = columnNames.filter((col) => options.columnStyles[col]?.display !== "hidden");
 
         // Get sample data for column widths
+        let selectedColumns = [...(isOriginalTable ? ["__id__"] : []), ...columnNames];
         let widthQuery = SQL.Query.from(baseQuery())
           .select(
             Object.fromEntries([
@@ -157,7 +159,9 @@
           )
           .limit(10)
           .offset(0);
-        let widthResult = await context.coordinator.query(widthQuery);
+        let widthResult = await context.coordinator.query(
+          instancesDisplayQuery(widthQuery, selectedColumns, columnTypes),
+        );
         let sampleData = widthResult.toArray();
         defaultColumnWidths = Object.fromEntries(
           columnNames.map((col) => [
@@ -172,7 +176,8 @@
       query: (predicate) => {
         lastQueryOffset = offset;
         lastQueryPredicate = predicate;
-        return SQL.Query.from(baseQuery(predicate))
+        let selectedColumns = [...(isOriginalTable ? ["__id__"] : []), ...columnNames];
+        let query = SQL.Query.from(baseQuery(predicate))
           .select(
             Object.fromEntries([
               ...(isOriginalTable ? [["__id__", SQL.column(context.id)]] : []),
@@ -182,6 +187,7 @@
           .orderby(orderByExprs)
           .limit(options.pageSize)
           .offset(offset);
+        return instancesDisplayQuery(query, selectedColumns, columnTypes);
       },
       queryResult: (result: any) => {
         data = {

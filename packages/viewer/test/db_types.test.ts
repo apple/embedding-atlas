@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "vitest";
 
-import { isFloatingPointDBType, jsTypeFromDBType } from "../src/utils/db_types.js";
+import { isFloatingPointDBType, isWideIntegerDBType, jsTypeFromDBType } from "../src/utils/db_types.js";
 
 describe("isFloatingPointDBType", () => {
   test("returns true for floating-point types", () => {
@@ -62,5 +62,19 @@ describe("jsTypeFromDBType", () => {
     expect(jsTypeFromDBType("BLOB")).toBe(null);
     // Arrays of decimals are not plain numeric scalars and have no JS array type here.
     expect(jsTypeFromDBType("DECIMAL(18,3)[]")).toBe(null);
+  });
+});
+
+describe("isWideIntegerDBType", () => {
+  test("detects integer types that may exceed JavaScript's safe integer range", () => {
+    for (let t of ["BIGINT", "INT8", "LONG", "UBIGINT", "HUGEINT", "UHUGEINT"]) {
+      expect(isWideIntegerDBType(t), t).toBe(true);
+    }
+  });
+
+  test("ignores narrower and nested integer types", () => {
+    for (let t of ["INTEGER", "UINTEGER", "SMALLINT", "BIGINT[]", "STRUCT(value BIGINT)"]) {
+      expect(isWideIntegerDBType(t), t).toBe(false);
+    }
   });
 });
