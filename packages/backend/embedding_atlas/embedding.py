@@ -199,9 +199,10 @@ def _create_litellm_embedder(
 
             embeddings = []
             for item in batch:
-                b64 = base64.b64encode(item["bytes"]).decode("ascii")
+                data = item["bytes"]
+                b64 = base64.b64encode(data).decode("ascii")
                 response = await aembedding(
-                    input=[f"data:image/png;base64,{b64}"],
+                    input=[f"data:{_image_mime_type(data)};base64,{b64}"],
                     model=model,
                     **embedder_args,
                 )
@@ -216,3 +217,20 @@ def _create_litellm_embedder(
             return np.array([item["embedding"] for item in response.data])
 
     return _embed
+
+
+def _image_mime_type(data: bytes) -> str:
+    """Return the MIME type of image bytes based on magic bytes (PNG if unknown)."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:2] == b"\xff\xd8":
+        return "image/jpeg"
+    if data[:4] == b"GIF8":
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:2] == b"BM":
+        return "image/bmp"
+    if data[:4] in (b"II\x2a\x00", b"MM\x00\x2a"):
+        return "image/tiff"
+    return "image/png"
