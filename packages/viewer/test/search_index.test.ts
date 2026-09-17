@@ -66,11 +66,8 @@ function fakeCoordinator(rows: { id: number; text: string }[]) {
           let patterns = Array.from(lowered.matchAll(/like '%(.*?)%' escape/g)).map((m) => m[1]);
           return patterns.every((p) => row.text.toLowerCase().includes(p.replace(/\\(.)/g, "$1")));
         });
-        if (/ IN \[/.test(sql)) {
-          let ids = Array.from(sql.matchAll(/IN \[(.*?)\]/g))[0][1]
-            .split(",")
-            .map((x) => Number(x.trim()));
-          matches = matches.filter((row) => ids.includes(row.id));
+        if (/ORDER BY "id"/.test(sql)) {
+          matches = matches.slice().sort((a, b) => a.id - b.id);
         }
         let limit = sql.match(/LIMIT (\d+)/);
         if (limit != null) {
@@ -129,10 +126,11 @@ describe("FullTextSearcher exact-phrase search", () => {
     expect(await s.fullTextSearch('"aldi" "walmart"', { limit: 100 })).toEqual([]);
   });
 
-  test("a quoted query respects the limit", async () => {
-    let { searcher: s } = searcher(rows);
-    let result = await s.fullTextSearch('"aldi"', { limit: 1 });
-    expect(result.length).toBe(1);
+  test("a quoted query respects the limit and orders by id so repeats are stable", async () => {
+    let { searcher: s, queries } = searcher(rows);
+    let result = await s.fullTextSearch('"aldi"', { limit: 2 });
+    expect(result.map((r) => r.id)).toEqual([3, 4]);
+    expect(queries[0]).toMatch(/ORDER BY "id" LIMIT 2/);
   });
 
   test("a mixed query requires the phrase and fuzzy-matches the free text", async () => {
@@ -148,6 +146,29 @@ describe("FullTextSearcher exact-phrase search", () => {
     let result = await s.fullTextSearch('"aldi" store', { limit: 100 });
     // Rows 1 has no "aldi", the rest keep the order the fuzzy index gave.
     expect(result.map((r) => r.id)).toEqual([6, 4, 3]);
+  });
+
+  test("a mixed query applies the limit after the phrase filter", async () => {
+    let { searcher: s } = searcher(rows, [1, 6, 4, 3]);
+    let result = await s.fullTextSearch('"aldi" store', { limit: 2 });
+    expect(result.map((r) => r.id)).toEqual([6, 4]);
+  });
+
+  test("a mixed query never serializes the candidate ids into the SQL", async () => {
+    // The candidate set for a common word can be most of the table, so it is
+    // intersected in JS rather than handed to the database as an IN list.
+    let { searcher: s, queries } = searcher(rows, [6, 4, 3, 1]);
+    await s.fullTextSearch('"aldi" store', { limit: 100 });
+    let phraseQueries = queries.filter((q) => /LIKE/.test(q));
+    expect(phraseQueries.length).toBe(1);
+    expect(phraseQueries[0]).not.toMatch(/ IN \[/);
+    expect(phraseQueries[0]).not.toMatch(/LIMIT/);
+  });
+
+  test("a mixed query with no fuzzy hits skips the phrase scan", async () => {
+    let { searcher: s, queries } = searcher(rows, []);
+    expect(await s.fullTextSearch('"aldi" store', { limit: 100 })).toEqual([]);
+    expect(queries.some((q) => /LIKE/.test(q))).toBe(false);
   });
 
   test("wildcards in a phrase are matched literally", async () => {
