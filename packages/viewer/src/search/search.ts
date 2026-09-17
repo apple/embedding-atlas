@@ -99,16 +99,14 @@ export class FullTextSearcher implements Searcher {
    * matched against the text already in the database, instead of keeping a
    * second copy of every text in memory alongside the fuzzy index.
    *
-   * When `candidateIDs` is given, the match is restricted to those rows, which
-   * is how a mixed query like `"aldi" store` narrows the fuzzy hits for `store`
-   * down to the ones that also contain the exact phrase.
+   * A substring match carries no relevance signal to rank by, so when a
+   * `limit` is given the matches are ordered by id before it is applied. DuckDB
+   * gives no row-order guarantee, so a bare `LIMIT` could hand back a different
+   * subset of the matches on every repeat of the same search. With `limit`
+   * null every matching id is returned, unordered, for the caller to intersect
+   * with a ranking of its own.
    */
-  private async queryPhrases(
-    phrases: string[],
-    predicate: string | null,
-    candidateIDs: (string | number)[] | null,
-    limit: number,
-  ): Promise<any[]> {
+  private async queryPhrases(phrases: string[], predicate: string | null, limit: number | null): Promise<any[]> {
     let idColumn = SQL.column(this.columns.id);
     let textColumn = SQL.column(this.columns.text);
 
@@ -119,18 +117,12 @@ export class FullTextSearcher implements Searcher {
     if (predicate != null) {
       conditions.push(`(${predicate})`);
     }
-    if (candidateIDs != null) {
-      if (candidateIDs.length == 0) {
-        return [];
-      }
-      conditions.push(`${idColumn} IN [${candidateIDs.map((x) => SQL.literal(x)).join(", ")}]`);
-    }
 
     let result = await this.coordinator.query(`
       SELECT ${idColumn} AS id
       FROM ${this.table}
       WHERE ${conditions.join(" AND ")}
-      LIMIT ${limit}
+      ${limit != null ? `ORDER BY ${idColumn} LIMIT ${limit}` : ``}
     `);
     return Array.from(result).map((row: any) => row.id);
   }
@@ -147,7 +139,7 @@ export class FullTextSearcher implements Searcher {
     // the fuzzy index entirely.
     if (phrases.length > 0 && freeText.length == 0) {
       options?.onStatus?.("Searching...");
-      let resultIDs = await this.queryPhrases(phrases, this.predicateString(predicate), null, limit);
+      let resultIDs = await this.queryPhrases(phrases, this.predicateString(predicate), limit);
       return resultIDs.map((id) => ({ id: id }));
     }
 
@@ -168,9 +160,16 @@ export class FullTextSearcher implements Searcher {
     // that flexsearch treats a limit of 0 as "use the default of 100" rather
     // than "no limit", so this passes an explicit large bound instead.
     let candidateIDs = await backend.query(freeText, UNLIMITED_SEARCH_RESULTS);
-    let matched = new Set(
-      await this.queryPhrases(phrases, this.predicateString(predicate), candidateIDs, candidateIDs.length),
-    );
+    if (candidateIDs.length == 0) {
+      return [];
+    }
+
+    // The two sides are intersected here rather than by handing the candidate
+    // ids to the database as an `IN` list. A common free-text word matches most
+    // of the table, so that list, serialized into the SQL text, would grow with
+    // the table. The phrase scan below is the same one the phrase-only path
+    // runs, so the database does no extra work for it.
+    let matched = new Set(await this.queryPhrases(phrases, this.predicateString(predicate), null));
     let resultIDs = candidateIDs.filter((id) => matched.has(id)).slice(0, limit);
     return resultIDs.map((id) => ({ id: id }));
   }
