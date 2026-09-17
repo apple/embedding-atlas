@@ -27,6 +27,12 @@ export interface ParsedQuery {
  * Empty quotes (`""`) contribute no phrase. An unterminated trailing quote is
  * treated as a literal character of the free text so a half-typed query still
  * searches.
+ *
+ * Two further edge cases are deliberate rather than handled. A quote is a
+ * delimiter wherever it appears, so a quote in the middle of a word still
+ * splits it: `re"d"x` is the phrase `d` plus the free text `re x`. And since
+ * every quote is consumed as a delimiter there is no way to search for a
+ * literal `"`. Neither is worth an escape syntax for a search box.
  */
 export function parseQuery(query: string): ParsedQuery {
   let phrases: string[] = [];
