@@ -31,6 +31,12 @@ describe("parseQuery", () => {
     expect(parseQuery('"aldi')).toEqual({ phrases: [], freeText: '"aldi' });
     expect(parseQuery('store "aldi')).toEqual({ phrases: [], freeText: 'store "aldi' });
   });
+
+  test("a quote is a delimiter even in the middle of a word", () => {
+    // Deliberate: there is no escape syntax, so a mid-word quote splits the
+    // word and a literal quote cannot be searched for.
+    expect(parseQuery('re"d"x')).toEqual({ phrases: ["d"], freeText: "re x" });
+  });
 });
 
 describe("escapeLikePattern", () => {
