@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
-from embedding_atlas.pagerank import (
+from embedding_atlas.graph_metrics import (
     compute_pagerank_column,
     knn_to_edges,
     pagerank,

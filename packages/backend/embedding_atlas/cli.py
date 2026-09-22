@@ -250,6 +250,27 @@ def import_modules(names: list[str]):
     help="Compute PageRank scores from the neighbor graph, or specify a column containing pre-computed scores. Automatically computed when --image is specified.",
 )
 @click.option(
+    "--degree",
+    "compute_degree",
+    is_flag=True,
+    default=False,
+    help="Compute degree centrality from the neighbor graph (adds in_degree, out_degree, and degree columns).",
+)
+@click.option(
+    "--kcore",
+    "compute_kcore",
+    is_flag=True,
+    default=False,
+    help="Compute k-core (in-degree core) numbers from the neighbor graph (adds a kcore column).",
+)
+@click.option(
+    "--clustering",
+    "compute_clustering",
+    is_flag=True,
+    default=False,
+    help="Compute the local clustering coefficient from the neighbor graph (adds a clustering column).",
+)
+@click.option(
     "--query",
     default=None,
     type=str,
@@ -397,6 +418,9 @@ def main(
     y_column: str | None,
     neighbors_column: str | None,
     pagerank_column: str | None,
+    compute_degree: bool,
+    compute_kcore: bool,
+    compute_clustering: bool,
     query: str | None,
     sample: int | None,
     umap_n_neighbors: int | None,
@@ -562,7 +586,7 @@ def main(
         and neighbors_column is not None
         and neighbors_column in df.columns
     ):
-        from embedding_atlas.pagerank import compute_pagerank_column
+        from embedding_atlas.graph_metrics import compute_pagerank_column
 
         logger.info("Computing PageRank scores from neighbor graph...")
         pagerank_column = find_column_name(df.columns, "pagerank")
@@ -570,6 +594,53 @@ def main(
     elif pagerank_column == "__compute__":
         logger.warning("Cannot compute PageRank: no neighbor data available.")
         pagerank_column = None
+
+    # Compute optional per-point graph metrics from the neighbor graph.
+    requested_metrics = [
+        name
+        for name, enabled in {
+            "degree": compute_degree,
+            "kcore": compute_kcore,
+            "clustering": compute_clustering,
+        }.items()
+        if enabled
+    ]
+    if requested_metrics:
+        if neighbors_column is not None and neighbors_column in df.columns:
+            from .graph_metrics import (
+                compute_clustering_column,
+                compute_degree_columns,
+                compute_kcore_column,
+            )
+
+            # Each metric maps to the column name(s) it produces and a thunk
+            # returning that many per-row arrays (degree yields three).
+            metric_specs = {
+                "degree": (
+                    ["in_degree", "out_degree", "degree"],
+                    lambda: compute_degree_columns(df, neighbors=neighbors_column),
+                ),
+                "kcore": (
+                    ["kcore"],
+                    lambda: (compute_kcore_column(df, neighbors=neighbors_column),),
+                ),
+                "clustering": (
+                    ["clustering"],
+                    lambda: (
+                        compute_clustering_column(df, neighbors=neighbors_column),
+                    ),
+                ),
+            }
+            for name in requested_metrics:
+                bases, compute = metric_specs[name]
+                logger.info(f"Computing {name} from neighbor graph...")
+                for base, values in zip(bases, compute()):
+                    df[find_column_name(df.columns, base)] = values
+        else:
+            logger.warning(
+                f"Cannot compute graph metrics ({', '.join(requested_metrics)}): "
+                "no neighbor data available."
+            )
 
     props = make_embedding_atlas_props(
         row_id=id_column,
