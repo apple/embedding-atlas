@@ -10,6 +10,7 @@ import Component from "./EmbeddingAtlas.svelte";
 
 import type { ModelContextAPI } from "./app/mcp_server.js";
 import type { ChartThemeConfig } from "./charts/common/theme.js";
+import type { RowID } from "./charts/chart.js";
 import type { DefaultChartsConfig } from "./charts/default_charts.js";
 import type { ColumnStyle } from "./renderers/types.js";
 
@@ -105,6 +106,14 @@ export interface EmbeddingAtlasProps {
 
   /** A cache to speed up initialization of the viewer. */
   cache?: Cache | null;
+
+  /**
+   * An array of row IDs to highlight on the embedding view.
+   * The highlight is synchronized with the internal highlight store, so highlighted
+   * points are also reflected in other coordinated views (e.g., the instances view).
+   * Pass null or an empty array to clear the highlight.
+   */
+  highlight?: RowID[] | null;
 }
 
 export interface EmbeddingAtlasState {
