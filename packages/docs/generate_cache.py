@@ -9,7 +9,7 @@ import click
 import duckdb
 import pandas as pd
 import requests
-from embedding_atlas.pagerank import compute_pagerank_column
+from embedding_atlas.graph_metrics import compute_pagerank_column
 from embedding_atlas.projection import compute_projection
 
 

@@ -109,7 +109,7 @@ export function interactionHandler(element: SVGElement | HTMLElement, props: Int
       window.removeEventListener("mouseup", onUp);
 
       if (dragHandler) {
-        tryInvoke(dragHandler, "up", e2);
+        tryInvoke(dragHandler, "up", v2);
         dragHandler = undefined;
       } else {
         if (handlers.click) {

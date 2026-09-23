@@ -550,7 +550,8 @@ def compute_kcore_column(
     for i in range(n):
         for j in range(k):
             t = int(knn_indices[i, j])
-            if i != t:
+            # Skip self-loops and missing neighbors (marked as -1)
+            if t >= 0 and i != t:
                 edges.append((i, t))
 
     return in_degree_core(edges, n=n)
@@ -658,7 +659,8 @@ def compute_clustering_column(
     for i in range(n):
         for j in range(n_neighbors):
             t = int(knn_indices[i, j])
-            if i != t:
+            # Skip self-loops and missing neighbors (marked as -1)
+            if t >= 0 and i != t:
                 edges.append((i, t))
 
     return clustering_coefficient(edges, n=n)
