@@ -6,15 +6,13 @@
 
   import type { ChartTheme } from "../common/theme.js";
   import type { ConcreteScale } from "../common/types.js";
-  import type { ChartOutputs } from "./runtime.js";
 
   interface Props {
     scale: ConcreteScale<string>;
-    outputs: ChartOutputs;
     theme: ChartTheme;
   }
 
-  let { scale, outputs, theme }: Props = $props();
+  let { scale, theme }: Props = $props();
 </script>
 
 <div class="text-sm text-slate-400 dark:text-slate-500">
@@ -36,7 +34,7 @@
         {#snippet children(width, _)}
           <XYFrame
             xScale={{
-              type: outputs.scale.color.type ?? "linear",
+              type: scale.type ?? "linear",
               domain: scale.domain,
               specialValues: scale.specialValues,
             }}

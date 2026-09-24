@@ -51,7 +51,7 @@ class BaseNode {
   }
 }
 
-export class Node<T> extends BaseNode {
+export class DataflowNode<T> extends BaseNode {
   private _value: T | null = null;
 
   protected setValue(newValue: T) {
@@ -67,7 +67,7 @@ export class Node<T> extends BaseNode {
   }
 }
 
-export class ValueNode<T> extends Node<T> {
+export class DataflowValue<T> extends DataflowNode<T> {
   constructor(value: T) {
     super([]);
     this.setValue(value);
@@ -82,7 +82,7 @@ export class ValueNode<T> extends Node<T> {
   }
 }
 
-class ApplyNode<T> extends Node<T> {
+class ApplyNode<T> extends DataflowNode<T> {
   fn: () => T;
 
   constructor(fn: () => T, inputs: BaseNode[]) {
@@ -95,7 +95,7 @@ class ApplyNode<T> extends Node<T> {
   }
 }
 
-class StatefulApplyNode<T, S extends State> extends Node<T> {
+class StatefulApplyNode<T, S extends { destroy?(): void }> extends DataflowNode<T> {
   fn: (input: Partial<S>) => T;
   state: Partial<S>;
 
@@ -118,21 +118,21 @@ class StatefulApplyNode<T, S extends State> extends Node<T> {
   }
 }
 
-class IfNode<T1, T2> extends Node<T1 | T2> {
+class IfNode<T1, T2> extends DataflowNode<T1 | T2> {
   parent: Dataflow;
-  condition: Node<boolean>;
-  buildTrue: (df: Dataflow) => Node<T1>;
-  buildFalse: (df: Dataflow) => Node<T2>;
+  condition: DataflowNode<boolean>;
+  buildTrue: (df: Dataflow) => DataflowNode<T1>;
+  buildFalse: (df: Dataflow) => DataflowNode<T2>;
 
   context: Dataflow | null = null;
   currentCondition: boolean | null = null;
-  currentNode: Node<T1> | Node<T2> | null = null;
+  currentNode: DataflowNode<T1> | DataflowNode<T2> | null = null;
 
   constructor(
     parent: Dataflow,
-    condition: Node<boolean>,
-    buildTrue: (df: Dataflow) => Node<T1>,
-    buildFalse: (df: Dataflow) => Node<T2>,
+    condition: DataflowNode<boolean>,
+    buildTrue: (df: Dataflow) => DataflowNode<T1>,
+    buildFalse: (df: Dataflow) => DataflowNode<T2>,
   ) {
     super([condition]);
     this.parent = parent;
@@ -165,13 +165,17 @@ class IfNode<T1, T2> extends Node<T1 | T2> {
   }
 }
 
-class MapNode<T, U> extends Node<U[]> {
+class MapNode<T, U> extends DataflowNode<U[]> {
   parent: Dataflow;
-  input: Node<T[]>;
-  build: (df: Dataflow, arg: Node<T>) => Node<U>;
-  cache: Map<T, { input: ValueNode<T>; output: Node<U>; context: Dataflow }>;
+  input: DataflowNode<T[]>;
+  build: (df: Dataflow, arg: DataflowNode<T>) => DataflowNode<U>;
+  cache: Map<T, { input: DataflowValue<T>; output: DataflowNode<U>; context: Dataflow }>;
 
-  constructor(parent: Dataflow, input: Node<T[]>, build: (df: Dataflow, arg: Node<T>) => Node<U>) {
+  constructor(
+    parent: Dataflow,
+    input: DataflowNode<T[]>,
+    build: (df: Dataflow, arg: DataflowNode<T>) => DataflowNode<U>,
+  ) {
     super([input]);
     this.parent = parent;
     this.input = input;
@@ -189,7 +193,7 @@ class MapNode<T, U> extends Node<U[]> {
         return entry.output.value;
       } else {
         let context = new Dataflow(this.parent);
-        let input = new ValueNode(t);
+        let input = new DataflowValue(t);
         let output = this.build(context, input);
         this.cache.set(t, { context, input, output });
         this.addInput(output);
@@ -214,16 +218,20 @@ class MapNode<T, U> extends Node<U[]> {
   }
 }
 
-class SwitchNode<T> extends Node<T[keyof T]> {
+class SwitchNode<T> extends DataflowNode<T[keyof T]> {
   parent: Dataflow;
-  input: Node<keyof T>;
-  cases: { [K in keyof T]: (df: Dataflow) => Node<T[K]> };
+  input: DataflowNode<keyof T>;
+  cases: { [K in keyof T]: (df: Dataflow) => DataflowNode<T[K]> };
 
   currentCase: keyof T | null = null;
-  currentNode: Node<T[keyof T]> | null = null;
+  currentNode: DataflowNode<T[keyof T]> | null = null;
   currentContext: Dataflow | null = null;
 
-  constructor(parent: Dataflow, input: Node<keyof T>, cases: { [K in keyof T]: (df: Dataflow) => Node<T[K]> }) {
+  constructor(
+    parent: Dataflow,
+    input: DataflowNode<keyof T>,
+    cases: { [K in keyof T]: (df: Dataflow) => DataflowNode<T[K]> },
+  ) {
     super([input]);
     this.parent = parent;
     this.input = input;
@@ -250,18 +258,16 @@ class SwitchNode<T> extends Node<T[keyof T]> {
   }
 }
 
-export interface State {
-  destroy?(): void;
-}
-
-type NodesOf<T extends any[]> = { [K in keyof T]: Node<T[K]> | T[K] };
+type NodesOf<T extends any[]> = { [K in keyof T]: DataflowNode<T[K]> | T[K] };
 
 export class Dataflow {
+  private _parent: Dataflow | null;
   private _children: Set<Dataflow>;
   private _nodes: Set<BaseNode>;
 
   /** Creates a new dataflow context. */
   constructor(parent: Dataflow | null = null) {
+    this._parent = parent;
     this._children = new Set();
     this._nodes = new Set();
     parent?._children.add(this);
@@ -269,7 +275,8 @@ export class Dataflow {
 
   /** Destroy the dataflow and all associated states. */
   destroy(): void {
-    for (let c of this._children) {
+    // Snapshot the children: each child detaches itself from this set in destroy().
+    for (let c of [...this._children]) {
       c.destroy();
     }
     for (let n of this._nodes) {
@@ -277,17 +284,20 @@ export class Dataflow {
     }
     this._children.clear();
     this._nodes.clear();
+    // Detach from the parent so destroyed contexts don't accumulate there.
+    this._parent?._children.delete(this);
+    this._parent = null;
   }
 
   /** Creates a value node. */
-  value<T>(value: T): ValueNode<T> {
-    let r = new ValueNode(value);
+  value<T>(value: T): DataflowValue<T> {
+    let r = new DataflowValue(value);
     this._nodes.add(r);
     return r;
   }
 
   /** Creates a derived value. */
-  derive<T extends any[], U>(args: NodesOf<T>, fn: (...arg: T) => U): Node<U> {
+  derive<T extends any[], U>(args: NodesOf<T>, fn: (...arg: T) => U): DataflowNode<U> {
     let nodes: any = args.map((n) => (n instanceof BaseNode ? n : this.value(n)));
     let r = new ApplyNode(() => fn(...nodes.map((n: any) => n.value)), nodes);
     this._nodes.add(r);
@@ -295,10 +305,10 @@ export class Dataflow {
   }
 
   /** Creates a stateful derived value. */
-  statefulDerive<T extends any[], U, S extends State>(
+  statefulDerive<T extends any[], U, S extends { destroy?(): void }>(
     args: NodesOf<T>,
     fn: (state: Partial<S>, ...arg: T) => U,
-  ): Node<U> {
+  ): DataflowNode<U> {
     let nodes: any = args.map((n) => (n instanceof BaseNode ? n : this.value(n)));
     let r = new StatefulApplyNode((s) => fn(s as any, ...nodes.map((n: any) => n.value)), nodes);
     this._nodes.add(r);
@@ -307,28 +317,34 @@ export class Dataflow {
 
   /** Creates a true or false dataflow depending on the value of the condition. */
   if<T1, T2>(
-    condition: Node<boolean>,
-    buildTrue: (df: Dataflow) => Node<T1>,
-    buildFalse: (df: Dataflow) => Node<T2>,
-  ): Node<T1 | T2> {
+    condition: DataflowNode<boolean>,
+    buildTrue: (df: Dataflow) => DataflowNode<T1>,
+    buildFalse: (df: Dataflow) => DataflowNode<T2>,
+  ): DataflowNode<T1 | T2> {
     let r = new IfNode(this, condition, buildTrue, buildFalse);
     this._nodes.add(r);
     return r;
   }
 
-  switch<T>(input: Node<keyof T>, cases: { [K in keyof T]: (df: Dataflow) => Node<T[K]> }): Node<T[keyof T]> {
+  switch<T>(
+    input: DataflowNode<keyof T>,
+    cases: { [K in keyof T]: (df: Dataflow) => DataflowNode<T[K]> },
+  ): DataflowNode<T[keyof T]> {
     let r = new SwitchNode(this, input, cases);
     this._nodes.add(r);
     return r;
   }
 
-  map<T, U>(input: Node<T[]>, build: (df: Dataflow, arg: Node<T>) => Node<U>): Node<U[]> {
+  map<T, U>(
+    input: DataflowNode<T[]>,
+    build: (df: Dataflow, arg: DataflowNode<T>) => DataflowNode<U>,
+  ): DataflowNode<U[]> {
     let r = new MapNode(this, input, build);
     this._nodes.add(r);
     return r;
   }
 
-  assertNotNull<T>(node: Node<T | null | undefined>): Node<T> {
+  assertNotNull<T>(node: DataflowNode<T | null | undefined>): DataflowNode<T> {
     return node as any;
   }
 

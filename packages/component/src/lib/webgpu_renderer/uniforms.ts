@@ -1,6 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import { Dataflow, Node } from "../dataflow.js";
+import { Dataflow, DataflowNode } from "@embedding-atlas/utils";
+
 import type { Matrix3, Vector2, Vector4 } from "../matrix.js";
 import { gpuBuffer } from "./utils.js";
 
@@ -98,11 +99,11 @@ export class StructWriter {
 }
 
 export interface ModuleUniforms {
-  buffer: Node<GPUBuffer>;
-  update: Node<(uniforms: Uniforms) => void>;
+  buffer: DataflowNode<GPUBuffer>;
+  update: DataflowNode<(uniforms: Uniforms) => void>;
 }
 
-export function makeModuleUniforms(df: Dataflow, device: Node<GPUDevice>): ModuleUniforms {
+export function makeModuleUniforms(df: Dataflow, device: DataflowNode<GPUDevice>): ModuleUniforms {
   const byteSize = 4288;
   let buffer = new ArrayBuffer(byteSize);
 

@@ -1,18 +1,19 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import type { Dataflow, Node } from "../dataflow.js";
+import type { Dataflow, DataflowNode } from "@embedding-atlas/utils";
+
 import type { BindGroups } from "./bind_groups.js";
 import type { DownsampleResources } from "./downsample.js";
 import type { AuxiliaryResources, DataBuffers } from "./renderer.js";
 
 export function makeDrawPointsCommand(
   df: Dataflow,
-  device: Node<GPUDevice>,
-  module: Node<GPUShaderModule>,
+  device: DataflowNode<GPUDevice>,
+  module: DataflowNode<GPUShaderModule>,
   bindGroups: BindGroups,
   dataBuffers: DataBuffers,
   auxiliaryResources: AuxiliaryResources,
-): Node<(encoder: GPUCommandEncoder) => void> {
+): DataflowNode<(encoder: GPUCommandEncoder) => void> {
   const pipeline = df.derive([device, module, bindGroups.layouts], (device, module, layouts) =>
     device.createRenderPipeline({
       layout: device.createPipelineLayout({ bindGroupLayouts: [layouts.group0, layouts.group1] }),
@@ -70,12 +71,12 @@ export function makeDrawPointsCommand(
  */
 export function makeDrawPointsDownsampledCommand(
   df: Dataflow,
-  device: Node<GPUDevice>,
-  module: Node<GPUShaderModule>,
+  device: DataflowNode<GPUDevice>,
+  module: DataflowNode<GPUShaderModule>,
   bindGroups: BindGroups,
   downsampleResources: DownsampleResources,
   auxiliaryResources: AuxiliaryResources,
-): Node<(encoder: GPUCommandEncoder, count: number) => void> {
+): DataflowNode<(encoder: GPUCommandEncoder, count: number) => void> {
   const pipeline = df.derive(
     [device, module, bindGroups.layouts, downsampleResources.vertexBindGroupLayout],
     (device, module, layouts, group5Layout) =>

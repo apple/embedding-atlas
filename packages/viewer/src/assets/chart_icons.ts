@@ -10,6 +10,7 @@ import chart_h_bar from "./chart-h-bar.svg?raw";
 import chart_heatmap from "./chart-heatmap.svg?raw";
 import chart_line from "./chart-line.svg?raw";
 import chart_markdown from "./chart-markdown.svg?raw";
+import chart_parallel_coordinates from "./chart-parallel-coordinates.svg?raw";
 import chart_predicates from "./chart-predicates.svg?raw";
 import chart_spec from "./chart-spec.svg?raw";
 import chart_stacked from "./chart-stacked.svg?raw";
@@ -27,6 +28,7 @@ export const chartIcons: Record<string, string> = {
   "chart-heatmap": chart_heatmap,
   "chart-line": chart_line,
   "chart-markdown": chart_markdown,
+  "chart-parallel-coordinates": chart_parallel_coordinates,
   "chart-predicates": chart_predicates,
   "chart-spec": chart_spec,
   "chart-stacked": chart_stacked,

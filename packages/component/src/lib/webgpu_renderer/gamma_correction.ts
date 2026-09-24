@@ -1,15 +1,16 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import type { Dataflow, Node } from "../dataflow.js";
+import type { Dataflow, DataflowNode } from "@embedding-atlas/utils";
+
 import type { BindGroups } from "./bind_groups.js";
 
 export function makeGammaCorrectionCommand(
   df: Dataflow,
-  device: Node<GPUDevice>,
-  module: Node<GPUShaderModule>,
+  device: DataflowNode<GPUDevice>,
+  module: DataflowNode<GPUShaderModule>,
   format: GPUTextureFormat,
   bindGroups: BindGroups,
-): Node<(encoder: GPUCommandEncoder, textureView: GPUTextureView) => void> {
+): DataflowNode<(encoder: GPUCommandEncoder, textureView: GPUTextureView) => void> {
   const pipeline = df.derive([device, module, bindGroups.layouts], (device, module, layouts) =>
     device.createRenderPipeline({
       layout: device.createPipelineLayout({

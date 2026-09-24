@@ -1,6 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import type { Dataflow, Node } from "../dataflow.js";
+import type { Dataflow, DataflowNode } from "@embedding-atlas/utils";
+
 import type { BindGroups } from "./bind_groups.js";
 import type { AuxiliaryResources, DataBuffers } from "./renderer.js";
 
@@ -9,12 +10,12 @@ const WORKGROUP_MAX_COUNT_X = 64;
 
 export function makeAccumulateCommand(
   df: Dataflow,
-  device: Node<GPUDevice>,
-  module: Node<GPUShaderModule>,
+  device: DataflowNode<GPUDevice>,
+  module: DataflowNode<GPUShaderModule>,
   bindGroups: BindGroups,
   dataBuffers: DataBuffers,
   auxiliaryResources: AuxiliaryResources,
-): Node<(encoder: GPUCommandEncoder) => void> {
+): DataflowNode<(encoder: GPUCommandEncoder) => void> {
   let pipeline = df.derive([device, module, bindGroups.layouts], (device, module, layouts) =>
     device.createComputePipeline({
       layout: device.createPipelineLayout({ bindGroupLayouts: [layouts.group0, layouts.group1, layouts.group2A] }),
