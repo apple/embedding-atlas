@@ -19,9 +19,9 @@ def load_pandas_data(url: str) -> pd.DataFrame:
 
     if suffix == ".parquet":
         df = pd.read_parquet(url)
-    elif suffix == ".json" or suffix == ".ndjson":
+    elif suffix == ".json":
         df = pd.read_json(url)
-    elif suffix == ".jsonl":
+    elif suffix == ".jsonl" or suffix == ".ndjson":
         df = pd.read_json(url, lines=True)
     else:
         df = pd.read_csv(url)
