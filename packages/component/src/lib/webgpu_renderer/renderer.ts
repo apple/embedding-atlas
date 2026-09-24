@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import { Dataflow, DataflowNode, DataflowValue } from "@embedding-atlas/utils";
+
 import { defaultCategoryColors, parseColorNormalizedRgb } from "../colors.js";
-import { Dataflow, Node, ValueNode } from "../dataflow.js";
 import {
   matrix3_identity,
   matrix3_inverse,
@@ -75,13 +76,13 @@ export class EmbeddingRenderer {
 
   private viewport: Viewport;
   private df: Dataflow;
-  private device: Node<GPUDevice>;
-  private module: Node<GPUShaderModule>;
+  private device: DataflowNode<GPUDevice>;
+  private module: DataflowNode<GPUShaderModule>;
   private uniforms: ModuleUniforms;
   private context: GPUCanvasContext;
   private renderInputs: RenderInputs;
   private dataBuffers: DataBuffers;
-  private renderer: Node<(props: EmbeddingRendererProps, textureView: GPUTextureView) => void>;
+  private renderer: DataflowNode<(props: EmbeddingRendererProps, textureView: GPUTextureView) => void>;
 
   constructor(context: GPUCanvasContext, device: GPUDevice, format: GPUTextureFormat, width: number, height: number) {
     this.context = context;
@@ -234,39 +235,39 @@ export class EmbeddingRenderer {
 }
 
 export interface RenderInputs {
-  mode: ValueNode<RenderMode>;
-  colorScheme: ValueNode<"light" | "dark">;
-  xData: ValueNode<Float32Array<ArrayBuffer>>;
-  yData: ValueNode<Float32Array<ArrayBuffer>>;
-  categoryData: ValueNode<Uint8Array<ArrayBuffer> | null>;
-  categoryCount: ValueNode<number>;
-  categoryColors: ValueNode<string[] | null>;
-  pointSize: ValueNode<number>;
-  densityBandwidth: ValueNode<number>;
-  matrix: ValueNode<Matrix3>;
-  width: ValueNode<number>;
-  height: ValueNode<number>;
-  downsampleMaxPoints: ValueNode<number | null>;
-  downsampleDensityWeight: ValueNode<number>;
+  mode: DataflowValue<RenderMode>;
+  colorScheme: DataflowValue<"light" | "dark">;
+  xData: DataflowValue<Float32Array<ArrayBuffer>>;
+  yData: DataflowValue<Float32Array<ArrayBuffer>>;
+  categoryData: DataflowValue<Uint8Array<ArrayBuffer> | null>;
+  categoryCount: DataflowValue<number>;
+  categoryColors: DataflowValue<string[] | null>;
+  pointSize: DataflowValue<number>;
+  densityBandwidth: DataflowValue<number>;
+  matrix: DataflowValue<Matrix3>;
+  width: DataflowValue<number>;
+  height: DataflowValue<number>;
+  downsampleMaxPoints: DataflowValue<number | null>;
+  downsampleDensityWeight: DataflowValue<number>;
 }
 
 export interface DataBuffers {
-  x: Node<GPUBuffer>;
-  y: Node<GPUBuffer>;
-  category: Node<GPUBuffer | null>;
-  count: Node<number>;
+  x: DataflowNode<GPUBuffer>;
+  y: DataflowNode<GPUBuffer>;
+  category: DataflowNode<GPUBuffer | null>;
+  count: DataflowNode<number>;
 }
 
 export interface AuxiliaryResources {
-  colorTexture: Node<GPUTexture>;
+  colorTexture: DataflowNode<GPUTexture>;
   colorTextureFormat: GPUTextureFormat;
-  alphaTexture: Node<GPUTexture>;
+  alphaTexture: DataflowNode<GPUTexture>;
   alphaTextureFormat: GPUTextureFormat;
-  countBuffer: Node<GPUBuffer>;
-  blurBuffer: Node<GPUBuffer>;
+  countBuffer: DataflowNode<GPUBuffer>;
+  blurBuffer: DataflowNode<GPUBuffer>;
 }
 
-function makeDataBuffers(df: Dataflow, device: Node<GPUDevice>, inputs: RenderInputs): DataBuffers {
+function makeDataBuffers(df: Dataflow, device: DataflowNode<GPUDevice>, inputs: RenderInputs): DataBuffers {
   let usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST;
   const count = df.derive([inputs.xData], (d: ArrayLike<number>) => d.length);
   const xyDataSize = df.derive([count], (c) => c * 4);
@@ -288,12 +289,12 @@ function makeDataBuffers(df: Dataflow, device: Node<GPUDevice>, inputs: RenderIn
 
 export function makeAuxiliaryResources(
   df: Dataflow,
-  device: Node<GPUDevice>,
-  framebufferWidth: Node<number>,
-  framebufferHeight: Node<number>,
-  densityWidth: Node<number>,
-  densityHeight: Node<number>,
-  categoryCount: Node<number>,
+  device: DataflowNode<GPUDevice>,
+  framebufferWidth: DataflowNode<number>,
+  framebufferHeight: DataflowNode<number>,
+  densityWidth: DataflowNode<number>,
+  densityHeight: DataflowNode<number>,
+  categoryCount: DataflowNode<number>,
 ): AuxiliaryResources {
   let colorTextureFormat: GPUTextureFormat = "rgba16float";
   let alphaTextureFormat: GPUTextureFormat = "r16float";
@@ -332,13 +333,13 @@ export function makeAuxiliaryResources(
 
 function makeRenderCommand(
   df: Dataflow,
-  device: Node<GPUDevice>,
-  module: Node<GPUShaderModule>,
+  device: DataflowNode<GPUDevice>,
+  module: DataflowNode<GPUShaderModule>,
   uniforms: ModuleUniforms,
   format: GPUTextureFormat,
   inputs: RenderInputs,
   dataBuffers: DataBuffers,
-): Node<(props: EmbeddingRendererProps, textureView: GPUTextureView) => void> {
+): DataflowNode<(props: EmbeddingRendererProps, textureView: GPUTextureView) => void> {
   const densityPixelRatio = 4;
   let safeMargin = df.derive([inputs.densityBandwidth], (r: number) => Math.ceil(r * 3) + 1);
   let fbWidth = df.derive([inputs.width, safeMargin], (x: number, safeMargin: number) => x + safeMargin * 2);
@@ -530,15 +531,15 @@ function makeRenderCommand(
 
 function makeDensityMapCommand(
   df: Dataflow,
-  device: Node<GPUDevice>,
-  module: Node<GPUShaderModule>,
+  device: DataflowNode<GPUDevice>,
+  module: DataflowNode<GPUShaderModule>,
   uniforms: ModuleUniforms,
-  width: Node<number>,
-  height: Node<number>,
-  radius: Node<number>,
-  matrix: Node<Matrix3>,
+  width: DataflowNode<number>,
+  height: DataflowNode<number>,
+  radius: DataflowNode<number>,
+  matrix: DataflowNode<Matrix3>,
   dataBuffers: DataBuffers,
-): Node<() => Promise<Float32Array>> {
+): DataflowNode<() => Promise<Float32Array>> {
   let auxiliaryResources = makeAuxiliaryResources(df, device, width, height, width, height, df.value(1));
   let bindGroups = makeBindGroups(df, device, uniforms.buffer, dataBuffers, auxiliaryResources);
   let accumulate = makeAccumulateCommand(df, device, module, bindGroups, dataBuffers, auxiliaryResources);

@@ -19,6 +19,15 @@ export type UIElement =
       details?: string;
     }
   | {
+      fields: {
+        key: string;
+        required?: boolean;
+        types?: JSType[] | null;
+      };
+      label?: string;
+      details?: string;
+    }
+  | {
       code: {
         key: string;
         language?: string;
@@ -43,17 +52,19 @@ export type UIElement =
     };
 
 // Helpers to infer the type of values from the UI description.
-type UIValue<E> = E extends { field: { key: infer K extends string; required: true } }
-  ? { [P in K]: Field }
-  : E extends { field: { key: infer K extends string } }
-    ? { [P in K]: Field | undefined }
-    : E extends { code: { key: infer K extends string } }
-      ? { [P in K]: string }
-      : E extends { spec: { key: infer K extends string } }
-        ? { [P in K]: ChartSpec }
-        : E extends { table: { key: infer K extends string } }
-          ? { [P in K]: string | undefined }
-          : never;
+type UIValue<E> = E extends { fields: { key: infer K extends string } }
+  ? { [P in K]: Field[] }
+  : E extends { field: { key: infer K extends string; required: true } }
+    ? { [P in K]: Field }
+    : E extends { field: { key: infer K extends string } }
+      ? { [P in K]: Field | undefined }
+      : E extends { code: { key: infer K extends string } }
+        ? { [P in K]: string }
+        : E extends { spec: { key: infer K extends string } }
+          ? { [P in K]: ChartSpec }
+          : E extends { table: { key: infer K extends string } }
+            ? { [P in K]: string | undefined }
+            : never;
 
 type UnionToIntersection<U> = (U extends any ? (x: U) => void : never) extends (x: infer I) => void ? I : never;
 type UIValues<A extends readonly UIElement[]> = UnionToIntersection<UIValue<A[number]>>;

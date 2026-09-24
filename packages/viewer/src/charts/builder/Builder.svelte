@@ -5,6 +5,7 @@
 
   import CodeEditor from "../../widgets/CodeEditor.svelte";
   import Select from "../../widgets/Select.svelte";
+  import SelectList from "../../widgets/SelectList.svelte";
   import ChartView from "../ChartView.svelte";
   import Container from "../common/Container.svelte";
   import ChartIcon from "./ChartIcon.svelte";
@@ -54,6 +55,10 @@
         if (current != null && allowedColumns.findIndex(({ name }) => name == current) >= 0) {
           newValues[item.field.key] = current;
         }
+      } else if ("fields" in item) {
+        let allowedColumns = filteredColumns(currentColumns, item.fields.types);
+        let current: string[] = currentValues[item.fields.key] ?? [];
+        newValues[item.fields.key] = current.filter((name) => allowedColumns.some((c) => c.name == name));
       } else if ("table" in item) {
         // Preserve the table selection so re-running on a table change doesn't wipe it.
         newValues[item.table.key] = currentValues[item.table.key];
@@ -97,6 +102,14 @@
           return undefined;
         }
         input[item.field.key] = value;
+      }
+      if ("fields" in item) {
+        let names: string[] = input[item.fields.key] ?? [];
+        let fields = names.map((name) => getField(name)).filter((f) => f != null);
+        if (item.fields.required && fields.length == 0) {
+          return undefined;
+        }
+        input[item.fields.key] = fields;
       }
       if ("table" in item) {
         // Pass undefined for the main table so builders only record non-default tables.
@@ -197,6 +210,20 @@
         value={values[key]}
         onChange={valueUpdater(key)}
         placeholder="(select field)"
+        class="w-full"
+        options={options}
+      />
+    {/if}
+    {#if "fields" in elem}
+      {@const key = elem.fields.key}
+      {@const options = filteredColumns(columns, elem.fields.types).map((c) => ({
+        value: c.name,
+        label: `${c.name} (${c.type})`,
+      }))}
+      <SelectList
+        values={values[key] ?? []}
+        onChange={valueUpdater(key)}
+        placeholder="(add field)"
         class="w-full"
         options={options}
       />

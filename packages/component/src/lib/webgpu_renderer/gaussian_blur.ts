@@ -1,19 +1,20 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import type { Dataflow, Node } from "../dataflow.js";
+import type { Dataflow, DataflowNode } from "@embedding-atlas/utils";
+
 import type { BindGroups } from "./bind_groups.js";
 
 const WORKGROUP_SIZE = 64;
 
 export function makeGaussianBlurCommand(
   df: Dataflow,
-  device: Node<GPUDevice>,
-  module: Node<GPUShaderModule>,
+  device: DataflowNode<GPUDevice>,
+  module: DataflowNode<GPUShaderModule>,
   bindGroups: BindGroups,
-  width: Node<number>,
-  height: Node<number>,
-  categoryCount: Node<number>,
-): Node<(encoder: GPUCommandEncoder) => void> {
+  width: DataflowNode<number>,
+  height: DataflowNode<number>,
+  categoryCount: DataflowNode<number>,
+): DataflowNode<(encoder: GPUCommandEncoder) => void> {
   let pipeline1 = df.derive([device, module, bindGroups.layouts], (device, module, layouts) =>
     device.createComputePipeline({
       layout: device.createPipelineLayout({

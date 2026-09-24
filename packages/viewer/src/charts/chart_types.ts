@@ -10,6 +10,7 @@ import Predicates from "./basic/Predicates.svelte";
 import Builder from "./builder/Builder.svelte";
 import Embedding from "./embedding/Embedding.svelte";
 import Instances from "./instances/Instances.svelte";
+import ParallelCoordinates from "./parallel_coordinates/ParallelCoordinates.svelte";
 import Chart from "./spec/Chart.svelte";
 
 import type {
@@ -27,6 +28,7 @@ import type { EmbeddingSpec, EmbeddingState } from "./embedding/types.js";
 import FeaturesList from "./features/FeaturesList.svelte";
 import type { FeaturesListSpec, FeaturesListState } from "./features/types.js";
 import type { InstancesSpec } from "./instances/types.js";
+import type { ParallelCoordinatesSpec, ParallelCoordinatesState } from "./parallel_coordinates/types.js";
 import type { ChartSpec, ChartState } from "./spec/spec.js";
 
 export type ChartComponent = Component<ChartViewProps<any, any>, {}, "">;
@@ -91,6 +93,7 @@ registerChartType("builder", Builder);
 // Builtin chart types
 registerChartType("count-plot", CountPlot);
 registerChartType("embedding", Embedding);
+registerChartType("parallel-coordinates", ParallelCoordinates);
 registerChartType("instances", Instances);
 registerChartType("features-list", FeaturesList);
 registerChartType("predicates", Predicates);
@@ -106,10 +109,17 @@ export type BuiltinChartSpec =
   | InstancesSpec
   | FeaturesListSpec
   | MarkdownSpec
+  | ParallelCoordinatesSpec
   | PredicatesSpec;
 
 // State type for all builtin chart types
-export type BuiltinChartState = ChartState | EmbeddingState | CountPlotState | FeaturesListState | PredicatesState;
+export type BuiltinChartState =
+  | ChartState
+  | EmbeddingState
+  | ParallelCoordinatesState
+  | CountPlotState
+  | FeaturesListState
+  | PredicatesState;
 
 // Chart builders
 
@@ -369,6 +379,32 @@ registerChartBuilder({
       category: category?.name,
     },
   }),
+});
+
+registerChartBuilder({
+  icon: "chart-parallel-coordinates",
+  description: "Create a parallel coordinates plot of multiple fields",
+  ui: [
+    { label: "Table", table: { key: "table" } }, //
+    { label: "Axes", fields: { key: "fields", types: ["number", "string", "Date"], required: true } }, //
+    { label: "Color", field: { key: "color", types: ["number", "string", "Date"] } },
+  ] as const,
+  create: ({ fields, color, table }): ParallelCoordinatesSpec | undefined => {
+    // A parallel coordinates plot needs at least two axes to be meaningful.
+    if (fields.length < 2) {
+      return undefined;
+    }
+    return {
+      type: "parallel-coordinates",
+      title: "Parallel Coordinates",
+      data: {
+        ...(table != null ? { from: table } : {}),
+        fields: fields.map((f) => f.name),
+        ...(color != null ? { color: color.name } : {}),
+        filter: "$filter",
+      },
+    };
+  },
 });
 
 registerChartBuilder({

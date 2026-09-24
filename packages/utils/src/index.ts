@@ -1,6 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 export { base64Decode, base64Encode, compress, decompress } from "./compression.js";
+export { Dataflow, DataflowNode, DataflowValue } from "./dataflow.js";
 export { debounce } from "./debounce.js";
 export { delay } from "./delay.js";
 export { deepEquals, deepMemo } from "./equals.js";

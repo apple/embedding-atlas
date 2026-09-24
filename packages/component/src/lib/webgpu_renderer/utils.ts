@@ -1,6 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-export async function requestWebGPUDevice(): Promise<GPUDevice | null> {
+/** Request a WebGPU device with `shader-f16` and the given features; null if any of them is unsupported. */
+export async function requestWebGPUDevice(requiredFeatures: GPUFeatureName[] = []): Promise<GPUDevice | null> {
   if (
     navigator.gpu == undefined ||
     navigator.gpu.requestAdapter == undefined ||
@@ -15,6 +16,13 @@ export async function requestWebGPUDevice(): Promise<GPUDevice | null> {
     return null;
   }
 
+  let features: GPUFeatureName[] = ["shader-f16", ...requiredFeatures];
+  let missing = features.filter((f) => !adapter.features.has(f));
+  if (missing.length > 0) {
+    console.error("WebGPU adapter does not support required features:", missing.join(", "));
+    return null;
+  }
+
   let descriptors: GPUDeviceDescriptor[] = [
     // First attempt to request the maximum limit
     {
@@ -22,7 +30,7 @@ export async function requestWebGPUDevice(): Promise<GPUDevice | null> {
         maxBufferSize: adapter.limits.maxBufferSize,
         maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
       },
-      requiredFeatures: ["shader-f16"],
+      requiredFeatures: features,
     },
     // If we cannot get the maximum limit, try lower limits
     ...[512, 256, 128, 64, 32].map(
@@ -31,7 +39,7 @@ export async function requestWebGPUDevice(): Promise<GPUDevice | null> {
           maxBufferSize: Math.min(sz * 1048576, adapter.limits.maxBufferSize),
           maxStorageBufferBindingSize: Math.min(sz * 1048576, adapter.limits.maxStorageBufferBindingSize),
         },
-        requiredFeatures: ["shader-f16"],
+        requiredFeatures: features,
       }),
     ),
   ];

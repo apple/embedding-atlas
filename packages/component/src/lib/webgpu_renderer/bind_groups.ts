@@ -1,10 +1,11 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import type { Dataflow, Node } from "../dataflow.js";
+import type { Dataflow, DataflowNode } from "@embedding-atlas/utils";
+
 import type { AuxiliaryResources, DataBuffers } from "./renderer.js";
 
 export interface BindGroups {
-  layouts: Node<{
+  layouts: DataflowNode<{
     group0: GPUBindGroupLayout;
     group1: GPUBindGroupLayout;
     group2A: GPUBindGroupLayout;
@@ -12,12 +13,12 @@ export interface BindGroups {
     group2BlurForward: GPUBindGroupLayout;
     group3: GPUBindGroupLayout;
   }>;
-  group0: Node<GPUBindGroup>;
-  group1: Node<GPUBindGroup>;
-  group2A: Node<GPUBindGroup>;
-  group2B: Node<GPUBindGroup>;
-  group2BlurForward: Node<GPUBindGroup>;
-  group3: Node<GPUBindGroup>;
+  group0: DataflowNode<GPUBindGroup>;
+  group1: DataflowNode<GPUBindGroup>;
+  group2A: DataflowNode<GPUBindGroup>;
+  group2B: DataflowNode<GPUBindGroup>;
+  group2BlurForward: DataflowNode<GPUBindGroup>;
+  group3: DataflowNode<GPUBindGroup>;
   // Note: group4 for downsampling is managed separately in downsample.ts
 }
 
@@ -77,8 +78,8 @@ export function makeBindGroupLayouts(device: GPUDevice): {
 
 export function makeBindGroups(
   df: Dataflow,
-  device: Node<GPUDevice>,
-  uniformBuffer: Node<GPUBuffer>,
+  device: DataflowNode<GPUDevice>,
+  uniformBuffer: DataflowNode<GPUBuffer>,
   dataBuffers: DataBuffers,
   auxiliaryResources: AuxiliaryResources,
 ): BindGroups {

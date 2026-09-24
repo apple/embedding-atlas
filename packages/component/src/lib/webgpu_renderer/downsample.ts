@@ -1,6 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-import type { Dataflow, Node } from "../dataflow.js";
+import type { Dataflow, DataflowNode } from "@embedding-atlas/utils";
+
 import type { DataBuffers } from "./renderer.js";
 import { gpuBuffer } from "./utils.js";
 
@@ -22,15 +23,15 @@ function computeDispatch(count: number): [number, number] {
 }
 
 export interface DownsampleResources {
-  uniformBuffer: Node<GPUBuffer>;
-  countersBuffer: Node<GPUBuffer>;
-  pointDataBuffer: Node<GPUBuffer>;
+  uniformBuffer: DataflowNode<GPUBuffer>;
+  countersBuffer: DataflowNode<GPUBuffer>;
+  pointDataBuffer: DataflowNode<GPUBuffer>;
   // Group 3: for compute shaders (read_write access)
-  bindGroupLayout: Node<GPUBindGroupLayout>;
-  bindGroup: Node<GPUBindGroup>;
+  bindGroupLayout: DataflowNode<GPUBindGroupLayout>;
+  bindGroup: DataflowNode<GPUBindGroup>;
   // Group 2 in indexed draw pipeline: for vertex shader (read-only access to index buffer)
-  vertexBindGroupLayout: Node<GPUBindGroupLayout>;
-  vertexBindGroup: Node<GPUBindGroup>;
+  vertexBindGroupLayout: DataflowNode<GPUBindGroupLayout>;
+  vertexBindGroup: DataflowNode<GPUBindGroup>;
 }
 
 export interface DownsampleConfig {
@@ -41,9 +42,9 @@ export interface DownsampleConfig {
 
 export function makeDownsampleResources(
   df: Dataflow,
-  device: Node<GPUDevice>,
-  count: Node<number>,
-  downsampleMaxPoints: Node<number | null>,
+  device: DataflowNode<GPUDevice>,
+  count: DataflowNode<number>,
+  downsampleMaxPoints: DataflowNode<number | null>,
 ): DownsampleResources {
   // Uniform buffer for downsample uniforms (16 bytes: render_limit, frame_seed, density_weight, padding)
   const uniformBuffer = df.statefulDerive(
@@ -115,16 +116,16 @@ export function makeDownsampleResources(
 
 export function makeDownsampleCommand(
   df: Dataflow,
-  device: Node<GPUDevice>,
-  module: Node<GPUShaderModule>,
-  group0Layout: Node<GPUBindGroupLayout>,
-  group1Layout: Node<GPUBindGroupLayout>,
-  blurBuffer: Node<GPUBuffer>, // Direct reference to blur_buffer for density lookup
-  group0: Node<GPUBindGroup>,
-  group1: Node<GPUBindGroup>,
+  device: DataflowNode<GPUDevice>,
+  module: DataflowNode<GPUShaderModule>,
+  group0Layout: DataflowNode<GPUBindGroupLayout>,
+  group1Layout: DataflowNode<GPUBindGroupLayout>,
+  blurBuffer: DataflowNode<GPUBuffer>, // Direct reference to blur_buffer for density lookup
+  group0: DataflowNode<GPUBindGroup>,
+  group1: DataflowNode<GPUBindGroup>,
   downsampleResources: DownsampleResources,
   dataBuffers: DataBuffers,
-): Node<(encoder: GPUCommandEncoder, config: DownsampleConfig) => void> {
+): DataflowNode<(encoder: GPUCommandEncoder, config: DownsampleConfig) => void> {
   // Create a minimal bind group layout for blur_buffer (just 1 storage buffer)
   // This keeps viewport_cull under the 8 storage buffer limit:
   // group1 (3) + blurOnly (1) + group3 (4) = 8

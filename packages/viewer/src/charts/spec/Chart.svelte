@@ -154,7 +154,7 @@
       {#if hasLegend}
         <div class="flex-1">
           <div class="min-w-32" class:max-w-72={colorScale.type != "band"}>
-            <ColorLegend scale={colorScale} outputs={$outputs} theme={theme} />
+            <ColorLegend scale={colorScale} theme={theme} />
           </div>
         </div>
       {/if}
