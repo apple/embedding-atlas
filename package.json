@@ -17,7 +17,8 @@
     "test:js": "npm run test -w @embedding-atlas/density-clustering -w @embedding-atlas/umap-wasm -w @embedding-atlas/utils -w @embedding-atlas/viewer",
     "test:rust": "cargo test --workspace",
     "test:python": "cd packages/backend && uv run pytest",
-    "test": "npm run test:js && npm run test:python && npm run test:rust",
+    "test:versions": "node scripts/check-versions.mjs",
+    "test": "npm run test:versions && npm run test:js && npm run test:python && npm run test:rust",
     "check": "npm run check -w @embedding-atlas/component -w @embedding-atlas/viewer -w @embedding-atlas/embedding-atlas -w @embedding-atlas/examples -w @embedding-atlas/backend",
     "check-format": "prettier -c . && uvx ruff format --check --exclude '*.ipynb' --exclude '*.md'"
   },
