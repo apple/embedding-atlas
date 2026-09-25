@@ -197,11 +197,15 @@ def _create_litellm_embedder(
         if modality == "image":
             import base64
 
+            from .projection import _detect_mime_type
+
             embeddings = []
             for item in batch:
-                b64 = base64.b64encode(item["bytes"]).decode("ascii")
+                data = item["bytes"]
+                b64 = base64.b64encode(data).decode("ascii")
+                mime_type = _detect_mime_type(data) or "image/png"
                 response = await aembedding(
-                    input=[f"data:image/png;base64,{b64}"],
+                    input=[f"data:{mime_type};base64,{b64}"],
                     model=model,
                     **embedder_args,
                 )
