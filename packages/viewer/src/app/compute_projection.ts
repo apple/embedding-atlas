@@ -55,32 +55,37 @@ async function setResultColumns(
   idColumn: string,
   xColumn: string,
   yColumn: string,
+  zColumn: string | null,
   allIDs: any[][],
   coordinates: Float32Array,
 ) {
   let offset = 0;
+  let outputDim = zColumn != null ? 3 : 2;
 
   await coordinator.exec(`
     ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${SQL.column(xColumn)} DOUBLE DEFAULT 0;
     ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${SQL.column(yColumn)} DOUBLE DEFAULT 0;
+    ${zColumn != null ? `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${SQL.column(zColumn)} DOUBLE DEFAULT 0;` : ""}
   `);
 
   for (let ids of allIDs) {
-    let xy = coordinates.subarray(offset, offset + ids.length * 2);
+    let coords = coordinates.subarray(offset, offset + ids.length * outputDim);
 
     await coordinator.exec(`
         WITH t1 AS (
             SELECT
                 UNNEST([${ids.map((x) => SQL.literal(x)).join(",")}]) AS id,
-                UNNEST([${ids.map((_, i) => SQL.literal(xy[i * 2])).join(",")}]) AS x,
-                UNNEST([${ids.map((_, i) => SQL.literal(xy[i * 2 + 1])).join(",")}]) AS y
+                UNNEST([${ids.map((_, i) => SQL.literal(coords[i * outputDim])).join(",")}]) AS x,
+                UNNEST([${ids.map((_, i) => SQL.literal(coords[i * outputDim + 1])).join(",")}]) AS y
+                ${zColumn != null ? `, UNNEST([${ids.map((_, i) => SQL.literal(coords[i * outputDim + 2])).join(",")}]) AS z` : ""}
         )
         UPDATE ${table}
             SET ${SQL.column(xColumn)} = t1.x, ${SQL.column(yColumn)} = t1.y
+                ${zColumn != null ? `, ${SQL.column(zColumn)} = t1.z` : ""}
             FROM t1 WHERE ${SQL.column(idColumn, table)} = t1.id
     `);
 
-    offset += ids.length * 2;
+    offset += ids.length * outputDim;
   }
 }
 
@@ -91,6 +96,9 @@ export async function computeProjection(options: {
   dataColumn: string;
   xColumn: string;
   yColumn: string;
+  /** Column to write a 3rd UMAP dimension to. When set, UMAP computes a 3D projection
+   *  (`n_components: 3`) instead of 2D, and the embedding view renders in 3D. */
+  zColumn?: string | null;
   type: "text" | "image";
   model: string;
   umapOptions?: { minDist?: number; nNeighbors?: number; gpu?: boolean };
@@ -131,12 +139,16 @@ export async function computeProjection(options: {
 
   progress("UMAP...");
 
-  let coordinates = await projector.umap({
-    ...options.umapOptions,
-    progress: (p: number, stage: string) => {
-      progress(`UMAP: ${stage}...`, p * 100);
+  let outputDim = options.zColumn != null ? 3 : 2;
+  let coordinates = await projector.umap(
+    {
+      ...options.umapOptions,
+      progress: (p: number, stage: string) => {
+        progress(`UMAP: ${stage}...`, p * 100);
+      },
     },
-  });
+    outputDim,
+  );
 
   await setResultColumns(
     options.coordinator,
@@ -144,6 +156,7 @@ export async function computeProjection(options: {
     options.idColumn,
     options.xColumn,
     options.yColumn,
+    options.zColumn ?? null,
     allIDs,
     coordinates,
   );
