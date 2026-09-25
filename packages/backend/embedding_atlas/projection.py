@@ -262,42 +262,59 @@ def _ftyp_brands(data: bytes) -> set[bytes]:
     return brands
 
 
-def _detect_binary_modality(data: bytes) -> str:
-    """Detect whether binary data is an image or audio based on magic bytes."""
+_AVIF_BRANDS = {b"avif", b"avis"}
+_HEIC_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"hevm", b"hevs"}
+
+
+def _detect_mime_type(data: bytes) -> str | None:
+    """Return the MIME type of image or audio bytes based on magic bytes, or None if unknown."""
     # Image formats
     if data[:8] == b"\x89PNG\r\n\x1a\n":  # PNG
-        return "image"
+        return "image/png"
     if data[:2] == b"\xff\xd8":  # JPEG
-        return "image"
+        return "image/jpeg"
     if data[:4] == b"GIF8":  # GIF87a / GIF89a
-        return "image"
+        return "image/gif"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":  # WebP
-        return "image"
+        return "image/webp"
     if data[:4] == b"\x00\x00\x01\x00":  # ICO
-        return "image"
+        return "image/vnd.microsoft.icon"
     if data[:2] in (b"BM",):  # BMP
-        return "image"
+        return "image/bmp"
     if data[:4] in (b"II\x2a\x00", b"MM\x00\x2a"):  # TIFF
-        return "image"
-    if _ftyp_brands(data) & _HEIF_IMAGE_BRANDS:  # HEIF / HEIC / AVIF
-        return "image"
+        return "image/tiff"
+    brands = _ftyp_brands(data)
+    if brands & _HEIF_IMAGE_BRANDS:  # HEIF / HEIC / AVIF
+        if brands & _AVIF_BRANDS:
+            return "image/avif"
+        if brands & _HEIC_BRANDS:
+            return "image/heic"
+        return "image/heif"
 
     # Audio formats
     if data[:4] == b"RIFF" and data[8:12] == b"WAVE":  # WAV
-        return "audio"
+        return "audio/wav"
     if data[:4] == b"fLaC":  # FLAC
-        return "audio"
+        return "audio/flac"
     if data[:4] == b"OggS":  # OGG (Vorbis/Opus)
-        return "audio"
+        return "audio/ogg"
     if data[:3] == b"ID3" or data[:2] == b"\xff\xfb":  # MP3 (ID3 tag or sync frame)
-        return "audio"
+        return "audio/mpeg"
     if len(data) >= 12 and data[4:8] == b"ftyp":  # MP4/M4A container (non-image brands)
-        return "audio"
+        return "audio/mp4"
     if data[:4] == b".snd":  # AU
-        return "audio"
+        return "audio/basic"
     if data[:4] in (b"FORM",) and data[8:12] == b"AIFF":  # AIFF
-        return "audio"
+        return "audio/aiff"
 
+    return None
+
+
+def _detect_binary_modality(data: bytes) -> str:
+    """Detect whether binary data is an image or audio based on magic bytes."""
+    mime_type = _detect_mime_type(data)
+    if mime_type is not None and mime_type.startswith("audio/"):
+        return "audio"
     # Default to image for unrecognized binary data
     return "image"
 

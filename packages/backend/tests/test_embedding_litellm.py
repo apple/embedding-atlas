@@ -6,7 +6,8 @@ import io
 
 import numpy as np
 import pytest
-from embedding_atlas.embedding import _image_mime_type, create_embedder
+from embedding_atlas.embedding import create_embedder
+from embedding_atlas.projection import _detect_mime_type
 from PIL import Image
 
 
@@ -18,11 +19,11 @@ def _image_bytes(fmt: str) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# _image_mime_type
+# _detect_mime_type
 # ---------------------------------------------------------------------------
 
 
-class TestImageMimeType:
+class TestDetectMimeType:
     @pytest.mark.parametrize(
         "fmt, mime",
         [
@@ -35,20 +36,24 @@ class TestImageMimeType:
         ],
     )
     def test_pillow_encoded_images(self, fmt, mime):
-        assert _image_mime_type(_image_bytes(fmt)) == mime
+        assert _detect_mime_type(_image_bytes(fmt)) == mime
 
     def test_big_endian_tiff(self):
-        assert _image_mime_type(b"MM\x00\x2a" + b"\x00" * 8) == "image/tiff"
+        assert _detect_mime_type(b"MM\x00\x2a" + b"\x00" * 8) == "image/tiff"
 
-    def test_riff_but_not_webp_is_not_webp(self):
-        data = b"RIFF" + b"\x00\x00\x00\x00" + b"WAVE" + b"\x00" * 8
-        assert _image_mime_type(data) != "image/webp"
+    def test_heic_and_avif(self):
+        heic = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic"
+        avif = b"\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1miaf"
+        assert _detect_mime_type(heic) == "image/heic"
+        assert _detect_mime_type(avif) == "image/avif"
 
-    def test_unknown_bytes_fall_back_to_png(self):
-        assert _image_mime_type(b"\x00\x01\x02\x03" + b"\x00" * 8) == "image/png"
+    def test_audio(self):
+        wav = b"RIFF" + b"\x00\x00\x00\x00" + b"WAVE" + b"\x00" * 8
+        assert _detect_mime_type(wav) == "audio/wav"
 
-    def test_empty_bytes_fall_back_to_png(self):
-        assert _image_mime_type(b"") == "image/png"
+    def test_unknown_bytes_return_none(self):
+        assert _detect_mime_type(b"\x00\x01\x02\x03" + b"\x00" * 8) is None
+        assert _detect_mime_type(b"") is None
 
 
 # ---------------------------------------------------------------------------
