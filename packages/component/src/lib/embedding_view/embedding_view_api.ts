@@ -7,7 +7,7 @@ import Component from "./EmbeddingView.svelte";
 import type { Point, Rectangle, ViewportState } from "../utils.js";
 import type { EmbeddingViewConfig } from "./embedding_view_config.js";
 import type { ThemeConfig } from "./theme.js";
-import type { Cache, CustomComponent, DataPoint, Label, LabelContent, OverlayProxy } from "./types.js";
+import type { Cache, CustomComponent, DataPoint, Label, LabelContent, LabelWithBounds, OverlayProxy } from "./types.js";
 
 export interface EmbeddingViewProps {
   /** The data. */
@@ -78,6 +78,11 @@ export interface EmbeddingViewProps {
 
   /** A callback for when `rangeSelection` changes. */
   onRangeSelection?: ((value: Rectangle | Point[] | null) => void) | null;
+
+  /** A callback when generated or provided cluster labels change.
+   *  Fires after label recomputation when the label set materially changes
+   *  (not on every pan/zoom). Labels include data-coordinate cluster bounds when available. */
+  onLabelsChange?: ((labels: LabelWithBounds[]) => void) | null;
 
   /** An async function that returns a data point near the given (x, y) location.
    *  The `unitDistance` parameter is the distance of a single pixel in data domain.
