@@ -32,6 +32,7 @@
   import { cubicOut } from "svelte/easing";
 
   import Button from "../../widgets/Button.svelte";
+  import CheckBox from "../../widgets/CheckBox.svelte";
   import PopupButton from "../../widgets/PopupButton.svelte";
   import Select from "../../widgets/Select.svelte";
   import Slider from "../../widgets/Slider.svelte";
@@ -42,6 +43,7 @@
   import type { ChartViewProps, RowID } from "../chart.js";
   import { resolveChartTheme } from "../common/theme.js";
   import { makeCategoryColumn } from "./category_column.js";
+  import { effectiveLayers, updateLayers } from "./layers.js";
   import type { EmbeddingSpec, EmbeddingState } from "./types.js";
   import { interpolateViewport } from "./viewport_animation.js";
 
@@ -78,6 +80,8 @@
   let categoryLegend: EmbeddingLegend | null = $state.raw(null);
   let totalPointCount: number | null = $state.raw(null);
 
+  let layers = $derived(effectiveLayers(spec));
+
   // Query total point count for render limit slider
   $effect.pre(() => {
     context.coordinator
@@ -98,9 +102,9 @@
     );
     promise.then((v) => {
       categoryLegend = v;
-      if ((categoryLegend?.legend.length ?? 0) > maxCategories) {
+      if ((categoryLegend?.legend.length ?? 0) > maxCategories && effectiveLayers(spec).density) {
         onSpecChange((draft) => {
-          draft.mode = "points";
+          updateLayers(draft, { density: false });
         });
       }
     });
@@ -274,7 +278,9 @@
     config={{
       colorScheme: $colorScheme,
       ...context.embeddingViewConfig,
-      mode: spec.mode ?? "points",
+      mode: layers.density ? "density" : "points",
+      showPoints: layers.points,
+      showLabels: layers.labels,
       ...(spec.minimumDensity != null ? { minimumDensity: spec.minimumDensity } : {}),
       ...(spec.pointSize != null ? { pointSize: spec.pointSize } : {}),
       downsampleMaxPoints: spec.downsampleMaxPoints ?? defaultDownsampleMaxPoints,
@@ -386,21 +392,18 @@
       />
       <PopupButton icon={IconSettings} title="Options">
         <div class="flex flex-col gap-2 w-64">
-          <div class="text-slate-500 dark:text-slate-400 select-none">Display Mode</div>
+          <div class="text-slate-500 dark:text-slate-400 select-none">Layers</div>
+          <CheckBox
+            label="Points"
+            bind:checked={() => layers.points, (v) => onSpecChange((draft) => updateLayers(draft, { points: v }))}
+          />
           <div class="flex gap-2 items-center">
-            <Select
-              value={spec.mode ?? "points"}
-              onChange={(v) =>
-                onSpecChange((draft) => {
-                  draft.mode = v;
-                })}
+            <CheckBox
+              label="Density"
               disabled={categoryLegend != null && categoryLegend.legend.length > maxCategories}
-              options={[
-                { value: "points", label: "Points" },
-                { value: "density", label: "Density" },
-              ]}
+              bind:checked={() => layers.density, (v) => onSpecChange((draft) => updateLayers(draft, { density: v }))}
             />
-            {#if (spec.mode ?? "points") == "density"}
+            {#if layers.density}
               <Slider
                 bind:value={
                   () => Math.log((spec.minimumDensity ?? defaultMinimumDensity) / defaultMinimumDensity),
@@ -415,6 +418,10 @@
               />
             {/if}
           </div>
+          <CheckBox
+            label="Labels"
+            bind:checked={() => layers.labels, (v) => onSpecChange((draft) => updateLayers(draft, { labels: v }))}
+          />
           <div class="text-slate-500 dark:text-slate-400 select-none">Point Size</div>
           <div class="flex gap-2 items-center">
             <Slider
