@@ -81,6 +81,16 @@ export function detectImageMimeType(data: Uint8Array): string | null {
     startsWith(data, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61])
   ) {
     return "image/gif";
+  } else if (
+    // WebP (RIFF....WEBP)
+    startsWith(data, [0x52, 0x49, 0x46, 0x46]) &&
+    data.length >= 12 &&
+    data[8] === 0x57 &&
+    data[9] === 0x45 &&
+    data[10] === 0x42 &&
+    data[11] === 0x50
+  ) {
+    return "image/webp";
   }
   return null;
 }
