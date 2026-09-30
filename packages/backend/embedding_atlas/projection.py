@@ -321,6 +321,11 @@ def _detect_binary_modality(data: bytes) -> str:
 
 def _infer_modality(series: nw.Series) -> str:
     """Infer the modality by inspecting the first non-null value in the series."""
+    # Typed list/array columns (e.g. polars) don't return a Python list per value
+    dtype = series.dtype
+    if isinstance(dtype, (nw.List, nw.Array)) and dtype.inner.is_numeric():
+        return "vector"
+
     non_null = series.drop_nulls()
     if len(non_null) == 0:
         return "text"
@@ -332,7 +337,7 @@ def _infer_modality(series: nw.Series) -> str:
     if (
         isinstance(sample, list)
         and len(sample) > 0
-        and isinstance(sample[0], (int, float))
+        and isinstance(sample[0], (int, float, np.number))
     ):
         return "vector"
 
