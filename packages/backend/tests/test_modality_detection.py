@@ -5,6 +5,7 @@
 import narwhals as nw
 import numpy as np
 import pandas as pd
+import polars as pl
 import pytest
 from embedding_atlas.projection import (
     _detect_binary_modality,
@@ -155,6 +156,28 @@ class TestInferModality:
 
     def test_vector_empty_list_falls_through_to_text(self):
         series = _nw_series([[], []])
+        assert _infer_modality(series) == "text"
+
+    def test_vector_list_of_numpy_scalars(self):
+        vectors = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
+        series = _nw_series([list(v) for v in vectors])
+        assert _infer_modality(series) == "vector"
+
+    def test_vector_polars_list(self):
+        series = nw.from_native(
+            pl.Series([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]), series_only=True
+        )
+        assert _infer_modality(series) == "vector"
+
+    def test_vector_polars_array(self):
+        series = nw.from_native(
+            pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.Array(pl.Float32, 2)),
+            series_only=True,
+        )
+        assert _infer_modality(series) == "vector"
+
+    def test_polars_list_of_strings_is_text(self):
+        series = nw.from_native(pl.Series([["a", "b"], ["c"]]), series_only=True)
         assert _infer_modality(series) == "text"
 
     def test_image_bytes(self):
