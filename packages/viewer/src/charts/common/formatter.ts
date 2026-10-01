@@ -76,8 +76,8 @@ export function inferTimeFormatter(values: number[], hasTimezone: boolean = fals
   }
 
   // When hasTimezone is true, use local time via Date methods; otherwise use UTC methods.
-  let tzOffsetMs = hasTimezone ? -new Date().getTimezoneOffset() * 60_000 : 0;
-  let adjusted = (ms: number) => new Date(ms + tzOffsetMs);
+  // The offset is computed per value, since it can differ with daylight saving time.
+  let adjusted = (ms: number) => new Date(hasTimezone ? ms - new Date(ms).getTimezoneOffset() * 60_000 : ms);
 
   let getYear = (ms: number) => adjusted(ms).getUTCFullYear();
   let getMonth = (ms: number) => adjusted(ms).getUTCMonth();
