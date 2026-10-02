@@ -45,6 +45,13 @@ def test_sha256_hexdigest_numpy_array():
     assert h1 != h3
 
 
+def test_sha256_hexdigest_numpy_scalar():
+    # e.g. umap_args={"n_neighbors": np.int64(15)} from a numpy parameter grid
+    assert sha256_hexdigest({"n": np.int64(15)}) == sha256_hexdigest({"n": 15})
+    assert sha256_hexdigest(np.float32(0.5)) == sha256_hexdigest(0.5)
+    assert sha256_hexdigest(np.bool_(True)) == sha256_hexdigest(True)
+
+
 def test_sha256_hexdigest_list():
     assert sha256_hexdigest([1, 2, 3]) == sha256_hexdigest([1, 2, 3])
     assert sha256_hexdigest([1, 2, 3]) != sha256_hexdigest([1, 2, 4])

@@ -433,6 +433,8 @@ def _update_hash_with_value(update_func: Callable[[bytes], None], *value: Any):
             preamble(b"np.ndarray", len(prefix_bytes) + len(data_bytes))
             update_func(prefix_bytes)
             update_func(data_bytes)
+        elif isinstance(v, np.generic):
+            emit_value(v.item())
         elif isinstance(v, list):
             preamble(b"list", len(v))
             for item in v:
