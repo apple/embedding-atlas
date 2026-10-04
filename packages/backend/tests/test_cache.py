@@ -187,6 +187,15 @@ def test_file_cache_value_populates_cache(cache_dir):
     assert file_cache_get("k", cache_root=cache_dir) == [1, 2, 3]
 
 
+def test_file_cache_value_replaces_unreadable_entry(cache_dir):
+    def ser(v, fd):
+        fd.write(b"not json")
+
+    file_cache_set("k", "stale", cache_root=cache_dir, serializer=ser)
+    assert file_cache_value("k", lambda: [1, 2, 3], cache_root=cache_dir) == [1, 2, 3]
+    assert file_cache_get("k", cache_root=cache_dir) == [1, 2, 3]
+
+
 def test_cache_files_are_encrypted(cache_dir):
     file_cache_set("key", "secret_value", cache_root=cache_dir)
     # Find the cache file and verify contents are not plaintext
