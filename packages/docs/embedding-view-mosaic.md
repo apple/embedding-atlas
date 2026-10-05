@@ -5,8 +5,8 @@ The component connects to a [Mosaic](https://idl.uw.edu/mosaic/) coordinator and
 
 We also provide React and Svelte wrappers for the component to easily include it in your own application.
 
-<p class="light-only"><img style="margin: 0 auto;" src="./public/assets/component-light.png" /></p>
-<p class="dark-only"><img style="margin: 0 auto;" src="./public/assets/component-dark.png" /></p>
+<p class="light-only"><img style="margin: 0 auto;" src="./public/assets/component-light.png" loading="lazy" /></p>
+<p class="dark-only"><img style="margin: 0 auto;" src="./public/assets/component-dark.png" loading="lazy" /></p>
 
 ```bash
 npm install embedding-atlas
