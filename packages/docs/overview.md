@@ -2,8 +2,8 @@
 
 Embedding Atlas is a tool that provides interactive visualizations for large embeddings and their metadata. You can visualize, cross-filter, and search across your data.
 
-<img style="border-radius: 4px; margin-top: 16px" class="light-only" src="/assets/embedding-atlas-light.png">
-<img style="border-radius: 4px; margin-top: 16px" class="dark-only" src="/assets/embedding-atlas-dark.png">
+<img style="border-radius: 4px; margin-top: 16px" class="light-only" src="/assets/embedding-atlas-light.png" loading="lazy">
+<img style="border-radius: 4px; margin-top: 16px" class="dark-only" src="/assets/embedding-atlas-dark.png" loading="lazy">
 
 While embeddings are the focus, Embedding Atlas also works as a dashboard for tabular data. If your dataset has no embedding column, the embedding view is hidden, but linked charts, full-text search, and the instances view still work. Supported column types include text, image, audio, numeric, categorical, and time.
 
