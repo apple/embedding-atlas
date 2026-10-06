@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function read(path) {
-  return readFileSync(join(root, path), "utf-8");
+  return readFileSync(join(root, path), "utf-8").replace(/\r\n/g, "\n");
 }
 
 function match(path, regex) {
