@@ -45,10 +45,13 @@ async function createView(data_frame: ArrowTable, props: Partial<EmbeddingAtlasP
   const ipcBuffer = data_frame.serialize().data;
   await conn.insertArrowFromIPCStream(ipcBuffer, { name: "dataframe" });
   const row_id_column = "__row_index__";
-  await coordinator.exec(`
-    CREATE SEQUENCE row_id_sequence MINVALUE 0 START 0;
-    ALTER TABLE dataframe ADD COLUMN IF NOT EXISTS ${row_id_column} INTEGER DEFAULT nextval('row_id_sequence');
-  `);
+  // Create the row id column if it does not exist, numbered in row order
+  const columns = Array.from(await coordinator.query(`DESCRIBE dataframe`, { cache: false })).map((c) => c.column_name);
+  if (!columns.includes(row_id_column)) {
+    await coordinator.exec(`
+      CREATE OR REPLACE TABLE dataframe AS SELECT *, (row_number() OVER () - 1)::INTEGER AS ${row_id_column} FROM dataframe
+    `);
+  }
   view = new EmbeddingAtlas(container, {
     ...props,
     coordinator: coordinator,
