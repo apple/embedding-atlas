@@ -15,6 +15,7 @@ import {
 } from "../schemas.js";
 import type { EmbeddingAtlasStore } from "../stores/embedding_atlas_store.js";
 import { screenshot, type ScreenshotOptions } from "../utils/screenshot.js";
+import { isReadonlyQuery } from "./readonly_query.js";
 
 export interface ModelContextDelegate {
   container: HTMLDivElement;
@@ -71,11 +72,13 @@ export class EmbeddingAtlasControl {
 
     this.register("data_query", {
       args: {
-        query: z.string().describe("The SQL query to run. Must keep this readonly - the server does not enforce it."),
+        query: z.string().describe("The readonly SQL query to run (SELECT/WITH/VALUES/DESCRIBE/SHOW/EXPLAIN only)."),
       },
       description: "Run a readonly SQL query in DuckDB",
       handler: async ({ query }) => {
-        // TODO: enforce readonly query.
+        if (!isReadonlyQuery(query)) {
+          return { error: "only readonly queries (SELECT/WITH/VALUES/DESCRIBE/SHOW/EXPLAIN) are allowed" };
+        }
         let result = await store.coordinator.query(query);
         return result.toArray();
       },
@@ -429,3 +432,5 @@ function parseImageDataUrl(dataUrl: string): { mimeType: string; data: string } 
 
   return { mimeType, data: base64Content };
 }
+
+export { isReadonlyQuery } from "./readonly_query.js";
