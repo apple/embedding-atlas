@@ -1,5 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import type { Coordinator } from "@uwdata/mosaic-core";
+import { literal } from "@uwdata/mosaic-sql";
 import { validate } from "json-schema";
 import { get } from "svelte/store";
 import * as z from "zod";
@@ -71,11 +73,16 @@ export class EmbeddingAtlasControl {
 
     this.register("data_query", {
       args: {
-        query: z.string().describe("The SQL query to run. Must keep this readonly - the server does not enforce it."),
+        query: z
+          .string()
+          .describe("The SQL query to run. Must be a single readonly statement (e.g., SELECT, DESCRIBE, SUMMARIZE)."),
       },
       description: "Run a readonly SQL query in DuckDB",
       handler: async ({ query }) => {
-        // TODO: enforce readonly query.
+        let error = await checkReadonlyQuery(store.coordinator, query);
+        if (error != null) {
+          return { error };
+        }
         let result = await store.coordinator.query(query);
         return result.toArray();
       },
@@ -361,6 +368,44 @@ export class EmbeddingAtlasControl {
     });
   }
 }
+
+/**
+ * Check that the query is a single readonly statement.
+ *
+ * DuckDB's json_serialize_sql only serializes SELECT statements and reports an error for anything else
+ * (e.g., INSERT, DROP, COPY, PRAGMA, ATTACH, SET). The parser lowers WITH, DESCRIBE, SHOW, SUMMARIZE,
+ * VALUES, TABLE, UNPIVOT, and PIVOT with an explicit IN list into SELECTs, so they are accepted as well.
+ *
+ * Since the SELECT-only behavior of json_serialize_sql is not a documented guarantee, we don't rely on the
+ * error alone: each serialized statement must also be a SelectStatement whose query node is one of the known
+ * SELECT node types. If a future DuckDB version serializes other statement types, they won't match and are rejected.
+ *
+ * Returns an error message if the query is not allowed, or null if it is.
+ */
+async function checkReadonlyQuery(coordinator: Coordinator, query: string): Promise<string | null> {
+  let result = await coordinator.query(`SELECT json_serialize_sql(${literal(query)})::VARCHAR AS ast`, {
+    cache: false,
+  });
+  let ast = JSON.parse(result.get(0).ast);
+  if (ast.error) {
+    return unindent(`
+      Only readonly queries are allowed (SELECT, WITH ... SELECT, DESCRIBE, SHOW, SUMMARIZE, etc.).
+      Note: PIVOT requires an explicit IN list, e.g., PIVOT t ON col IN ('a', 'b') USING sum(x).
+      Error: ${ast.error_message}
+    `);
+  }
+  if (!Array.isArray(ast.statements) || ast.statements.length !== 1) {
+    return "The query must contain exactly one statement";
+  }
+  let nodeType = ast.statements[0]?.node?.type;
+  if (!READONLY_QUERY_NODE_TYPES.has(nodeType)) {
+    return `Only readonly queries are allowed (unexpected statement type: ${nodeType ?? "unknown"})`;
+  }
+  return null;
+}
+
+/** Query node types of a DuckDB SelectStatement. CTE_NODE and RECURSIVE_CTE_NODE are used by DuckDB < 1.5. */
+const READONLY_QUERY_NODE_TYPES = new Set(["SELECT_NODE", "SET_OPERATION_NODE", "CTE_NODE", "RECURSIVE_CTE_NODE"]);
 
 function unindent(str: string): string {
   let lines = str.split("\n");
