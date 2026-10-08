@@ -151,7 +151,7 @@ def file_cache_set(
     with open(cache_path_tmp, "wb") as file:
         file.write(encrypted_data)
 
-    cache_path_tmp.rename(cache_path)
+    cache_path_tmp.replace(cache_path)
 
 
 def file_cache_value(
@@ -232,7 +232,7 @@ def file_cache_value(
         with open(cache_path_tmp, "wb") as file:
             file.write(encrypted_data)
 
-        cache_path_tmp.rename(cache_path)
+        cache_path_tmp.replace(cache_path)
     except Exception:
         logger.debug("Cache write failed for key %s", cache_key, exc_info=True)
 
@@ -293,7 +293,7 @@ async def async_file_cache_value(
         with open(cache_path_tmp, "wb") as file:
             file.write(encrypted_data)
 
-        cache_path_tmp.rename(cache_path)
+        cache_path_tmp.replace(cache_path)
     except Exception:
         logger.debug("Cache write failed for key %s", cache_key, exc_info=True)
 
