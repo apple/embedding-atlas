@@ -7,6 +7,8 @@ Embedding Atlas is a tool that provides interactive visualizations for large emb
 
 While embeddings are the focus, Embedding Atlas also works as a dashboard for tabular data. If your dataset has no embedding column, the embedding view is hidden, but linked charts, full-text search, and the instances view still work. Supported column types include text, image, audio, numeric, categorical, and time.
 
+Full-text search is fuzzy by default: the query is split into words and each is matched against similar-looking words in the text column. To require an exact, case-insensitive substring instead, wrap it in double quotes. For example, `"aldi" store` returns only rows that contain `aldi` and ranks them by how well they match `store`.
+
 ## What you can do
 
 - **Explore embeddings.** Visualize 2D projections of millions of points, browse automatic clusters and labels, find nearest neighbors, and cross-filter against metadata.
