@@ -70,12 +70,11 @@
       let describeResult = await coordinator.query(`DESCRIBE TABLE dataset`);
       describe = Array.from(describeResult) as typeof describe;
 
-      // Create the __row_index__ column to use as row id, numbered in row order
-      if (!describe.some((c) => c.column_name == "__row_index__")) {
-        await coordinator.exec(`
-          CREATE OR REPLACE TABLE dataset AS SELECT *, (row_number() OVER () - 1)::INTEGER AS __row_index__ FROM dataset
-        `);
-      }
+      // Create the __row_index__ column to use as row id
+      await coordinator.exec(`
+        CREATE OR REPLACE SEQUENCE __row_index_sequence__ MINVALUE 0 START 0;
+        ALTER TABLE dataset ADD COLUMN IF NOT EXISTS __row_index__ INTEGER DEFAULT nextval('__row_index_sequence__');
+      `);
     } catch (e: unknown) {
       stage = "messages";
       logger.exception(e);
