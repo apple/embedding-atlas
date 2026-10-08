@@ -101,18 +101,17 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
         if connection is None:
             connection = duckdb.connect()
 
-        connection.execute(
-            f"CREATE TEMPORARY TABLE {table_name} AS SELECT * FROM data_frame"
-        )
-
+        select = "*"
         if options.get("row_id") is None:
-            # Create the row_id_column if it does not exist.
-            connection.execute(
-                f"""
-                CREATE TEMPORARY SEQUENCE row_id_sequence MINVALUE 0 START 0;
-                ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {row_id_column} INTEGER DEFAULT nextval('row_id_sequence');
-                """
-            )
+            # Create the row_id_column if it does not exist. row_number() OVER () follows
+            # the row order; a nextval() column default is filled in parallel per row
+            # group and doesn't.
+            if row_id_column not in connection.sql("SELECT * FROM data_frame").columns:
+                select = f"*, (row_number() OVER () - 1)::INTEGER AS {row_id_column}"
+
+        connection.execute(
+            f"CREATE TEMPORARY TABLE {table_name} AS SELECT {select} FROM data_frame"
+        )
 
         super().__init__()
 
