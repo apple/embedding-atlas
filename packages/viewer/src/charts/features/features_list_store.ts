@@ -5,6 +5,9 @@ import { type Coordinator, makeClient, type MosaicClient, type SelectionClause }
 import * as SQL from "@uwdata/mosaic-sql";
 import { get, type Readable, type Writable } from "svelte/store";
 
+import { createFeatureSimilarity, type FeatureSimilarityHandle, type SimilarFeature } from "../../embedding/index.js";
+import { defaultModels, providerConfigs } from "../../inference/model_config_store.js";
+import { inferProvider } from "../../inference/resolve.js";
 import { jsTypeFromDBType } from "../../utils/database.js";
 import { deepStableDerived, stableDerived, stableWritable } from "../../utils/store.js";
 import type { ChartContext } from "../chart.js";
@@ -113,6 +116,7 @@ export class FeaturesListStore {
   readonly state: Writable<FeaturesListState>;
 
   readonly topicsByFeature: Writable<Map<string, string[]> | null>;
+  readonly descriptionByFeature: Writable<Map<string, string> | null>;
   readonly allSources: Writable<string[] | null>;
   readonly aggregation: Writable<AggregationResult | null>;
 
@@ -122,6 +126,21 @@ export class FeaturesListStore {
   private unsubs: Array<() => void> = [];
   private sourcesLoadId = 0;
   private mainLoadId = 0;
+
+  /**
+   * Lazily-built worker-side nearest-neighbor index over the current feature
+   * labels, and the (model, config) signature it was built with. Torn down and
+   * rebuilt when the feature set changes (a reloadMain) or the embedding model /
+   * provider config changes.
+   */
+  private similarityHandle: Promise<FeatureSimilarityHandle> | null = null;
+  private similarityKey: string | null = null;
+  /**
+   * Bumped whenever the similarity index is torn down. A {@link relatedFeatures}
+   * call in flight across a bump may fail or return results from a destroyed
+   * index, so consumers should re-request when this changes.
+   */
+  readonly similarityVersion = stableWritable(0);
 
   /** Last-resolved kind of the `features` column; read synchronously by syncSelection. */
   private featuresKind: FeaturesKind = "list";
@@ -148,6 +167,7 @@ export class FeaturesListStore {
     this.spec = stableWritable(spec);
     this.state = stableWritable(state);
     this.topicsByFeature = stableWritable<Map<string, string[]> | null>(null);
+    this.descriptionByFeature = stableWritable<Map<string, string> | null>(null);
     this.allSources = stableWritable<string[] | null>(null);
     this.aggregation = stableWritable<AggregationResult | null>(null);
 
@@ -173,6 +193,7 @@ export class FeaturesListStore {
     // skip writing into the (orphaned) writables.
     this.sourcesLoadId++;
     this.mainLoadId++;
+    this.disposeSimilarity();
     // Remove our selection clause from the global cross-filter.
     this.context.filter.update({
       source: this.selectionSource,
@@ -320,10 +341,14 @@ export class FeaturesListStore {
     this.clients = [];
     this.aggregation.set(null);
     this.topicsByFeature.set(null);
+    this.descriptionByFeature.set(null);
+    // The feature set may change with this reload (source/features/metadata),
+    // so drop the similarity index; it rebuilds lazily on the next query.
+    this.disposeSimilarity();
 
-    // Topics: async, runs in parallel with aggregation client setup.
-    if (sig.metadata?.topics != null) {
-      this.loadTopics(sig.metadata, id);
+    // Topics / descriptions: async, runs in parallel with aggregation client setup.
+    if (sig.metadata != null && (sig.metadata.topics != null || sig.metadata.description != null)) {
+      this.loadMetadata(sig.metadata, id);
     }
 
     // Resolve the column kind before building the (synchronous) aggregation
@@ -356,39 +381,152 @@ export class FeaturesListStore {
     return detectFeaturesKind(this.context.coordinator, this.context.table, features).catch(() => "list" as const);
   }
 
-  private async loadTopics(metadata: NonNullable<FeaturesListSpec["metadata"]>, id: number) {
-    const topicsField = metadata.topics;
-    if (topicsField == null) {
-      return;
+  /**
+   * Load per-feature metadata (topics and/or description) from the metadata
+   * table, populating `topicsByFeature` / `descriptionByFeature`. Each field is
+   * loaded by its own query so a bad column in one (e.g. a typo'd description)
+   * can't take the other down with it.
+   */
+  private loadMetadata(metadata: NonNullable<FeaturesListSpec["metadata"]>, id: number) {
+    if (metadata.topics != null) {
+      this.loadMetadataField(metadata, metadata.topics, id, (rows) => {
+        const map = new Map<string, string[]>();
+        for (const [key, ts] of rows) {
+          // De-dupe (preserving order): a feature listed under the same topic
+          // twice would otherwise put the same item twice in one group, which
+          // the keyed {#each} in FeaturesList rejects as a duplicate key.
+          const arr: string[] = Array.isArray(ts) ? Array.from(new Set(Array.from(ts).map((t) => String(t)))) : [];
+          map.set(key, arr);
+        }
+        this.topicsByFeature.set(map);
+      });
     }
+    if (metadata.description != null) {
+      this.loadMetadataField(metadata, metadata.description, id, (rows) => {
+        const map = new Map<string, string>();
+        for (const [key, d] of rows) {
+          if (d != null) {
+            map.set(key, String(d));
+          }
+        }
+        this.descriptionByFeature.set(map);
+      });
+    }
+  }
+
+  /** Query `(feature, value)` pairs for one metadata field and hand them to `commit` (unless stale). */
+  private async loadMetadataField(
+    metadata: NonNullable<FeaturesListSpec["metadata"]>,
+    field: SQLField,
+    id: number,
+    commit: (rows: Array<[string, any]>) => void,
+  ) {
     try {
       const ctx = { table: this.context.table };
       const result: any = await this.context.coordinator.query(
         SQL.Query.from(fromExpr(metadata.table, ctx)).select({
           feature: fieldExpr(metadata.feature, ctx),
-          topics: fieldExpr(topicsField, ctx),
+          value: fieldExpr(field, ctx),
         }),
       );
       if (id !== this.mainLoadId) {
         return;
       }
-      const map = new Map<string, string[]>();
+      const rows: Array<[string, any]> = [];
       for (const row of Array.from(result) as any[]) {
         if (row.feature != null) {
-          const ts = row.topics ?? [];
-          // De-dupe (preserving order): a feature listed under the same topic
-          // twice would otherwise put the same item twice in one group, which
-          // the keyed {#each} in FeaturesList rejects as a duplicate key.
-          const arr: string[] = Array.isArray(ts) ? Array.from(new Set(Array.from(ts).map((t) => String(t)))) : [];
-          map.set(String(row.feature), arr);
+          rows.push([String(row.feature), row.value ?? null]);
         }
       }
-      this.topicsByFeature.set(map);
+      commit(rows);
     } catch (err) {
       if (id !== this.mainLoadId) {
         return;
       }
-      console.error("[FeaturesList] failed to load topics:", err);
+      console.error("[FeaturesList] failed to load metadata:", err);
+    }
+  }
+
+  /**
+   * Return the `k` features whose labels are most semantically similar to
+   * `feature`, using an embedding-based nearest-neighbor index built lazily in
+   * the shared embedding worker. The heavy embedding work happens off the main
+   * thread; the first call after a (re)load pays the model-load + embed cost,
+   * subsequent calls reuse the cached index.
+   *
+   * If the index is torn down while this call is in flight (see
+   * {@link similarityVersion}), the result is unreliable; callers should
+   * re-request when `similarityVersion` changes.
+   */
+  async relatedFeatures(feature: string, k: number): Promise<SimilarFeature[]> {
+    // Wait for the aggregation so the index is never built over an empty
+    // feature set mid-reload.
+    const agg = await this.waitForAggregation();
+    const handle = await this.ensureSimilarity(agg);
+    return handle.topK(feature, k);
+  }
+
+  private waitForAggregation(): Promise<AggregationResult> {
+    return new Promise((resolve) => {
+      let done = false;
+      let unsub: (() => void) | null = null;
+      unsub = this.aggregation.subscribe((agg) => {
+        if (agg != null && !done) {
+          done = true;
+          resolve(agg);
+          unsub?.();
+        }
+      });
+      // The subscriber may have fired synchronously, before `unsub` was assigned.
+      if (done) {
+        unsub();
+      }
+    });
+  }
+
+  /**
+   * Return the cached similarity index, building it if needed. The feature-name
+   * set is fixed within a reloadMain cycle (source/features/metadata changes
+   * tear the index down via {@link disposeSimilarity}), so keying on the model +
+   * provider config is enough to rebuild when the user switches models without
+   * rebuilding on every query.
+   */
+  private ensureSimilarity(agg: AggregationResult): Promise<FeatureSimilarityHandle> {
+    const features = agg.features.map((f) => f.feature);
+    const model = get(defaultModels).embedding;
+    const config = get(providerConfigs)[inferProvider(model)] ?? {};
+    const key = JSON.stringify({ model, config, count: features.length });
+
+    if (this.similarityHandle != null && this.similarityKey === key) {
+      return this.similarityHandle;
+    }
+    this.disposeSimilarity();
+
+    this.similarityKey = key;
+    const p = createFeatureSimilarity({ model, config, features });
+    this.similarityHandle = p;
+    // Evict a failed load so the next call retries instead of reusing a
+    // permanently-rejected promise (mirrors the highlight scorer).
+    p.catch(() => {
+      if (this.similarityHandle === p) {
+        this.similarityHandle = null;
+        this.similarityKey = null;
+      }
+    });
+    return p;
+  }
+
+  /**
+   * Release the worker-side similarity index, if any, and bump
+   * `similarityVersion` so callers with in-flight queries against it re-request.
+   */
+  private disposeSimilarity() {
+    if (this.similarityHandle != null) {
+      const stale = this.similarityHandle;
+      this.similarityHandle = null;
+      this.similarityKey = null;
+      stale.then((h) => h.destroy()).catch(() => {});
+      this.similarityVersion.update((v) => v + 1);
     }
   }
 

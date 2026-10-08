@@ -6,12 +6,14 @@
   import MultiSelect from "../../widgets/MultiSelect.svelte";
   import Select from "../../widgets/Select.svelte";
   import Container from "../common/Container.svelte";
+  import FeatureInfoPopover, { type RelatedState } from "./FeatureInfoPopover.svelte";
   import FeatureRow from "./FeatureRow.svelte";
 
   import type { ChartViewProps } from "../chart.js";
   import { resolveChartTheme, type ChartTheme } from "../common/theme.js";
   import { FeaturesListStore, makeSortFunc, type ListItem } from "./features_list_store.js";
   import type { FeaturesListSpec, FeaturesListState } from "./types.js";
+  import { lowCardinalityColumns } from "./utils.js";
 
   let {
     context,
@@ -43,12 +45,25 @@
   const data = store.data;
   const allSources = store.allSources;
   const topicsByFeature = store.topicsByFeature;
+  const descriptionByFeature = store.descriptionByFeature;
+  const similarityVersion = store.similarityVersion;
 
   let listWidth = $state.raw(400);
 
   let hasPredict = $derived(spec.data.predict != null);
   let predictName = $derived(typeof spec.data.predict === "string" ? spec.data.predict : "expression");
   let activeSourceCount = $derived($allSources?.length ?? 0);
+
+  /**
+   * Grid column template shared by the list header, rows, and the info popover so
+   * columns stay aligned. The trailing strength column only exists in predict
+   * mode; dropping it in count mode avoids a dead gap at the end of each row.
+   */
+  let gridClass = $derived(
+    hasPredict
+      ? "grid grid-cols-[max-content_minmax(0,1fr)_max-content_max-content_max-content] gap-x-2 items-center"
+      : "grid grid-cols-[max-content_minmax(0,1fr)_max-content_max-content] gap-x-2 items-center",
+  );
 
   // "Show more / less" toggle: expand the limit to 500, or collapse back to 100.
   const EXPANDED_LIMIT = 500;
@@ -146,12 +161,43 @@
   // selected. Map that to a fully-checked list for the MultiSelect.
   const sourceValues = $derived(spec.sources ?? $allSources ?? []);
 
+  // Max number of distinct values for a column to be offered as the predict field.
+  const MAX_PREDICT_CLASSES = 10;
+
+  // Columns eligible for predict (low cardinality); null while loading.
+  let predictCandidates = $state.raw<Set<string> | null>(null);
+
+  $effect(() => {
+    const table = context.table;
+    const names = (context.tables[table]?.columns ?? [])
+      .filter((c) => c.jsType != null && c.name !== context.id)
+      .map((c) => c.name);
+    let cancelled = false;
+    lowCardinalityColumns(context.coordinator, table, names, MAX_PREDICT_CLASSES)
+      .then((r) => {
+        if (!cancelled) predictCandidates = new Set(r);
+      })
+      .catch((err) => {
+        console.error("[FeaturesList] failed to compute predict candidates:", err);
+        if (!cancelled) predictCandidates = new Set();
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
   const predictOptions = $derived.by(() => {
     const opts: Array<{ label: string; value: any; disabled?: boolean } | "---"> = [
       { label: "(none)", value: undefined },
     ];
+    // Keep the current predict column listed even if it exceeds the class limit
+    // (e.g., set via the spec), so the dropdown still reflects it.
     const cols = (context.tables[context.table]?.columns ?? []).filter(
-      (c) => c.jsType != null && c.name !== context.id && c.name !== spec.data.features,
+      (c) =>
+        c.jsType != null &&
+        c.name !== context.id &&
+        c.name !== spec.data.features &&
+        (predictCandidates?.has(c.name) || c.name === spec.data.predict),
     );
     if (cols.length > 0) {
       opts.push("---");
@@ -324,10 +370,138 @@
       }
     });
   }
+
+  // --- Feature-details popover (description + similar features) ---
+  const RELATED_K = 10;
+
+  // The feature the popover is describing, and the info button it's anchored to.
+  // `$state.raw` for the anchor: it's a DOM node, not reactive data.
+  let infoFeature = $state.raw<string | null>(null);
+  let infoAnchor = $state.raw<HTMLElement | null>(null);
+
+  // Similar-features fetch, keyed by a monotonically increasing token so a slow
+  // response for a previously-viewed feature can't overwrite a newer one.
+  let relatedStatus = $state.raw<"loading" | "error" | "ready">("ready");
+  let relatedNames = $state.raw<string[]>([]);
+  let relatedToken = 0;
+
+  $effect(() => {
+    const feature = infoFeature;
+    // Re-request when the similarity index is torn down (source/metadata reload,
+    // model change): an in-flight query against the old index is unreliable.
+    void $similarityVersion;
+    if (feature == null) {
+      return;
+    }
+    const token = ++relatedToken;
+    relatedStatus = "loading";
+    relatedNames = [];
+    store.relatedFeatures(feature, RELATED_K).then(
+      (sims) => {
+        if (token === relatedToken) {
+          relatedNames = sims.map((s) => s.feature);
+          relatedStatus = "ready";
+        }
+      },
+      (err) => {
+        if (token === relatedToken) {
+          console.error("[FeaturesList] failed to compute similar features:", err);
+          relatedStatus = "error";
+        }
+      },
+    );
+  });
+
+  // Resolve related names to live ListItems (so counts/bars track the cross-filter
+  // while the popover is open); drop any that fell out of the current aggregation.
+  let relatedItems = $derived.by(() => {
+    const out: ListItem[] = [];
+    for (const f of relatedNames) {
+      const it = byFeature.get(f);
+      if (it != null) {
+        out.push(it);
+      }
+    }
+    return out;
+  });
+
+  let related = $derived<RelatedState>(
+    relatedStatus === "loading"
+      ? { status: "loading" }
+      : relatedStatus === "error"
+        ? { status: "error", message: "failed" }
+        : { status: "ready", items: relatedItems },
+  );
+
+  let infoItem = $derived(infoFeature != null ? (byFeature.get(infoFeature) ?? null) : null);
+  let infoDescription = $derived(infoFeature != null ? ($descriptionByFeature?.get(infoFeature) ?? null) : null);
+  let descriptionConfigured = $derived(spec.metadata?.description != null);
+
+  /** Open the popover for a feature, anchored to the clicked info button. */
+  function openInfo(feature: string, anchor: HTMLElement) {
+    infoAnchor = anchor;
+    infoFeature = feature;
+  }
+
+  function closeInfo() {
+    infoFeature = null;
+    infoAnchor = null;
+  }
 </script>
 
 <Container width={width} height={height}>
   <div class="flex flex-col gap-2 select-none w-full h-full" bind:clientWidth={listWidth}>
+    <!-- One FeatureRow, wired to the shared row props. `listRow` (main list / pinned)
+         has the info button that opens the popover; `relatedRow` (inside the popover)
+         omits it — the popover doesn't show the details button on its own rows. -->
+    {#snippet listRow(item: ListItem)}
+      <FeatureRow
+        item={item}
+        selected={selectedSet.has(item.feature)}
+        pinned={pinnedSet.has(item.feature)}
+        hasPredict={hasPredict}
+        isBinary={isBinary}
+        maxCount={maxCount}
+        maxStrength={maxStrength}
+        segmented={spec.segmentBy === "source"}
+        segmentColors={segmentColors}
+        directionColors={directionColors}
+        classNames={$data.classNames}
+        markColor={theme.markColor}
+        markColorFade={theme.markColorFade}
+        countLabel={countLabel(item)}
+        tooltip={tooltip(item)}
+        onRowClick={(shift) => onRowClick(item.feature, shift)}
+        onToggleSelect={() => toggleSelect(item.feature)}
+        onTogglePin={() => togglePin(item.feature)}
+        onShowInfo={(anchor) => openInfo(item.feature, anchor)}
+        infoActive={infoFeature === item.feature}
+      />
+    {/snippet}
+    {#snippet relatedRow(item: ListItem)}
+      <FeatureRow
+        item={item}
+        selected={selectedSet.has(item.feature)}
+        pinned={pinnedSet.has(item.feature)}
+        hasPredict={hasPredict}
+        isBinary={isBinary}
+        maxCount={maxCount}
+        maxStrength={maxStrength}
+        segmented={spec.segmentBy === "source"}
+        segmentColors={segmentColors}
+        directionColors={directionColors}
+        classNames={$data.classNames}
+        markColor={theme.markColor}
+        markColorFade={theme.markColorFade}
+        countLabel={countLabel(item)}
+        tooltip={tooltip(item)}
+        onRowClick={(shift) => onRowClick(item.feature, shift)}
+        onToggleSelect={() => toggleSelect(item.feature)}
+        onTogglePin={() => togglePin(item.feature)}
+      />
+    {/snippet}
+
+    <!-- Search bar -->
     <!-- Search bar -->
     <input
       type="search"
@@ -465,81 +639,45 @@
            Pinned features render in a sticky section at the top (bypassing search,
            sort, and limit) and still appear in the main list below. One grid means
            the bar column auto-aligns across both sections and topic boundaries. -->
-      <div class="grid grid-cols-[max-content_minmax(0,1fr)_max-content_max-content_max-content] gap-x-2 items-center">
+      <div class={gridClass}>
         <!-- Header + pinned block stay stuck at the top while the list scrolls. The
              wrapper is a chained subgrid (not a separate grid) so its columns keep
              inheriting the parent's tracks — header labels and bars stay aligned with
              the main list. An opaque background + z-index lets scrolled rows pass
              cleanly underneath. -->
-        <div class="col-span-5 grid grid-cols-subgrid items-center sticky top-0 z-10 bg-white dark:bg-black">
+        <div class="col-span-full grid grid-cols-subgrid items-center sticky top-0 z-10 bg-white dark:bg-black">
           <!-- Column header: bulk pin/select actions in the leading column, then
                labels that line up with each FeatureRow column. -->
           <div
-            class="col-span-5 grid grid-cols-subgrid items-center h-[24px] text-xs font-medium uppercase text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-700"
+            class="col-span-full grid grid-cols-subgrid items-center h-[24px] text-xs font-medium uppercase text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-700"
           >
             <div></div>
             <div class="truncate">Feature</div>
             <div class="text-right">Count</div>
             <div></div>
-            <div></div>
+            {#if hasPredict}
+              <div></div>
+            {/if}
           </div>
 
           {#if pinnedItems.length > 0}
             {#each pinnedItems as item (item.feature)}
-              <FeatureRow
-                item={item}
-                selected={selectedSet.has(item.feature)}
-                pinned={true}
-                hasPredict={hasPredict}
-                isBinary={isBinary}
-                maxCount={maxCount}
-                maxStrength={maxStrength}
-                segmented={spec.segmentBy === "source"}
-                segmentColors={segmentColors}
-                directionColors={directionColors}
-                classNames={$data.classNames}
-                markColor={theme.markColor}
-                markColorFade={theme.markColorFade}
-                countLabel={countLabel(item)}
-                tooltip={tooltip(item)}
-                onRowClick={(shift) => onRowClick(item.feature, shift)}
-                onToggleSelect={() => toggleSelect(item.feature)}
-                onTogglePin={() => togglePin(item.feature)}
-              />
+              {@render listRow(item)}
             {/each}
-            <div class="col-span-5 border-b border-dashed border-slate-300 dark:border-slate-600 my-1"></div>
+            <div class="col-span-full border-b border-dashed border-slate-300 dark:border-slate-600 my-1"></div>
           {/if}
         </div>
 
         {#each groups as group (group.name)}
           {#if spec.groupBy === "topics"}
             <div
-              class="col-span-5 font-medium not-first:mt-2 text-slate-500 dark:text-slate-300 border-b border-slate-400"
+              class="col-span-full font-medium not-first:mt-2 text-slate-500 dark:text-slate-300 border-b border-slate-400"
             >
               # {group.name}
             </div>
           {/if}
           {#each group.items as item (group.name + "/" + item.feature)}
-            <FeatureRow
-              item={item}
-              selected={selectedSet.has(item.feature)}
-              pinned={pinnedSet.has(item.feature)}
-              hasPredict={hasPredict}
-              isBinary={isBinary}
-              maxCount={maxCount}
-              maxStrength={maxStrength}
-              segmented={spec.segmentBy === "source"}
-              segmentColors={segmentColors}
-              directionColors={directionColors}
-              classNames={$data.classNames}
-              markColor={theme.markColor}
-              markColorFade={theme.markColorFade}
-              countLabel={countLabel(item)}
-              tooltip={tooltip(item)}
-              onRowClick={(shift) => onRowClick(item.feature, shift)}
-              onToggleSelect={() => toggleSelect(item.feature)}
-              onTogglePin={() => togglePin(item.feature)}
-            />
+            {@render listRow(item)}
           {/each}
         {/each}
       </div>
@@ -563,5 +701,18 @@
         </div>
       {/if}
     </div>
+
+    {#if infoFeature != null && infoItem != null && infoAnchor != null}
+      <FeatureInfoPopover
+        anchor={infoAnchor}
+        currentItem={infoItem}
+        description={infoDescription}
+        descriptionConfigured={descriptionConfigured}
+        related={related}
+        renderRow={relatedRow}
+        gridClass={gridClass}
+        onClose={closeInfo}
+      />
+    {/if}
   </div>
 </Container>

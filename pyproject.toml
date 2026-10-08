@@ -3,3 +3,9 @@ members = [
     "packages/backend",
     "packages/umap/benchmark",
 ]
+
+[tool.ruff.lint]
+ignore = ["BLE001", "S110"]
+
+[dependency-groups]
+lint = ["ruff==0.16.10"]

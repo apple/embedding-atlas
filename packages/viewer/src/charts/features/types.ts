@@ -32,6 +32,9 @@ export interface FeaturesListSpec {
     /** The feature name column, should be string. */
     feature: SQLField;
 
+    /** The description column. */
+    description?: SQLField;
+
     /** The topics column if available, should be string[]. A feature can be assigned any number of topics. Topics may overlap. */
     topics?: SQLField;
   };

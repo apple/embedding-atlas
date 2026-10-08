@@ -6,6 +6,7 @@ import chart_cards from "./chart-cards.svg?raw";
 import chart_content_viewer from "./chart-content-viewer.svg?raw";
 import chart_ecdf from "./chart-ecdf.svg?raw";
 import chart_embedding from "./chart-embedding.svg?raw";
+import chart_features_list from "./chart-features-list.svg?raw";
 import chart_h_bar from "./chart-h-bar.svg?raw";
 import chart_heatmap from "./chart-heatmap.svg?raw";
 import chart_line from "./chart-line.svg?raw";
@@ -24,6 +25,7 @@ export const chartIcons: Record<string, string> = {
   "chart-content-viewer": chart_content_viewer,
   "chart-ecdf": chart_ecdf,
   "chart-embedding": chart_embedding,
+  "chart-features-list": chart_features_list,
   "chart-h-bar": chart_h_bar,
   "chart-heatmap": chart_heatmap,
   "chart-line": chart_line,

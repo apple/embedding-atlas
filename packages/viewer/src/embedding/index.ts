@@ -4,9 +4,13 @@ import { connectWorker, type WorkerConnection, type WorkerProxy } from "@embeddi
 
 import type { EmbeddingProjector, EmbeddingProjectorArgs } from "./projector.js";
 import type { EmbeddingScorer, EmbeddingScorerArgs } from "./scorer.js";
+import type { FeatureSimilarity, FeatureSimilarityArgs } from "./similarity.js";
 
 export type EmbeddingProjectorHandle = WorkerProxy<EmbeddingProjector>;
 export type EmbeddingScorerHandle = WorkerProxy<EmbeddingScorer>;
+export type FeatureSimilarityHandle = WorkerProxy<FeatureSimilarity>;
+
+export type { FeatureSimilarityArgs, SimilarFeature } from "./similarity.js";
 
 /** Global worker instance, created as needed. */
 let _connection: Promise<WorkerConnection> | null = null;
@@ -37,4 +41,10 @@ export async function createEmbeddingProjector(args: EmbeddingProjectorArgs): Pr
 export async function createEmbeddingScorer(args: EmbeddingScorerArgs): Promise<EmbeddingScorerHandle> {
   let conn = await connect();
   return conn.create<EmbeddingScorer>("EmbeddingScorer", args);
+}
+
+/** Create a nearest-neighbor index over feature labels (top-k semantic similarity). */
+export async function createFeatureSimilarity(args: FeatureSimilarityArgs): Promise<FeatureSimilarityHandle> {
+  let conn = await connect();
+  return conn.create<FeatureSimilarity>("FeatureSimilarity", args);
 }

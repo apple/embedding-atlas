@@ -60,7 +60,9 @@ def run_cmd(cmd, desc="", timeout=None, threads="multi"):
     print(f"{'=' * 60}")
     t0 = time.perf_counter()
     try:
-        result = subprocess.run(cmd, timeout=timeout, env=bench_env(threads))
+        result = subprocess.run(
+            cmd, timeout=timeout, env=bench_env(threads), check=False
+        )
         elapsed = time.perf_counter() - t0
         if result.returncode != 0:
             print(f"  FAILED (exit code {result.returncode}) in {elapsed:.1f}s")
@@ -100,7 +102,7 @@ class ResultsCSV:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.columns = columns
-        self._file = open(path, "w", newline="")
+        self._file = open(path, "w", newline="")  # noqa: SIM115
         self._writer = csv.DictWriter(
             self._file, fieldnames=columns, extrasaction="ignore"
         )

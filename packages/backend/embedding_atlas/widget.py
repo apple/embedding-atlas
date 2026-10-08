@@ -85,15 +85,6 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
             point_size:
                 Override the default point size for the embedding view.
 
-            show_table:
-                Whether to display the data table when the widget opens.
-
-            show_charts:
-                Whether to display charts when the widget opens.
-
-            show_embedding:
-                Whether to display the embedding view when the widget opens.
-
             connection (DuckDBPyConnection, optional):
                 A DuckDB connection. Defaults to duckdb.connect().
         """

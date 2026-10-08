@@ -5,9 +5,9 @@ import concurrent.futures
 import json
 import re
 import uuid
+from collections.abc import Callable
 from functools import lru_cache, partial
 from io import BytesIO
-from typing import Callable
 
 import duckdb
 from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
@@ -282,7 +282,7 @@ class WebSocketHandler:
                 raise HTTPException(status_code=503, detail="WebSocket disconnected")
             else:
                 raise HTTPException(
-                    status_code=500, detail=f"Internal server error: {str(e)}"
+                    status_code=500, detail=f"Internal server error: {e!s}"
                 )
 
     async def send_close(self):

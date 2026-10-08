@@ -27,6 +27,7 @@ import { histogramSpec } from "./default_charts.js";
 import type { EmbeddingSpec, EmbeddingState } from "./embedding/types.js";
 import FeaturesList from "./features/FeaturesList.svelte";
 import type { FeaturesListSpec, FeaturesListState } from "./features/types.js";
+import { isFeaturesColumn } from "./features/utils.js";
 import type { InstancesSpec } from "./instances/types.js";
 import type { ParallelCoordinatesSpec, ParallelCoordinatesState } from "./parallel_coordinates/types.js";
 import type { ChartSpec, ChartState } from "./spec/spec.js";
@@ -405,6 +406,56 @@ registerChartBuilder({
       },
     };
   },
+});
+
+registerChartBuilder({
+  icon: "chart-features-list",
+  description: "Create a searchable list of features with counts and cross-filtering",
+  ui: [
+    {
+      label: "Features Field",
+      details: "A list of strings, or a list of { feature, source?, index? } structs",
+      field: { key: "features", required: true, accept: isFeaturesColumn },
+    },
+    {
+      label: "Metadata Table",
+      details: "An optional table with one row per feature, providing descriptions and topics",
+      table: { key: "metadataTable", optional: true },
+    },
+    {
+      label: "Metadata Feature Field",
+      field: { key: "metadataFeature", types: ["string"], table: "metadataTable", required: true },
+    },
+    {
+      label: "Metadata Description Field",
+      field: { key: "metadataDescription", types: ["string"], table: "metadataTable" },
+    },
+    {
+      label: "Metadata Topics Field",
+      field: { key: "metadataTopics", types: ["string[]"], table: "metadataTable" },
+    },
+  ] as const,
+  create: ({
+    features,
+    metadataTable,
+    metadataFeature,
+    metadataDescription,
+    metadataTopics,
+  }): FeaturesListSpec | undefined => ({
+    type: "features-list",
+    title: "Features",
+    data: { features: features.name },
+    ...(metadataTable != null && metadataFeature != null
+      ? {
+          metadata: {
+            table: metadataTable,
+            feature: metadataFeature.name,
+            ...(metadataDescription != null ? { description: metadataDescription.name } : {}),
+            ...(metadataTopics != null ? { topics: metadataTopics.name } : {}),
+          },
+        }
+      : {}),
+  }),
 });
 
 registerChartBuilder({

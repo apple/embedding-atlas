@@ -54,15 +54,6 @@ class EmbeddingAtlasOptions(TypedDict, total=False):
     point_size:
         Override the default point size for the embedding view.
 
-    show_table:
-        Whether to display the data table when the widget opens.
-
-    show_charts:
-        Whether to display charts when the widget opens.
-
-    show_embedding:
-        Whether to display the embedding view when the widget opens.
-
     initial_state:
         The initial Embedding Atlas state.
 
@@ -88,10 +79,6 @@ class EmbeddingAtlasOptions(TypedDict, total=False):
 
     labels: list[dict] | None
     stop_words: list[str] | None
-
-    show_table: bool | None
-    show_charts: bool | None
-    show_embedding: bool | None
 
     initial_state: dict | None
 
@@ -148,12 +135,5 @@ def make_embedding_atlas_props(**options: Unpack[EmbeddingAtlasOptions]) -> dict
 
     # Additional tables (id/relation for cross-table filtering)
     set_prop("additionalTables", options.get("additional_tables"))
-
-    # Layout
-    set_prop("initialState.layoutStates.list.showTable", options.get("show_table"))
-    set_prop("initialState.layoutStates.list.showCharts", options.get("show_charts"))
-    set_prop(
-        "initialState.layoutStates.list.showEmbedding", options.get("show_embedding")
-    )
 
     return props
