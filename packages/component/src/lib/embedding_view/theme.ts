@@ -11,6 +11,8 @@ export interface EmbeddingViewTheme {
   clusterLabelOpacity: number;
   /** Whether to show the status bar at the bottom. */
   statusBar: boolean;
+  /** Scale factor for the status bar's text, icons and spacing. */
+  toolbarScale: number;
   /** Color for status bar text. */
   statusBarTextColor: string;
   /** Color for status bar background. */
@@ -33,6 +35,7 @@ const defaultThemeConfig: { light: EmbeddingViewTheme; dark: EmbeddingViewTheme 
     clusterLabelOutlineColor: "rgba(255,255,255,0.8)",
     clusterLabelOpacity: 0.8,
     statusBar: true,
+    toolbarScale: 1,
     statusBarTextColor: "#525252",
     statusBarBackgroundColor: "rgba(255,255,255,0.9)",
     brandingLink: { text: "Embedding Atlas", href: "https://apple.github.io/embedding-atlas" },
@@ -43,6 +46,7 @@ const defaultThemeConfig: { light: EmbeddingViewTheme; dark: EmbeddingViewTheme 
     clusterLabelOutlineColor: "rgba(0,0,0,0.8)",
     clusterLabelOpacity: 0.8,
     statusBar: true,
+    toolbarScale: 1,
     statusBarTextColor: "#d9d9d9",
     statusBarBackgroundColor: "rgba(0,0,0,0.9)",
     brandingLink: { text: "Embedding Atlas", href: "https://apple.github.io/embedding-atlas" },
