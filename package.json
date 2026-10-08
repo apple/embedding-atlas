@@ -20,7 +20,7 @@
     "test:versions": "node scripts/check-versions.mjs",
     "test": "npm run test:versions && npm run test:js && npm run test:python && npm run test:rust",
     "check": "npm run check -w @embedding-atlas/component -w @embedding-atlas/viewer -w @embedding-atlas/embedding-atlas -w @embedding-atlas/examples -w @embedding-atlas/backend",
-    "check-format": "prettier -c . && uvx ruff format --check --exclude '*.ipynb' --exclude '*.md'"
+    "check-format": "prettier -c . && uv run --frozen --only-group lint ruff format --check --exclude '*.ipynb' --exclude '*.md'"
   },
   "devDependencies": {
     "prettier": "^3.8.1",

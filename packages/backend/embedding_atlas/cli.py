@@ -391,6 +391,15 @@ def import_modules(names: list[str]):
     help="Path to a file containing labels for the embedding view. The file should be a table with columns 'x', 'y', 'text', and optionally 'level' and 'priority'",
 )
 @click.option(
+    "--state",
+    "initial_state",
+    type=JSONParamType(),
+    default=None,
+    help="Initial app state (charts, layouts, column styles, ...), as exported from the app. "
+    "Pass a JSON string or a path to a JSON file. If the state contains charts, "
+    "they replace the default charts.",
+)
+@click.option(
     "--mcp/--no-mcp",
     "enable_mcp",
     default=False,
@@ -441,6 +450,7 @@ def main(
     point_size: float | None,
     stop_words: str | None,
     labels: str | None,
+    initial_state: dict | None,
     enable_mcp: bool,
 ):
     apply_logging_config()
@@ -654,6 +664,7 @@ def main(
         point_size=point_size,
         stop_words=stop_words_resolved,
         labels=labels_resolved,
+        initial_state=initial_state,
         additional_tables=additional_tables_meta or None,
     )
 

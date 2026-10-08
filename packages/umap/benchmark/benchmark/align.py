@@ -22,7 +22,7 @@ def _kabsch(emb, ref):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         H = E.T @ R
-        U, S, Vt = np.linalg.svd(H)
+        U, _, Vt = np.linalg.svd(H)
     if np.any(~np.isfinite(U)) or np.any(~np.isfinite(Vt)):
         return emb.astype(np.float32), np.inf
 

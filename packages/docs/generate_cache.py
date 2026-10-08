@@ -32,7 +32,7 @@ def generate_dataset_embedding(
     modality: str = "text",
     model: str | None = "all-MiniLM-L6-v2",
     pagerank: bool = False,
-    umap_args: dict = {},
+    umap_args: dict | None = None,
 ):
     click.echo(click.style(f"Processing {url}", fg="cyan"))
 
@@ -48,6 +48,8 @@ def generate_dataset_embedding(
     _ = data_frame
     df = duckdb.query(query).to_df()
 
+    if umap_args is None:
+        umap_args = {}
     umap_args = {"random_state": 42} | umap_args
 
     df = compute_projection(

@@ -39,7 +39,6 @@ def main():
         x="projection_x",
         y="projection_y",
         neighbors="neighbors",
-        show_table=True,
     )
 
     # Show selected rows in a Streamlit data frame

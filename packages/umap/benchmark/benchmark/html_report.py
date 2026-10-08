@@ -223,7 +223,7 @@ def _load_embeddings(ds_dir, rows):
         # Align to reference (Rust CPU preferred)
         ref_name = next((name for _, name in _IMPL_ORDER if name in embeddings), None)
         ref_emb = embeddings[ref_name]
-        for name in embeddings:
+        for name in embeddings:  # noqa: PLC0206
             if name != ref_name:
                 embeddings[name] = align_to_reference(embeddings[name], ref_emb)
 
@@ -233,7 +233,7 @@ def _load_embeddings(ds_dir, rows):
         maxs = all_coords.max(axis=0)
         ranges = maxs - mins
         ranges[ranges == 0] = 1
-        for name in embeddings:
+        for name in embeddings:  # noqa: PLC0206
             embeddings[name] = ((embeddings[name] - mins) / ranges).astype(np.float32)
 
         # Serialize

@@ -1,10 +1,19 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <!-- A single feature row, reused in both the pinned section and the main list. -->
 <script lang="ts">
-  import { IconPin, IconPinRegular, IconSelected, IconUnselected } from "../../assets/icons.js";
   import BinaryPredictBar from "./BinaryPredictBar.svelte";
   import CountBar from "./CountBar.svelte";
   import MulticlassPredictBar from "./MulticlassPredictBar.svelte";
+
+  import {
+    IconInfo,
+    IconInfoRegular,
+    IconPin,
+    IconPinRegular,
+    IconSelected,
+    IconUnselected,
+  } from "../../assets/icons.js";
+
   import type { ListItem } from "./features_list_store.js";
 
   interface Props {
@@ -28,6 +37,10 @@
     onRowClick: (shift: boolean) => void;
     onToggleSelect: () => void;
     onTogglePin: () => void;
+    /** When set, an info button in the leading action group opens the feature-details popover, anchored to it. */
+    onShowInfo?: (anchor: HTMLElement) => void;
+    /** Highlights the info button when this feature's popover is the one currently open. */
+    infoActive?: boolean;
   }
 
   let {
@@ -49,13 +62,15 @@
     onRowClick,
     onToggleSelect,
     onTogglePin,
+    onShowInfo,
+    infoActive = false,
   }: Props = $props();
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="col-span-5 grid grid-cols-subgrid items-center rounded hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors duration-150 h-[24px]"
+  class="col-span-full grid grid-cols-subgrid items-center rounded hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors duration-150 h-[24px]"
   class:!bg-blue-100={selected}
   class:dark:!bg-blue-800={selected}
   onclick={(e) => onRowClick(e.shiftKey)}
@@ -102,32 +117,57 @@
     </button>
   </div>
 
-  <!-- Feature name (marquee-scrolls on hover when it overflows) -->
-  <div
-    class="truncate"
-    title={tooltip}
-    onmouseenter={(e) => {
-      const el = e.currentTarget;
-      const overflow = el.scrollWidth - el.clientWidth;
-      if (overflow > 0) {
+  <!-- Feature name (marquee-scrolls on hover when it overflows), with an optional
+       info button at the end of the name column, just before the count. The name
+       fills the column (flex-1) so the button is pushed flush to the right. -->
+  <div class="flex items-center gap-0.5 min-w-0">
+    <div
+      class="truncate min-w-0 flex-1"
+      title={tooltip}
+      onmouseenter={(e) => {
+        const el = e.currentTarget;
+        const overflow = el.scrollWidth - el.clientWidth;
+        if (overflow > 0) {
+          const span = el.firstElementChild as HTMLElement;
+          const duration = Math.max(0.75, overflow / 70);
+          el.style.textOverflow = "clip";
+          span.style.display = "inline-block";
+          span.style.transition = `transform ${duration}s ease-out`;
+          span.style.transform = `translateX(-${overflow}px)`;
+        }
+      }}
+      onmouseleave={(e) => {
+        const el = e.currentTarget;
         const span = el.firstElementChild as HTMLElement;
-        const duration = Math.max(0.75, overflow / 70);
-        el.style.textOverflow = "clip";
-        span.style.display = "inline-block";
-        span.style.transition = `transform ${duration}s ease-out`;
-        span.style.transform = `translateX(-${overflow}px)`;
-      }
-    }}
-    onmouseleave={(e) => {
-      const el = e.currentTarget;
-      const span = el.firstElementChild as HTMLElement;
-      span.style.transition = "";
-      span.style.transform = "";
-      span.style.display = "";
-      el.style.textOverflow = "";
-    }}
-  >
-    <span>{item.feature}</span>
+        span.style.transition = "";
+        span.style.transform = "";
+        span.style.display = "";
+        el.style.textOverflow = "";
+      }}
+    >
+      <span>{item.feature}</span>
+    </div>
+    {#if onShowInfo}
+      <button
+        type="button"
+        data-feature-info-trigger
+        class="shrink-0 flex items-center transition-colors duration-150 hover:text-blue-500"
+        class:text-blue-500={infoActive}
+        class:text-slate-400={!infoActive}
+        class:dark:text-slate-500={!infoActive}
+        title="Show details and similar features"
+        onclick={(e) => {
+          e.stopPropagation();
+          onShowInfo?.(e.currentTarget);
+        }}
+      >
+        {#if infoActive}
+          <IconInfo class="w-4 h-4" />
+        {:else}
+          <IconInfoRegular class="w-4 h-4" />
+        {/if}
+      </button>
+    {/if}
   </div>
 
   <div class="text-xs text-right text-slate-500 dark:text-slate-400">
@@ -168,17 +208,19 @@
     {/if}
   </div>
 
-  <div class="text-xs text-right font-medium">
-    {#if hasPredict && item.predict != null}
-      {#if isBinary}
-        <span style:color={directionColors[item.predict?.direction == 0 ? "left" : "right"]}>
-          {(item.predict.phi ?? 0).toFixed(2)}
-        </span>
-      {:else}
-        <span style:color={markColor}>
-          {(item.predict.strength ?? 0).toFixed(2)}
-        </span>
+  {#if hasPredict}
+    <div class="text-xs text-right font-medium">
+      {#if item.predict != null}
+        {#if isBinary}
+          <span style:color={directionColors[item.predict?.direction == 0 ? "left" : "right"]}>
+            {(item.predict.phi ?? 0).toFixed(2)}
+          </span>
+        {:else}
+          <span style:color={markColor}>
+            {(item.predict.strength ?? 0).toFixed(2)}
+          </span>
+        {/if}
       {/if}
-    {/if}
-  </div>
+    </div>
+  {/if}
 </div>

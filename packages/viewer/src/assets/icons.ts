@@ -38,6 +38,8 @@ export { default as IconPin } from "~icons/fluent/pin-16-filled";
 export { default as IconPinRegular } from "~icons/fluent/pin-16-regular";
 export { default as IconSelected } from "~icons/fluent/checkmark-circle-16-filled";
 export { default as IconUnselected } from "~icons/fluent/circle-16-regular";
+export { default as IconInfo } from "~icons/fluent/info-16-filled";
+export { default as IconInfoRegular } from "~icons/fluent/info-16-regular";
 
 // Icons for list layout view toggles (hide/show parts)
 export { default as IconEmbeddingView } from "~icons/fluent/data-scatter-20-filled";

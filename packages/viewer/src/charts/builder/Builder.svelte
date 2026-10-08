@@ -34,29 +34,46 @@
   // The table the new chart targets, selected via a "table" UI element (if the
   // builder declares one). Defaults to the main table. Field options are sourced
   // from this table's columns.
-  let tableKey = $derived((builder.ui.find((e) => "table" in e) as { table: { key: string } } | undefined)?.table.key);
+  let tableKey = $derived(
+    (builder.ui.find((e) => "table" in e && !e.table.optional) as { table: { key: string } } | undefined)?.table.key,
+  );
   let tableNames = $derived(Object.keys(context.tables));
   let selectedTable = $derived((tableKey != null ? values[tableKey] : undefined) ?? context.table);
   let columns = $derived(context.tables[selectedTable]?.columns ?? []);
+  // Selections of the optional (auxiliary) tables, as a string so effects only re-run on actual changes.
+  let auxiliaryTablesKey = $derived(
+    JSON.stringify(builder.ui.map((e) => ("table" in e && e.table.optional ? values[e.table.key] : null))),
+  );
+
+  // Columns for a field: from its referenced optional table if any, otherwise the chart's table.
+  // Returns null if the referenced table is not selected.
+  function columnsFor(item: { table?: string }, source: Record<string, any> = values): ColumnDesc[] | null {
+    if (item.table == null) {
+      return columns;
+    }
+    let name = source[item.table];
+    return name != null ? (context.tables[name]?.columns ?? []) : null;
+  }
 
   // Refresh the values when the builder or the selected table changes. Field
   // selections are kept when their key/type still apply, and pruned otherwise
   // (e.g. a field that doesn't exist in a newly selected table).
   $effect.pre(() => {
     let _ = builder;
-    // Track columns so pruning also runs when the table dropdown changes.
+    // Track columns and auxiliary tables so pruning also runs when a table dropdown changes.
     let currentColumns = columns;
+    let _aux = auxiliaryTablesKey;
     let currentValues = untrack(() => values);
     let newValues: Record<string, any> = {};
     for (let item of builder.ui) {
       if ("field" in item) {
-        let allowedColumns = filteredColumns(currentColumns, item.field.types);
+        let allowedColumns = filteredColumns(columnsFor(item.field, currentValues) ?? [], item.field);
         let current = currentValues[item.field.key];
         if (current != null && allowedColumns.findIndex(({ name }) => name == current) >= 0) {
           newValues[item.field.key] = current;
         }
       } else if ("fields" in item) {
-        let allowedColumns = filteredColumns(currentColumns, item.fields.types);
+        let allowedColumns = filteredColumns(currentColumns, item.fields);
         let current: string[] = currentValues[item.fields.key] ?? [];
         newValues[item.fields.key] = current.filter((name) => allowedColumns.some((c) => c.name == name));
       } else if ("table" in item) {
@@ -97,7 +114,13 @@
     let input = { ...values };
     for (let item of builder.ui) {
       if ("field" in item) {
-        let value = getField(input[item.field.key]);
+        let fieldColumns = columnsFor(item.field);
+        if (fieldColumns == null) {
+          // The referenced optional table is not selected.
+          input[item.field.key] = undefined;
+          continue;
+        }
+        let value = getField(input[item.field.key], fieldColumns);
         if (item.field.required && value == undefined) {
           return undefined;
         }
@@ -113,7 +136,7 @@
       }
       if ("table" in item) {
         // Pass undefined for the main table so builders only record non-default tables.
-        if (input[item.table.key] === context.table) {
+        if (!item.table.optional && input[item.table.key] === context.table) {
           input[item.table.key] = undefined;
         }
       }
@@ -121,8 +144,11 @@
     return input;
   }
 
-  function getField(name: string): { name: string; type: "continuous" | "discrete" | "discrete[]" | "unknown" } | null {
-    let c = columns.find((x) => x.name == name);
+  function getField(
+    name: string,
+    fromColumns: ColumnDesc[] = columns,
+  ): { name: string; type: "continuous" | "discrete" | "discrete[]" | "unknown" } | null {
+    let c = fromColumns.find((x) => x.name == name);
     if (c == null) {
       return null;
     }
@@ -155,11 +181,17 @@
     }
   }
 
-  function filteredColumns(columns: ColumnDesc[], types: JSType[] | null | undefined): ColumnDesc[] {
-    if (types == null) {
-      return columns;
+  function filteredColumns(
+    columns: ColumnDesc[],
+    { types, accept }: { types?: JSType[] | null; accept?: (column: ColumnDesc) => boolean },
+  ): ColumnDesc[] {
+    if (types != null) {
+      columns = columns.filter((c) => c.jsType != null && types.indexOf(c.jsType) >= 0);
     }
-    return columns.filter((c) => c.jsType != null && types.indexOf(c.jsType) >= 0);
+    if (accept != null) {
+      columns = columns.filter(accept);
+    }
+    return columns;
   }
 
   function valueUpdater(key: string): (v: any) => void {
@@ -191,7 +223,7 @@
 
   <div class="select-none">{builder.description}</div>
 
-  {#each builder.ui.filter((x) => !("table" in x && tableNames.length <= 1)) as elem}
+  {#each builder.ui.filter((x) => !("table" in x && tableNames.length <= 1) && !("field" in x && columnsFor(x.field) == null)) as elem}
     {#if "label" in elem}
       <div class="text-slate-500 dark:text-slate-400 select-none">{elem.label}</div>
     {/if}
@@ -201,7 +233,7 @@
     {#if "field" in elem}
       {@const key = elem.field.key}
       {@const options = (elem.field.required ? [] : [{ value: undefined as any, label: "--" }]).concat(
-        filteredColumns(columns, elem.field.types).map((c) => ({
+        filteredColumns(columnsFor(elem.field) ?? [], elem.field).map((c) => ({
           value: c.name,
           label: `${c.name} (${c.type})`,
         })),
@@ -216,7 +248,7 @@
     {/if}
     {#if "fields" in elem}
       {@const key = elem.fields.key}
-      {@const options = filteredColumns(columns, elem.fields.types).map((c) => ({
+      {@const options = filteredColumns(columns, elem.fields).map((c) => ({
         value: c.name,
         label: `${c.name} (${c.type})`,
       }))}
@@ -254,10 +286,12 @@
     {#if "table" in elem}
       {@const key = elem.table.key}
       <Select
-        value={values[key] ?? context.table}
+        value={elem.table.optional ? values[key] : (values[key] ?? context.table)}
         onChange={valueUpdater(key)}
         class="w-full"
-        options={tableNames.map((t) => ({ value: t, label: t }))}
+        options={(elem.table.optional ? [{ value: undefined as any, label: "--" }] : []).concat(
+          tableNames.map((t) => ({ value: t, label: t })),
+        )}
       />
     {/if}
   {/each}

@@ -24,7 +24,6 @@ df = compute_projection(df, inputs="description", modality="text",
 value = embedding_atlas(
     df, text="description",
     x="projection_x", y="projection_y", neighbors="neighbors",
-    show_table=True
 )
 ```
 

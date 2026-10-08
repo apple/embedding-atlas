@@ -6,7 +6,6 @@ import click
 @click.group()
 def cli():
     """UMAP / NNDescent benchmark suite."""
-    pass
 
 
 @cli.command()
