@@ -24,6 +24,7 @@ def compute_projection(
     modality: str = "auto",
     x: str = "projection_x",
     y: str = "projection_y",
+    z: str | None = None,
     neighbors: str | None = "neighbors",
     embedder: str | Callable | None = None,
     model: str | None = None,
@@ -34,7 +35,8 @@ def compute_projection(
     cache_root: str | Path | None = None,
 ) -> IntoDataFrameT:
     """
-    Compute embeddings and generate 2D projections for a DataFrame column.
+    Compute embeddings and generate 2D (or, with ``z`` and ``umap_args={"n_components": 3}``,
+    3D) projections for a DataFrame column.
 
     This is a unified entry point that auto-detects the modality of the input
     data (text, image, audio, or vector) and delegates to the appropriate
@@ -51,6 +53,8 @@ def compute_projection(
             'text', 'image', 'audio', 'vector', or 'auto' (auto-detect).
         x: str, column name where the UMAP X coordinates will be stored.
         y: str, column name where the UMAP Y coordinates will be stored.
+        z: str or None, column name where the UMAP Z coordinates will be stored. Only
+            populated when ``umap_args={"n_components": 3}`` (or greater); ignored otherwise.
         neighbors: str or None, column name where nearest neighbor indices
             will be stored. Set to None to skip.
         embedder: the embedding backend to use. Can be:
@@ -80,6 +84,7 @@ def compute_projection(
             modality=modality,
             x=x,
             y=y,
+            z=z,
             neighbors=neighbors,
             embedder=embedder,
             model=model,
@@ -99,6 +104,7 @@ async def async_compute_projection(
     modality: str = "auto",
     x: str = "projection_x",
     y: str = "projection_y",
+    z: str | None = None,
     neighbors: str | None = "neighbors",
     embedder: str | Callable | None = None,
     model: str | None = None,
@@ -217,6 +223,10 @@ async def async_compute_projection(
         nw.new_series(x, proj.projection[:, 0].tolist(), nw.Float64, backend=backend),
         nw.new_series(y, proj.projection[:, 1].tolist(), nw.Float64, backend=backend),
     ]
+    if z is not None and proj.projection.shape[1] >= 3:
+        new_columns.append(
+            nw.new_series(z, proj.projection[:, 2].tolist(), nw.Float64, backend=backend)
+        )
     if neighbors is not None:
         new_columns.append(
             nw.new_series(

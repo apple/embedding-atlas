@@ -62,7 +62,7 @@ export class EmbeddingProjector {
     this.offset += vectors.length;
   }
 
-  async umap(options: UMAPOptions = {}): Promise<Float32Array> {
+  async umap(options: UMAPOptions = {}, outputDim: number = 2): Promise<Float32Array> {
     if (this.vectors === undefined || this.dimension === undefined) {
       throw new Error("umap() called before any batch()");
     }
@@ -70,7 +70,7 @@ export class EmbeddingProjector {
     // `subarray(0, offset)` so UMAP only sees populated rows when the caller
     // fed fewer than `total` inputs (e.g. on early termination).
     const data = this.offset === this.vectors.length ? this.vectors : this.vectors.subarray(0, this.offset);
-    let umap = await createUMAP(count, this.dimension, 2, data, {
+    let umap = await createUMAP(count, this.dimension, outputDim, data, {
       metric: "cosine",
       ...options,
     });
