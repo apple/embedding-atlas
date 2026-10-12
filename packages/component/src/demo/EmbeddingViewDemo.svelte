@@ -17,6 +17,7 @@
   let tooltip: DataPoint | null = $state.raw(null);
   let selection: DataPoint[] | null = $state.raw([]);
   let rangeSelection: any | null = $state.raw(null);
+  let rangeSelectionEnd: any | null = $state.raw(null);
 
   let mode: "points" | "density" = $state.raw("density");
   let colorScheme: "light" | "dark" = $state.raw("light");
@@ -105,6 +106,9 @@
       onRangeSelection={(v) => {
         rangeSelection = v;
       }}
+      onRangeSelectionEnd={(v) => {
+        rangeSelectionEnd = v;
+      }}
       viewportState={viewportState}
       onViewportState={(v) => {
         viewportState = v;
@@ -126,6 +130,10 @@
     {/if}
     {#if rangeSelection}
       <pre>{JSON.stringify(rangeSelection, null, 2)}</pre>
+    {/if}
+    {#if rangeSelectionEnd}
+      Range selection end:<br />
+      <pre>{JSON.stringify(rangeSelectionEnd, null, 2)}</pre>
     {/if}
     Viewport:<br />
     <pre>{JSON.stringify(viewportState, null, 2)}</pre>
