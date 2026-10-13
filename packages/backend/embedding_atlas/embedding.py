@@ -137,8 +137,11 @@ def _create_transformers_audio_embedder(
     model_name = model or "laion/clap-htsat-fused"
     logger.info("Loading CLAP model %s...", model_name)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    clap_model = ClapModel.from_pretrained(model_name, **embedder_args).to(device)  # type: ignore
+    model_args = dict(embedder_args)
+    device = model_args.pop("device", None)
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    clap_model = ClapModel.from_pretrained(model_name, **model_args).to(device)  # type: ignore
     clap_processor = ClapProcessor.from_pretrained(model_name)
 
     target_sr = clap_processor.feature_extractor.sampling_rate  # type: ignore
