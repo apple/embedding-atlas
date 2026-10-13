@@ -22,7 +22,13 @@ export interface EmbeddingSpec {
     neighbors?: string | null;
   };
 
+  /** @deprecated Superseded by `layers`. "density" turns on the density layer; kept for previously saved states. */
   mode?: "points" | "density";
+
+  /** Visibility of the view's layers. Missing entries default to points and labels on, density off,
+   * or to the equivalent of the deprecated `mode` field when it is present. */
+  layers?: { points?: boolean; density?: boolean; labels?: boolean };
+
   minimumDensity?: number;
   pointSize?: number;
   /** Maximum number of points to render (for downsampling). Default: 4000000. Set to null to disable. */
