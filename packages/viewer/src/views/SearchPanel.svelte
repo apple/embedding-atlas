@@ -40,7 +40,12 @@
   </div>
 
   {#if $searchModes.indexOf($mode) >= 0}
-    <Input type="search" className="w-full" bind:value={$query} />
+    <Input
+      type="search"
+      className="w-full"
+      placeholder={$mode == "full-text" ? 'Search, or "quote" text to match it exactly' : "Search"}
+      bind:value={$query}
+    />
   {:else}
     <div class="text-slate-500 dark:text-slate-400">
       {#if $mode == "full-text"}Select a text column to enable search.{/if}
