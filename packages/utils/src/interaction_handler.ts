@@ -72,6 +72,7 @@ export function interactionHandler(element: SVGElement | HTMLElement, props: Int
   let dragHandler: DragHandler | undefined = undefined;
   let isDown = false;
   let isHovering = false;
+  let destroyed = false;
   let cleanupGesture: (() => void) | undefined;
 
   const finishGesture = () => {
@@ -91,6 +92,9 @@ export function interactionHandler(element: SVGElement | HTMLElement, props: Int
 
   const onMouseDown = (e1: MouseEvent) => {
     cancelGesture();
+    if (destroyed) {
+      return;
+    }
     let v1 = valueForEvent(e1);
     e1.preventDefault();
     e1.stopPropagation();
@@ -164,6 +168,7 @@ export function interactionHandler(element: SVGElement | HTMLElement, props: Int
       handlers = props;
     },
     destroy: () => {
+      destroyed = true;
       element.removeEventListener("mousedown", onMouseDown as any);
       element.removeEventListener("mousemove", onMouseMove as any);
       element.removeEventListener("mouseleave", onMouseLeave as any);

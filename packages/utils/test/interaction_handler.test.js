@@ -114,6 +114,27 @@ describe("interactionHandler gesture cleanup", () => {
     expect(cancel).not.toHaveBeenCalled();
   });
 
+  it("does not restart tracking when cancellation destroys the action", () => {
+    const move = vi.fn();
+    const up = vi.fn();
+    const click = vi.fn();
+    const cancel = vi.fn(() => action.destroy());
+    const drag = vi.fn(() => ({ move, up, cancel }));
+    const action = interactionHandler(element, { drag, click });
+
+    mouse(element, "mousedown");
+    mouse(windowTarget, "mousemove", 10);
+    mouse(element, "mousedown", 20);
+    mouse(windowTarget, "mousemove", 30);
+    mouse(windowTarget, "mouseup", 40);
+
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(drag).toHaveBeenCalledTimes(1);
+    expect(move).toHaveBeenCalledTimes(1);
+    expect(up).not.toHaveBeenCalled();
+    expect(click).not.toHaveBeenCalled();
+  });
+
   it("preserves clicks and removes tracking on mouseup", () => {
     const drag = vi.fn();
     const click = vi.fn();
