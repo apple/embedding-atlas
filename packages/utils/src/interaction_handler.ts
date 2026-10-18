@@ -72,19 +72,31 @@ export function interactionHandler(element: SVGElement | HTMLElement, props: Int
   let dragHandler: DragHandler | undefined = undefined;
   let isDown = false;
   let isHovering = false;
+  let cleanupGesture: (() => void) | undefined;
+
+  const finishGesture = () => {
+    cleanupGesture?.();
+    cleanupGesture = undefined;
+    isDown = false;
+  };
+
+  const cancelGesture = () => {
+    finishGesture();
+    const previous = dragHandler;
+    dragHandler = undefined;
+    if (previous) {
+      tryInvoke(previous, "cancel");
+    }
+  };
 
   const onMouseDown = (e1: MouseEvent) => {
+    cancelGesture();
     let v1 = valueForEvent(e1);
     e1.preventDefault();
     e1.stopPropagation();
     blurActiveElement();
 
     isDown = true;
-
-    if (dragHandler) {
-      tryInvoke(dragHandler, "up");
-      dragHandler = undefined;
-    }
 
     let onMove = (e2: MouseEvent) => {
       let v2 = valueForEvent(e2);
@@ -104,13 +116,12 @@ export function interactionHandler(element: SVGElement | HTMLElement, props: Int
     let onUp = (e2: MouseEvent) => {
       let v2 = valueForEvent(e2);
 
-      isDown = false;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      finishGesture();
 
-      if (dragHandler) {
-        tryInvoke(dragHandler, "up", v2);
-        dragHandler = undefined;
+      const completed = dragHandler;
+      dragHandler = undefined;
+      if (completed) {
+        tryInvoke(completed, "up", v2);
       } else {
         if (handlers.click) {
           tryInvoke(handlers, "click", v2);
@@ -118,6 +129,10 @@ export function interactionHandler(element: SVGElement | HTMLElement, props: Int
       }
     };
 
+    cleanupGesture = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
     window.addEventListener("mousemove", onMove, { passive: true });
     window.addEventListener("mouseup", onUp, { passive: true });
   };
@@ -152,6 +167,7 @@ export function interactionHandler(element: SVGElement | HTMLElement, props: Int
       element.removeEventListener("mousedown", onMouseDown as any);
       element.removeEventListener("mousemove", onMouseMove as any);
       element.removeEventListener("mouseleave", onMouseLeave as any);
+      cancelGesture();
     },
   };
 }
