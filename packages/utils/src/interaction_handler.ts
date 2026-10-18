@@ -92,22 +92,35 @@ export function interactionHandler(element: SVGElement | HTMLElement, props: Int
 
   const onMouseDown = (e1: MouseEvent) => {
     cancelGesture();
-    if (destroyed) {
+    if (destroyed || cleanupGesture) {
       return;
     }
     let v1 = valueForEvent(e1);
     e1.preventDefault();
     e1.stopPropagation();
     blurActiveElement();
+    if (destroyed || cleanupGesture) {
+      return;
+    }
 
     isDown = true;
 
     let onMove = (e2: MouseEvent) => {
+      if (cleanupGesture !== cleanup) {
+        return;
+      }
       let v2 = valueForEvent(e2);
 
       if (handlers.drag && !dragHandler) {
         if (Math.hypot(v1.clientX - v2.clientX, v1.clientY - v2.clientY) > DRAG_THRESHOLD) {
-          dragHandler = tryInvoke(handlers, "drag", v1);
+          const started = tryInvoke(handlers, "drag", v1);
+          if (cleanupGesture !== cleanup) {
+            if (started) {
+              tryInvoke(started, "cancel");
+            }
+            return;
+          }
+          dragHandler = started;
           if (dragHandler) {
             tryInvoke(dragHandler, "move", v2);
           }
@@ -118,6 +131,9 @@ export function interactionHandler(element: SVGElement | HTMLElement, props: Int
     };
 
     let onUp = (e2: MouseEvent) => {
+      if (cleanupGesture !== cleanup) {
+        return;
+      }
       let v2 = valueForEvent(e2);
 
       finishGesture();
@@ -133,10 +149,11 @@ export function interactionHandler(element: SVGElement | HTMLElement, props: Int
       }
     };
 
-    cleanupGesture = () => {
+    const cleanup = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
+    cleanupGesture = cleanup;
     window.addEventListener("mousemove", onMove, { passive: true });
     window.addEventListener("mouseup", onUp, { passive: true });
   };

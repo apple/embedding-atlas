@@ -162,4 +162,87 @@ describe("interactionHandler gesture cleanup", () => {
 
     expect(cancel).not.toHaveBeenCalled();
   });
+
+  it("cancels a handler returned after its drag factory destroys the action", () => {
+    const move = vi.fn();
+    const up = vi.fn();
+    const cancel = vi.fn();
+    const action = interactionHandler(element, {
+      drag: () => {
+        action.destroy();
+        return { move, up, cancel };
+      },
+    });
+
+    mouse(element, "mousedown");
+    mouse(windowTarget, "mousemove", 10);
+    mouse(windowTarget, "mouseup", 20);
+
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(move).not.toHaveBeenCalled();
+    expect(up).not.toHaveBeenCalled();
+  });
+
+  it("does not replace a gesture started by the cancellation callback", () => {
+    const next = { move: vi.fn(), up: vi.fn() };
+    const drag = vi
+      .fn()
+      .mockReturnValueOnce({ cancel: () => mouse(element, "mousedown", 100) })
+      .mockReturnValueOnce(next);
+    const action = interactionHandler(element, { drag });
+
+    mouse(element, "mousedown");
+    mouse(windowTarget, "mousemove", 10);
+    mouse(element, "mousedown", 20);
+    mouse(windowTarget, "mousemove", 101);
+    expect(drag).toHaveBeenCalledTimes(1);
+    mouse(windowTarget, "mousemove", 110);
+    mouse(windowTarget, "mouseup", 120);
+    action.destroy();
+
+    expect(drag).toHaveBeenCalledTimes(2);
+    expect(next.move).toHaveBeenCalledTimes(1);
+    expect(next.up).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not install tracking if blurring the active element destroys the action", () => {
+    const drag = vi.fn();
+    const click = vi.fn();
+    const action = interactionHandler(element, { drag, click });
+    vi.stubGlobal("document", { activeElement: { blur: () => action.destroy() } });
+
+    mouse(element, "mousedown");
+    mouse(windowTarget, "mousemove", 10);
+    mouse(windowTarget, "mouseup", 20);
+
+    expect(drag).not.toHaveBeenCalled();
+    expect(click).not.toHaveBeenCalled();
+  });
+
+  it("cancels a stale factory result without overwriting a replacement gesture", () => {
+    const previous = { move: vi.fn(), up: vi.fn(), cancel: vi.fn() };
+    const next = { move: vi.fn(), up: vi.fn(), cancel: vi.fn() };
+    const drag = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        mouse(element, "mousedown", 100);
+        return previous;
+      })
+      .mockReturnValueOnce(next);
+    const action = interactionHandler(element, { drag });
+
+    mouse(element, "mousedown");
+    mouse(windowTarget, "mousemove", 10);
+    expect(previous.cancel).toHaveBeenCalledTimes(1);
+    expect(previous.move).not.toHaveBeenCalled();
+    mouse(windowTarget, "mousemove", 110);
+    mouse(windowTarget, "mouseup", 120);
+    action.destroy();
+
+    expect(drag).toHaveBeenCalledTimes(2);
+    expect(previous.up).not.toHaveBeenCalled();
+    expect(next.move).toHaveBeenCalledTimes(1);
+    expect(next.up).toHaveBeenCalledTimes(1);
+    expect(next.cancel).not.toHaveBeenCalled();
+  });
 });
