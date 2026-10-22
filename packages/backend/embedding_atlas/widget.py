@@ -129,6 +129,8 @@ class EmbeddingAtlasWidget(anywidget.AnyWidget):
         Args:
             format: the format of the returned selection, 'dataframe', 'arrow', or 'predicate'
         """
+        if format == "predicate":
+            return self._predicate
         if self._predicate is not None:
             result = self._connection.sql(
                 f"SELECT * FROM {self._table_name} WHERE {self._predicate}"
