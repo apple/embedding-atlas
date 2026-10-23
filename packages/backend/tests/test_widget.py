@@ -15,3 +15,14 @@ def test_default_row_ids_follow_row_order():
 
     rows = widget.selection(format="arrow").read_all()
     assert rows["__row_index__"].to_pylist() == rows["pos"].to_pylist()
+
+
+def test_selection_as_predicate():
+    from embedding_atlas.widget import EmbeddingAtlasWidget
+
+    df = pd.DataFrame({"x": [0.0, 1.0], "y": [0.0, 1.0]})
+    widget = EmbeddingAtlasWidget(df, x="x", y="y")
+    assert widget.selection(format="predicate") is None
+
+    widget._predicate = "x > 0.5"
+    assert widget.selection(format="predicate") == "x > 0.5"
