@@ -50,7 +50,7 @@
     {#if onSelectResults}
       <Button
         label="Select results"
-        title="Add the listed search results to the current filters"
+        title="Select all returned search results while keeping current filters"
         disabled={items.length === 0}
         onClick={() => onSelectResults(items)}
       />
