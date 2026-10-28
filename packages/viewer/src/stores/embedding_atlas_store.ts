@@ -16,6 +16,7 @@ import { embeddingHighlightScorer } from "../highlight/embedding-scorer.js";
 import type { ColumnStyle } from "../renderers/types.js";
 import { type ColorScheme, makeColorSchemeStore } from "../utils/color_scheme.js";
 import { type ColumnDesc, columnDescriptions, predicateToString } from "../utils/database.js";
+import { FocusRequestTracker } from "../utils/overlay.js";
 import { findUnusedId } from "../utils/identifier.js";
 import { stableDerived, stableWritable } from "../utils/store.js";
 import { HistoryManager } from "./history_manager.js";
@@ -130,6 +131,7 @@ export class EmbeddingAtlasStore {
       overlay: writable(null),
       externalOverlay: writable(undefined),
       focusRequest: writable(null),
+      focusTracker: new FocusRequestTracker(),
       textHighlight: writable(null),
       highlightScorer: writable(embeddingHighlightScorer()),
       embeddingViewConfig: options.embeddingViewConfig,
