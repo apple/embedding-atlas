@@ -10,7 +10,7 @@ import Component from "./EmbeddingAtlas.svelte";
 
 import type { ModelContextAPI } from "./app/mcp_server.js";
 import type { ChartThemeConfig } from "./charts/common/theme.js";
-import type { RowID } from "./charts/chart.js";
+import type { FocusRequest, Overlay, RowID } from "./charts/chart.js";
 import type { DefaultChartsConfig } from "./charts/default_charts.js";
 import type { ColumnStyle } from "./renderers/types.js";
 
@@ -114,7 +114,44 @@ export interface EmbeddingAtlasProps {
    * Pass null or an empty array to clear the highlight.
    */
   highlight?: RowID[] | null;
+
+  /**
+   * Markers to draw on the embedding view for results produced outside the viewer,
+   * e.g. the result of a query run by the embedding application.
+   * The given points are drawn as orange circles on top of the map; the points keep
+   * their original category colors, and the overlay does not change the current
+   * selection, brush, filters, or the internal highlight, nor does it scroll or
+   * highlight rows in the instances view.
+   *
+   * The external overlay takes precedence over the overlay produced internally
+   * (e.g. by the built-in search):
+   * - If this prop is `undefined` or `null`, the internal overlay is shown.
+   * - If this prop is an object, the external overlay is shown instead, even if
+   *   it contains no nodes (pass `{ nodes: [] }` to explicitly show no markers).
+   *
+   * Setting the prop back to `null` restores the internal overlay if one exists.
+   * IDs that do not exist in the data are ignored.
+   */
+  overlay?: Overlay | null;
+
+  /**
+   * A request to move the viewport of the embedding view to a single point,
+   * e.g. the first point of an external query result given via the `overlay` prop.
+   * Changing the `overlay` prop alone never moves the viewport; only a focus
+   * request does.
+   *
+   * A request is acted upon only when its `key` differs from the key of the
+   * previously handled request. To focus on the same point again (e.g. after the
+   * user moved the viewport), pass the same `id` with a new `key`, such as a
+   * query run ID. If multiple requests arrive in quick succession, the latest
+   * one wins. Requests for IDs that do not exist in the data are ignored, and
+   * passing `null` (or leaving the prop unset) never moves the viewport.
+   * A request given when the component mounts is executed once the data is ready.
+   */
+  focus?: FocusRequest | null;
 }
+
+export type { FocusRequest, Overlay };
 
 export interface EmbeddingAtlasState {
   /** The version of Embedding Atlas that created this state. If omitted, assume the current version. */
