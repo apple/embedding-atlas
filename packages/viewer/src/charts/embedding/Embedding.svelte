@@ -8,20 +8,7 @@
   import Tooltip from "./Tooltip.svelte";
 
   import { type EmbeddingLegend } from "../../utils/database.js";
-  import { FocusRequestTracker } from "../../utils/overlay.js";
   import { createCustomComponentClass } from "./custom_components.js";
-
-  // Focus request trackers, one per chart context. Kept outside the component
-  // instances so that a request is not handled twice when views are re-created.
-  const focusTrackers = new WeakMap<object, FocusRequestTracker>();
-  function focusTrackerFor(context: object): FocusRequestTracker {
-    let tracker = focusTrackers.get(context);
-    if (tracker == undefined) {
-      tracker = new FocusRequestTracker();
-      focusTrackers.set(context, tracker);
-    }
-    return tracker;
-  }
 
   async function defaultViewportScale(coordinator: Coordinator, table: string, x: string, y: string): Promise<number> {
     let { stdX, stdY } = (
@@ -228,7 +215,7 @@
   // if a newer request arrives while an older one is still being resolved, the
   // older one is dropped.
   $effect.pre(() => {
-    let tracker = focusTrackerFor(context);
+    let tracker = context.focusTracker;
     return context.focusRequest.subscribe((request) => {
       if (!isDefaultTable) {
         return;
