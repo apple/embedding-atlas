@@ -16,7 +16,7 @@
     "build": "./scripts/build.sh",
     "test:js": "npm run test -w @embedding-atlas/density-clustering -w @embedding-atlas/umap-wasm -w @embedding-atlas/utils -w @embedding-atlas/viewer",
     "test:rust": "cargo test --workspace",
-    "test:python": "cd packages/backend && uv run pytest",
+    "test:python": "cd packages/backend && uv run --frozen pytest",
     "test:versions": "node scripts/check-versions.mjs",
     "test": "npm run test:versions && npm run test:js && npm run test:python && npm run test:rust",
     "check": "npm run check -w @embedding-atlas/component -w @embedding-atlas/viewer -w @embedding-atlas/embedding-atlas -w @embedding-atlas/examples -w @embedding-atlas/backend",

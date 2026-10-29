@@ -12,7 +12,7 @@ function extract(entrypoint) {
     from ${module} import ${func} as main
     print(json.dumps([p.to_info_dict() for p in main.params]))
   `);
-  let helpCommand = `uv run python -c "${code}"`;
+  let helpCommand = `uv run --frozen python -c "${code}"`;
   let workDir = resolve("../../packages/backend");
   let json = execSync(helpCommand, { cwd: workDir, encoding: "utf-8" });
   return JSON.parse(json);
