@@ -65,6 +65,7 @@
         }}
         onClose={() => search.clear()}
         columnStyles={$columnStyles}
+        onSelectResults={(items) => store.selectSearchResults(items)}
       />
     {/key}
   {/if}
