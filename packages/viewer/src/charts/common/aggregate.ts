@@ -3,6 +3,7 @@
 import type { Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 
+import { isFloatingPointDBType } from "../../utils/db_types.js";
 import { inferBinning, inferTimeBinning, type Binning } from "./binning.js";
 import type { ScaleConfig, ScaleType } from "./types.js";
 
@@ -116,8 +117,8 @@ export async function computeFieldStats(
     return;
   }
 
-  // Quantitative types
-  if (quantitativeTypes.has(columnType)) {
+  // Quantitative types (DuckDB reports decimals with precision and scale, e.g. DECIMAL(18,3))
+  if (quantitativeTypes.has(columnType) || isFloatingPointDBType(columnType)) {
     let fieldExpr = SQL.cast(field, "DOUBLE");
     let r1 = await query(
       SQL.Query.from(table)
