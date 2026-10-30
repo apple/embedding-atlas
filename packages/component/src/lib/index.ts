@@ -2,8 +2,12 @@
 
 export {
   EmbeddingView,
+  EmbeddingView3D,
+  EmbeddingView3DMosaic,
   EmbeddingViewMosaic,
   maxDensityModeCategories,
+  type EmbeddingView3DMosaicProps,
+  type EmbeddingView3DProps,
   type EmbeddingViewMosaicProps,
   type EmbeddingViewProps,
 } from "./embedding_view/api.js";

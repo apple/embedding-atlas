@@ -96,11 +96,15 @@
     stage = "messages";
 
     try {
-      let projectionColumns: { x: string; y: string; neighbors?: string } | undefined;
+      let projectionColumns: { x: string; y: string; z?: string; neighbors?: string } | undefined;
       let neighborsColumn: string | undefined;
 
       if (spec.embedding != null && "precomputed" in spec.embedding) {
-        projectionColumns = { x: spec.embedding.precomputed.x, y: spec.embedding.precomputed.y };
+        projectionColumns = {
+          x: spec.embedding.precomputed.x,
+          y: spec.embedding.precomputed.y,
+          z: spec.embedding.precomputed.z,
+        };
         if (spec.embedding.precomputed.neighbors != undefined) {
           neighborsColumn = spec.embedding.precomputed.neighbors;
         }
@@ -110,8 +114,10 @@
         let input = spec.embedding.compute.column;
         let type = spec.embedding.compute.type;
         let model = spec.embedding.compute.model;
+        let is3D = spec.embedding.compute.dimensions === 3;
         let x = input + "_proj_x";
         let y = input + "_proj_y";
+        let z = is3D ? input + "_proj_z" : undefined;
         let msg = logger.info(`Embedding: Initialize`);
         await computeProjection({
           coordinator: coordinator,
@@ -121,13 +127,14 @@
           type: type,
           xColumn: x,
           yColumn: y,
+          zColumn: z,
           model: model,
           umapOptions: spec.embedding.compute.umapOptions,
           callback: (message, progress) => {
             msg.update({ text: `Embedding: ${message}`, progress: progress });
           },
         });
-        projectionColumns = { x, y };
+        projectionColumns = { x, y, z };
       }
 
       props = {

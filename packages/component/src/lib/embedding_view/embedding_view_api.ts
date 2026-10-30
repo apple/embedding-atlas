@@ -16,6 +16,9 @@ export interface EmbeddingViewProps {
     x: Float32Array<ArrayBuffer>;
     /** An array of Y coordinates, must be a `Float32Array`. */
     y: Float32Array<ArrayBuffer>;
+    /** An array of Z coordinates, must be a `Float32Array`.
+     *  When present, the view renders as a navigable 3D point cloud instead of a flat 2D plane. */
+    z?: Float32Array<ArrayBuffer> | null;
     /** An array of category indices, must be a `Uint8Array`. */
     category?: Uint8Array<ArrayBuffer> | null;
   };

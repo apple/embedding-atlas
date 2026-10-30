@@ -29,3 +29,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+
+# Demo astronomical data (regenerated locally via get_real_stars.py / get_euclid_data.py /
+# prepare_stars_parquet.py / prepare_euclid_xyz.py — not meant to live in git history)
+*.parquet
