@@ -4,6 +4,7 @@ import logging
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import inquirer
 import narwhals as nw
@@ -16,7 +17,9 @@ logger = logging.getLogger("embedding-atlas")
 
 
 def load_pandas_data(url: str) -> pd.DataFrame:
-    suffix = Path(url).suffix.lower()
+    # Ignore the query string of remote URLs, such as signed or download links.
+    path = urlparse(url).path if "://" in url else url
+    suffix = Path(path).suffix.lower()
 
     if suffix == ".parquet":
         df = pd.read_parquet(url)
