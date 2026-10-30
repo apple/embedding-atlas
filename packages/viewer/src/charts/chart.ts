@@ -7,6 +7,7 @@ import type { Readable, Writable } from "svelte/store";
 
 import type { HighlightScorer } from "../highlight/scheduler.js";
 import type { ColumnDesc } from "../utils/database.js";
+import type { FocusRequestTracker } from "../utils/overlay.js";
 import type { ScreenshotOptions } from "../utils/screenshot.js";
 import type { ChartThemeConfig } from "./common/theme.js";
 
@@ -106,6 +107,26 @@ export interface ChartContext {
   /** The current overlay. When this changes, supported views will render it as overlay. */
   overlay: Writable<Overlay | null>;
 
+  /**
+   * The overlay provided externally through the `overlay` prop of the viewer.
+   * `undefined` means no external overlay is provided, and views render the internal
+   * overlay (`overlay`, e.g. produced by search) instead. Any other value, including
+   * `null` and an overlay with no nodes, takes precedence over the internal overlay.
+   */
+  externalOverlay: Writable<Overlay | null | undefined>;
+
+  /**
+   * The latest focus request provided externally through the `focus` prop of the viewer.
+   * Views animate the viewport to the requested point when a request with a new `key` arrives.
+   */
+  focusRequest: Writable<FocusRequest | null>;
+
+  /**
+   * Tracks which focus requests have already been handled, so that a request is
+   * acted upon only once even if views are re-created or multiple views observe it.
+   */
+  focusTracker: FocusRequestTracker;
+
   /** Highlight texts with a text query. */
   textHighlight: Writable<string | null>;
 
@@ -185,6 +206,21 @@ export interface ChartDelegate {
 export interface Overlay {
   nodes?: RowID[];
   edges?: { start: RowID; end: RowID }[];
+}
+
+/**
+ * A request to move the viewport of the embedding view to a single point.
+ * The `key` distinguishes successive requests: a new request is only acted upon
+ * when its `key` differs from the previously handled request, so requesting the
+ * same point again (e.g. after the user moved the viewport) is done by
+ * providing a new `key`.
+ */
+export interface FocusRequest {
+  /** The row ID of the point to focus on. Requests for unknown IDs are ignored. */
+  id: RowID;
+
+  /** An identifier that distinguishes this request from previous ones. */
+  key: string | number;
 }
 
 export type { ChartBuilderDescription } from "./builder/builder_description.js";

@@ -38,8 +38,10 @@
   import Legend from "./Legend.svelte";
 
   import { IconSettings } from "../../assets/icons.js";
+  import { latestAsync } from "../../utils/latest_async.js";
+  import { resolveEffectiveOverlay } from "../../utils/overlay.js";
   import { isolatedWritable } from "../../utils/store.js";
-  import type { ChartViewProps, RowID } from "../chart.js";
+  import type { ChartViewProps, Overlay as OverlayData, RowID } from "../chart.js";
   import { resolveChartTheme } from "../common/theme.js";
   import { makeCategoryColumn } from "./category_column.js";
   import type { EmbeddingSpec, EmbeddingState } from "./types.js";
@@ -136,17 +138,29 @@
     });
   });
 
-  $effect.pre(() => {
-    return context.overlay.subscribe(async (overlay) => {
+  // The overlay to render is resolved from two sources: the internal overlay
+  // (context.overlay, e.g. produced by search) and the external overlay
+  // (context.externalOverlay, from the viewer's `overlay` prop), which takes
+  // precedence whenever it is set. See resolveEffectiveOverlay for the rules.
+  let internalOverlay: OverlayData | null = null;
+  let externalOverlay: OverlayData | null | undefined = undefined;
+
+  // Resolve an overlay (row IDs) to renderable points (coordinates).
+  // Wrapped with latestAsync so that when overlays change in quick succession,
+  // a slower coordinate query for an older overlay cannot overwrite the newer one.
+  const applyOverlay = latestAsync(
+    async (overlay: OverlayData | null) => {
       if (overlay == null) {
-        overlayProps = null;
-        return;
+        return null;
       }
       // Collect all ids
       let ids: RowID[] = [
         ...(overlay.nodes ?? []), // all nodes
         ...(overlay.edges?.flatMap((e) => [e.start, e.end]) ?? []), // all points in edges
       ];
+      if (ids.length == 0) {
+        return { nodes: [], edges: [] };
+      }
       // Query for coordinates from ids
       let queryResult = Array.from(
         await context.coordinator.query(
@@ -161,7 +175,7 @@
         ),
       );
       let mapper = new Map(queryResult.map((p) => [p.id, { identifier: p.id, x: p.x, y: p.y }]));
-      overlayProps = {
+      return {
         nodes: overlay.nodes?.map((n) => mapper.get(n)).filter((x) => x != undefined),
         edges: overlay.edges
           ?.map((n) => {
@@ -174,16 +188,64 @@
           })
           .filter((x) => x != undefined),
       };
+    },
+    (props) => {
+      overlayProps = props;
+    },
+  );
+
+  $effect.pre(() => {
+    let update = () => applyOverlay(resolveEffectiveOverlay(externalOverlay, internalOverlay));
+    let unsubscribeInternal = context.overlay.subscribe((v) => {
+      internalOverlay = v;
+      update();
+    });
+    let unsubscribeExternal = context.externalOverlay.subscribe((v) => {
+      externalOverlay = v;
+      update();
+    });
+    return () => {
+      unsubscribeInternal();
+      unsubscribeExternal();
+    };
+  });
+
+  // Handle external focus requests (the viewer's `focus` prop). Only the view
+  // for the default table reacts. A request is acted upon once per unique key;
+  // if a newer request arrives while an older one is still being resolved, the
+  // older one is dropped.
+  $effect.pre(() => {
+    let tracker = context.focusTracker;
+    return context.focusRequest.subscribe((request) => {
+      if (!isDefaultTable) {
+        return;
+      }
+      let seq = tracker.accept(request);
+      if (seq == null || request == null) {
+        return;
+      }
+      void (async () => {
+        let scale = await pointViewportScale();
+        let location = await queryPointLocation(request.id);
+        if (location == null || !tracker.isLatest(seq)) {
+          return;
+        }
+        startViewportAnimation({ x: location.x, y: location.y, scale: scale });
+        tooltip = request.id;
+      })();
     });
   });
 
-  async function animateToPoint(identifier: RowID): Promise<void> {
+  async function pointViewportScale(): Promise<number> {
     let defaultScale = await context.cache.value(
       `embedding/default-viewport-scale/${dataTable}/${spec.data.x},${spec.data.y}`,
       () => defaultViewportScale(context.coordinator, dataTable, spec.data.x, spec.data.y),
     );
-    let scale = defaultScale * 2;
-    // Query the x, y location.
+    return defaultScale * 2;
+  }
+
+  // Query the x, y location of a point. Returns null if the ID does not exist.
+  async function queryPointLocation(identifier: RowID): Promise<{ x: number; y: number } | null> {
     let result = await context.coordinator.query(
       SQL.Query.from(dataTable)
         .select({
@@ -192,9 +254,18 @@
         })
         .where(SQL.eq(SQL.column(rowId), SQL.literal(identifier))),
     );
-    let { x, y } = result.get(0) as { x: number; y: number };
+    let rows = Array.from(result) as { x: number; y: number }[];
+    return rows.length > 0 ? rows[0] : null;
+  }
+
+  async function animateToPoint(identifier: RowID): Promise<void> {
+    let scale = await pointViewportScale();
+    let location = await queryPointLocation(identifier);
+    if (location == null) {
+      return;
+    }
     // Start animation and show tooltip.
-    startViewportAnimation({ x: x, y: y, scale: scale });
+    startViewportAnimation({ x: location.x, y: location.y, scale: scale });
     tooltip = identifier;
   }
 
