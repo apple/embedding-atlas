@@ -27,9 +27,9 @@ def test_load_pandas_data_url_with_query_string(monkeypatch, url, reader):
     calls = []
     for name in ["read_csv", "read_json", "read_parquet"]:
         monkeypatch.setattr(
-            pd, name, lambda *args, name=name, **kwargs: calls.append(name)
+            pd, name, lambda *args, name=name, **kwargs: calls.append((name, args[0]))
         )
 
     load_pandas_data(url)
 
-    assert calls == [reader]
+    assert calls == [(reader, url)]
