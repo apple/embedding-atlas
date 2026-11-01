@@ -101,6 +101,20 @@ class TestDetectBinaryModality:
         data = b"\xff\xfb\x90\x00" + b"\x00" * 20
         assert _detect_binary_modality(data) == "audio"
 
+    @pytest.mark.parametrize(
+        "header",
+        [
+            b"\xff\xfa",  # MPEG-1 Layer III with CRC
+            b"\xff\xf3",  # MPEG-2 Layer III (16/22.05/24 kHz)
+            b"\xff\xf2",  # MPEG-2 Layer III with CRC
+            b"\xff\xe3",  # MPEG-2.5 Layer III (8/11.025/12 kHz)
+            b"\xff\xf1",  # AAC ADTS
+        ],
+    )
+    def test_mpeg_and_adts_sync_frames(self, header):
+        data = header + b"\x00" * 20
+        assert _detect_binary_modality(data) == "audio"
+
     def test_mp4_m4a(self):
         data = b"\x00\x00\x00\x1cftyp" + b"M4A " + b"\x00" * 20
         assert _detect_binary_modality(data) == "audio"

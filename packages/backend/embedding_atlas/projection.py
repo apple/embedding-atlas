@@ -298,8 +298,12 @@ def _detect_mime_type(data: bytes) -> str | None:
         return "audio/flac"
     if data[:4] == b"OggS":  # OGG (Vorbis/Opus)
         return "audio/ogg"
-    if data[:3] == b"ID3" or data[:2] == b"\xff\xfb":  # MP3 (ID3 tag or sync frame)
+    if data[:3] == b"ID3":  # MP3 with an ID3v2 tag
         return "audio/mpeg"
+    # MPEG audio and AAC ADTS frames start with an 11-bit sync word (0xFFE).
+    # Layer bits 00 mean AAC (ADTS); anything else is MPEG audio (MP3/MP2/MP1).
+    if len(data) >= 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0:
+        return "audio/aac" if (data[1] >> 1) & 0x03 == 0 else "audio/mpeg"
     if len(data) >= 12 and data[4:8] == b"ftyp":  # MP4/M4A container (non-image brands)
         return "audio/mp4"
     if data[:4] == b".snd":  # AU
