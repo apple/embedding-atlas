@@ -266,6 +266,30 @@ _AVIF_BRANDS = {b"avif", b"avis"}
 _HEIC_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"hevm", b"hevs"}
 
 
+# MPEG audio and AAC ADTS frames have no magic bytes, only a sync word at the
+# start of each frame. 0xFF padding and other binary data can start with the
+# same bits, so the rest of the header must also be valid.
+def _is_adts_header(data: bytes) -> bool:
+    # 12-bit sync word, layer 00, and a sampling frequency index below 13.
+    return (
+        len(data) >= 3
+        and data[0] == 0xFF
+        and (data[1] & 0xF6) == 0xF0
+        and (data[2] >> 2) & 0x0F < 13
+    )
+
+
+def _is_mpeg_audio_header(data: bytes) -> bool:
+    # 11-bit sync word, then no reserved version, layer, bitrate or sample rate.
+    if len(data) < 3 or data[0] != 0xFF or (data[1] & 0xE0) != 0xE0:
+        return False
+    version = (data[1] >> 3) & 0x03
+    layer = (data[1] >> 1) & 0x03
+    bitrate = data[2] >> 4
+    sample_rate = (data[2] >> 2) & 0x03
+    return version != 0b01 and layer != 0b00 and bitrate != 0x0F and sample_rate != 0b11
+
+
 def _detect_mime_type(data: bytes) -> str | None:
     """Return the MIME type of image or audio bytes based on magic bytes, or None if unknown."""
     # Image formats
@@ -298,7 +322,11 @@ def _detect_mime_type(data: bytes) -> str | None:
         return "audio/flac"
     if data[:4] == b"OggS":  # OGG (Vorbis/Opus)
         return "audio/ogg"
-    if data[:3] == b"ID3" or data[:2] == b"\xff\xfb":  # MP3 (ID3 tag or sync frame)
+    if data[:3] == b"ID3":  # MP3 with an ID3v2 tag
+        return "audio/mpeg"
+    if _is_adts_header(data):  # AAC without a container
+        return "audio/aac"
+    if _is_mpeg_audio_header(data):  # MP3/MP2/MP1 without an ID3 tag
         return "audio/mpeg"
     if len(data) >= 12 and data[4:8] == b"ftyp":  # MP4/M4A container (non-image brands)
         return "audio/mp4"
