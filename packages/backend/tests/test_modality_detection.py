@@ -115,6 +115,18 @@ class TestDetectBinaryModality:
         data = header + b"\x00" * 20
         assert _detect_binary_modality(data) == "audio"
 
+    @pytest.mark.parametrize(
+        "data",
+        [
+            b"\xff\xd8\xff\xe0" + b"\x00" * 20,  # JPEG must win over the sync check
+            b"\xff\xff\xff" + b"\x00" * 20,  # 0xFF padding
+            b"\xff\xe1\x00" + b"\x00" * 20,  # not valid MPEG or ADTS
+            b"\xff",  # too short
+        ],
+    )
+    def test_sync_like_bytes_that_are_not_audio(self, data):
+        assert _detect_binary_modality(data) == "image"
+
     def test_mp4_m4a(self):
         data = b"\x00\x00\x00\x1cftyp" + b"M4A " + b"\x00" * 20
         assert _detect_binary_modality(data) == "audio"
