@@ -101,13 +101,11 @@ export function detectImageMimeType(data: Uint8Array): string | null {
 export function detectAudioMimeType(data: Uint8Array, path?: string): string | null {
   let container = detectAudioContainer(data);
   if (container != null) return container;
-  // Check for MPEG audio / AAC ADTS frames (both share the 0xff sync byte).
-  // Top 11 bits = sync word (0xffe0 mask). Layer bits (bits 1-2 of second byte):
-  //   00 = AAC (ADTS), non-zero = MPEG audio (MP3/MP2/MP1).
-  if (data.length >= 2 && data[0] === 0xff && (data[1] & 0xe0) === 0xe0) {
-    const layer = (data[1] >> 1) & 0x03;
-    return layer === 0 ? "audio/aac" : "audio/mpeg";
-  }
+  // MPEG audio and AAC ADTS frames have no magic bytes, only a sync word at the
+  // start of each frame. 0xff padding and other binary data can start with the
+  // same bits, so the rest of the header must also be valid.
+  if (isAdtsHeader(data)) return "audio/aac";
+  if (isMpegAudioHeader(data)) return "audio/mpeg";
   // Attempt to infering from path extension
   if (path) {
     const ext = path.split(".").pop()?.toLowerCase();
@@ -129,6 +127,21 @@ export function detectAudioMimeType(data: Uint8Array, path?: string): string | n
     }
   }
   return null;
+}
+
+// 12-bit sync word, layer 00, and a sampling frequency index below 13.
+function isAdtsHeader(data: Uint8Array): boolean {
+  return data.length >= 3 && data[0] === 0xff && (data[1] & 0xf6) === 0xf0 && ((data[2] >> 2) & 0x0f) < 13;
+}
+
+// 11-bit sync word, then no reserved version, layer, bitrate or sample rate.
+function isMpegAudioHeader(data: Uint8Array): boolean {
+  if (data.length < 3 || data[0] !== 0xff || (data[1] & 0xe0) !== 0xe0) return false;
+  const version = (data[1] >> 3) & 0x03;
+  const layer = (data[1] >> 1) & 0x03;
+  const bitrate = data[2] >> 4;
+  const sampleRate = (data[2] >> 2) & 0x03;
+  return version !== 0b01 && layer !== 0b00 && bitrate !== 0x0f && sampleRate !== 0b11;
 }
 
 function detectAudioContainer(data: Uint8Array): string | null {
