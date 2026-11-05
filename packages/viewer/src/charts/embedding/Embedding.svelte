@@ -281,6 +281,7 @@
     }}
     labels={context.embeddingViewLabels}
     cache={context.persistentCache}
+    onLabelsChange={context.onLabelsChange}
     additionalFields={isDefaultTable
       ? Object.fromEntries((context.tables[context.table]?.columns ?? []).map((c) => [c.name, c.name]))
       : {}}

@@ -132,6 +132,7 @@ export class EmbeddingAtlasStore {
       highlightScorer: writable(embeddingHighlightScorer()),
       embeddingViewConfig: options.embeddingViewConfig,
       embeddingViewLabels: options.embeddingViewLabels,
+      onLabelsChange: options.onLabelsChange,
     };
 
     this.search.result.subscribe((result) => {

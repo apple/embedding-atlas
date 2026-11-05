@@ -29,6 +29,7 @@
     onTooltip: ((value: Selection | null) => void) | null;
     onSelection: ((value: Selection[] | null) => void) | null;
     onRangeSelection: ((value: Rectangle | Point[] | null) => void) | null;
+    onLabelsChange: ((labels: LabelWithBounds[]) => void) | null;
     cache: Cache | null;
     cacheIdentifier?: any | null;
   }
@@ -109,7 +110,7 @@
   import { layoutLabels, type LabelWithPlacement } from "./labels.js";
   import { simplifyPolygon } from "./simplify_polygon.js";
   import { resolveTheme, type ThemeConfig } from "./theme.js";
-  import type { Cache, CustomComponent, Label, LabelContent, OverlayProxy } from "./types.js";
+  import type { Cache, CustomComponent, Label, LabelContent, LabelWithBounds, OverlayProxy } from "./types.js";
   import { findClusters } from "./worker/index.js";
 
   interface SelectionBase {
@@ -146,6 +147,7 @@
     onTooltip = null,
     onSelection = null,
     onRangeSelection = null,
+    onLabelsChange = null,
     cache = null,
     cacheIdentifier = undefined,
   }: Props<Selection> = $props();
@@ -199,6 +201,16 @@
     }
     rangeSelection = newValue;
     onRangeSelection?.(newValue);
+  }
+
+  let lastEmittedLabels: LabelWithBounds[] | null = null;
+
+  function emitLabelsChange(next: LabelWithBounds[]) {
+    if (deepEquals(lastEmittedLabels, next)) {
+      return;
+    }
+    lastEmittedLabels = next;
+    onLabelsChange?.(next);
   }
 
   let clusterLabels: LabelWithPlacement[] = $state([]);
@@ -578,7 +590,7 @@
     return collectedClusters.filter((x) => x.sumDensity / maxDensity > densityThreshold);
   }
 
-  async function generateLabels(viewport: ViewportState): Promise<Label[]> {
+  async function generateLabels(viewport: ViewportState): Promise<LabelWithBounds[]> {
     if (renderer == null || queryClusterLabels == null) {
       return [];
     }
@@ -615,14 +627,16 @@
       }
     }
 
-    let result: Label[] = newClusters
+    let result: LabelWithBounds[] = newClusters
       .filter((x) => x.content != null && (typeof x.content !== "string" || x.content.length > 0))
-      .map((x) => ({
+      .map((x, i) => ({
+        id: `cluster-${x.bandwidth}-${i}-${x.x.toFixed(4)}-${x.y.toFixed(4)}`,
         x: x.x,
         y: x.y,
         content: x.content!,
         priority: x.sumDensity,
         level: x.bandwidth == 10 ? 0 : 1,
+        rects: x.rects,
       }));
 
     if (cache != null) {
@@ -639,11 +653,18 @@
     }
     if (labels != null) {
       clusterLabels = await layoutLabels(vp.scale(), labels, resolvedTheme.fontFamily);
+      emitLabelsChange(
+        labels.map((label, i) => ({
+          ...label,
+          id: `label-${i}-${label.x.toFixed(4)}-${label.y.toFixed(4)}`,
+        })),
+      );
     } else {
       statusMessage = "Generating labels...";
       try {
         let result = await generateLabels(viewport);
         clusterLabels = await layoutLabels(vp.scale(), result, resolvedTheme.fontFamily);
+        emitLabelsChange(result);
       } catch (e) {
         console.error("Error while generating labels", e);
       } finally {
