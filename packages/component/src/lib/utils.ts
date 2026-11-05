@@ -33,14 +33,16 @@ export interface ViewportState {
  * If more inputs are provided in the mean time, only the last input will be run.
  * At the same time, we make the tooltip appear after delayMS time if the tooltip is not recently shown.
  */
-export function throttleTooltip<T, U>(func: (input: T) => Promise<U>, isVisible: () => boolean): (input: T) => void {
+export function throttleTooltip<T, U>(
+  func: (input: T) => Promise<U>,
+  isVisible: () => boolean,
+  delayMS: () => number = () => 300,
+  recentThresholdMS: () => number = () => 300,
+): (input: T) => void {
   let running = false;
   let next: T | undefined = undefined;
   let lastVisible: number | undefined = undefined;
   let timeout: any | undefined = undefined;
-
-  let delayMS = 300;
-  let recentThresholdMS = 300;
 
   let run = async (input: T) => {
     running = true;
@@ -68,14 +70,14 @@ export function throttleTooltip<T, U>(func: (input: T) => Promise<U>, isVisible:
       lastVisible = now;
     }
     let shouldDelay = true;
-    if (lastVisible == undefined || now - lastVisible < recentThresholdMS) {
+    if (lastVisible == undefined || now - lastVisible < recentThresholdMS()) {
       shouldDelay = false;
     }
     if (shouldDelay) {
       if (timeout) {
         clearTimeout(timeout);
       }
-      timeout = setTimeout(() => run(input), delayMS);
+      timeout = setTimeout(() => run(input), delayMS());
     } else {
       run(input);
     }

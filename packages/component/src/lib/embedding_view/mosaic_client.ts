@@ -217,8 +217,9 @@ export class DataPointQuery {
     px: number,
     py: number,
     unitDistance: number,
+    hoverRadius: number = 12,
   ): Promise<DataPoint | null> {
-    let rMax = unitDistance * 12;
+    let rMax = unitDistance * hoverRadius;
     let { x, y } = this.source;
 
     for (let r of [this.lastDistance, rMax]) {
