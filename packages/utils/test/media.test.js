@@ -73,6 +73,14 @@ describe("detectAudioMimeType", () => {
     expect(detectAudioMimeType(bytes(UNKNOWN_BYTES), "clip.mp3")).toBe("audio/mpeg");
     expect(detectAudioMimeType(bytes(UNKNOWN_BYTES), "clip.wav")).toBe("audio/wav");
   });
+
+  it("does not treat sync-like bytes that are not valid frame headers as audio", () => {
+    expect(detectAudioMimeType(bytes(JPEG_HEADER))).toBeNull();
+    expect(detectAudioMimeType(bytes([0xff, 0xff, 0xff, 0x00, 0x00]))).toBeNull(); // 0xff padding
+    expect(detectAudioMimeType(bytes([0xff, 0xe1, 0x00, 0x00, 0x00]))).toBeNull(); // not valid MPEG or ADTS
+    expect(detectAudioMimeType(bytes([0xff]))).toBeNull(); // too short
+    expect(detectAudioMimeType(bytes([0xff, 0xff, 0xff, 0x00, 0x00]), "clip.wav")).toBe("audio/wav");
+  });
 });
 
 describe("detectBase64MimeType", () => {
