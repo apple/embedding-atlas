@@ -19,6 +19,8 @@ import { type ColumnDesc, columnDescriptions, predicateToString } from "../utils
 import { findUnusedId } from "../utils/identifier.js";
 import { stableDerived, stableWritable } from "../utils/store.js";
 import { HistoryManager } from "./history_manager.js";
+import type { SearchResultItem } from "../search/search.js";
+import { applySearchResultsSelection } from "../search/selection.js";
 import { SearchStore } from "./search_store.js";
 
 /** Internal state is EmbeddingAtlasState but all fields are required. */
@@ -53,6 +55,8 @@ export class EmbeddingAtlasStore {
 
   readonly search: SearchStore;
   readonly history: HistoryManager<InternalState>;
+
+  private readonly searchSelectionSource = {};
 
   readonly props: EmbeddingAtlasProps;
 
@@ -338,6 +342,16 @@ export class EmbeddingAtlasStore {
 
   getCurrentPredicate(): string | null {
     return predicateToString(this.crossFilter.predicate(null));
+  }
+
+  selectSearchResults(items: SearchResultItem[]): void {
+    applySearchResultsSelection(
+      this.crossFilter,
+      this.searchSelectionSource,
+      this.props.data.table,
+      this.props.data.id,
+      items.map((item) => item.id),
+    );
   }
 
   getCurrentState(): EmbeddingAtlasState {
