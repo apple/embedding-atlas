@@ -20,6 +20,12 @@ function padded(values: number[], length: number = 48): number[] {
   return values.concat(new Array(length - values.length).fill(0));
 }
 
+// An ISO BMFF `ftyp` box with a major brand and compatible brands.
+function ftyp(major: string, ...compatible: string[]): number[] {
+  let content = "ftyp" + major + "\0\0\0\0" + compatible.join("");
+  return [0, 0, 0, 4 + content.length, ...Array.from(content, (c) => c.charCodeAt(0))];
+}
+
 describe("valueKind", () => {
   it("detects links and data URLs from string prefixes", () => {
     expect(valueKind("https://example.com/a.png")).toBe("link");
@@ -54,6 +60,18 @@ describe("valueKind", () => {
     expect(valueKind({ bytes: bytes(PNG_HEADER), path: null })).toBe("image");
     expect(valueKind({ bytes: bytes(PNG_HEADER) })).toBe("image");
     expect(valueKind({ bytes: bytes(WAV_HEADER) })).toBe("audio");
+  });
+
+  it("treats AVIF and HEIC as images even though they share a container with M4A", () => {
+    let avif = ftyp("avif", "mif1", "avif", "miaf");
+    let heic = ftyp("heic", "mif1", "heic", "miaf");
+    let m4a = ftyp("M4A ", "M4A ", "isom", "iso2");
+    expect(valueKind(bytes(avif))).toBe("image");
+    expect(valueKind(bytes(heic))).toBe("image");
+    expect(valueKind({ bytes: bytes(avif), path: "photo.avif" })).toBe("image");
+    expect(valueKind(base64(padded(avif)))).toBe("image");
+    expect(valueKind(bytes(m4a))).toBe("audio");
+    expect(valueKind(base64(padded(m4a)))).toBe("audio");
   });
 
   it("falls back to the path extension when magic bytes are not recognized", () => {
