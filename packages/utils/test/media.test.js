@@ -37,6 +37,12 @@ function padded(values, length = 48) {
   return values.concat(new Array(length - values.length).fill(0));
 }
 
+// An ISO BMFF `ftyp` box with a major brand and compatible brands.
+function ftyp(major, ...compatible) {
+  let content = "ftyp" + major + "\0\0\0\0" + compatible.join("");
+  return [0, 0, 0, 4 + content.length, ...Array.from(content, (c) => c.charCodeAt(0))];
+}
+
 describe("detectImageMimeType", () => {
   it("detects known image formats from magic bytes", () => {
     expect(detectImageMimeType(bytes(PNG_HEADER))).toBe("image/png");
@@ -55,6 +61,27 @@ describe("detectImageMimeType", () => {
 
   it("rejects 'BM' data whose header bytes are not zero", () => {
     expect(detectImageMimeType(bytes([0x42, 0x4d, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]))).toBeNull();
+  });
+
+  it("detects AVIF and HEIF from the major and compatible ftyp brands", () => {
+    expect(detectImageMimeType(bytes(ftyp("avif", "mif1", "avif", "miaf")))).toBe("image/avif");
+    expect(detectImageMimeType(bytes(ftyp("avis", "avif", "msf1")))).toBe("image/avif");
+    expect(detectImageMimeType(bytes(ftyp("mif1", "mif1", "avif")))).toBe("image/avif");
+    expect(detectImageMimeType(bytes(ftyp("heic", "mif1", "heic", "miaf")))).toBe("image/heic");
+    expect(detectImageMimeType(bytes(ftyp("heix", "mif1", "MiPr", "MiHA", "miaf", "heix")))).toBe("image/heic");
+    expect(detectImageMimeType(bytes(ftyp("mif1", "mif1", "heic")))).toBe("image/heic");
+    expect(detectImageMimeType(bytes(ftyp("mif1", "mif1", "miaf")))).toBe("image/heif");
+  });
+
+  it("does not treat MP4 and M4A brands as images", () => {
+    expect(detectImageMimeType(bytes(M4A_HEADER))).toBeNull();
+    expect(detectImageMimeType(bytes(ftyp("M4A ", "M4A ", "isom", "iso2")))).toBeNull();
+    expect(detectImageMimeType(bytes(ftyp("isom", "isom", "iso2", "mp41")))).toBeNull();
+  });
+
+  it("only reads brands inside the ftyp box", () => {
+    let box = ftyp("isom", "isom", "mp41");
+    expect(detectImageMimeType(bytes([...box, 0x61, 0x76, 0x69, 0x66]))).toBeNull(); // "avif" after the box
   });
 });
 
@@ -89,6 +116,9 @@ describe("detectBase64MimeType", () => {
     expect(detectBase64MimeType(base64(padded(JPEG_HEADER)))).toBe("image/jpeg");
     expect(detectBase64MimeType(base64(padded(WAV_HEADER)))).toBe("audio/wav");
     expect(detectBase64MimeType(base64(padded(ID3_HEADER)))).toBe("audio/mpeg");
+    expect(detectBase64MimeType(base64(padded(ftyp("avif", "mif1", "avif", "miaf"))))).toBe("image/avif");
+    expect(detectBase64MimeType(base64(padded(ftyp("heic", "mif1", "heic", "miaf"))))).toBe("image/heic");
+    expect(detectBase64MimeType(base64(padded(ftyp("M4A ", "M4A ", "isom", "iso2"))))).toBe("audio/mp4");
   });
 
   it("returns null for non-base64 strings", () => {
@@ -122,6 +152,13 @@ describe("detectBase64MimeType", () => {
 describe("imageToDataUrl", () => {
   it("converts a bare Uint8Array", () => {
     expect(imageToDataUrl(bytes(PNG_HEADER))).toBe("data:image/png;base64," + base64(PNG_HEADER));
+  });
+
+  it("labels AVIF and HEIC bytes with their image type", () => {
+    let avif = ftyp("avif", "mif1", "avif", "miaf");
+    let heic = ftyp("heic", "mif1", "heic", "miaf");
+    expect(imageToDataUrl(bytes(avif))).toBe("data:image/avif;base64," + base64(avif));
+    expect(imageToDataUrl(bytes(heic))).toBe("data:image/heic;base64," + base64(heic));
   });
 
   it("converts a {bytes, path} object", () => {

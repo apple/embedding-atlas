@@ -92,7 +92,40 @@ export function detectImageMimeType(data: Uint8Array): string | null {
   ) {
     return "image/webp";
   }
+  return detectHeifMimeType(data);
+}
+
+const AVIF_BRANDS = ["avif", "avis"];
+const HEIC_BRANDS = ["heic", "heix", "hevc", "hevx", "heim", "heis", "hevm", "hevs"];
+const HEIF_BRANDS = ["mif1", "msf1"];
+
+// HEIF and AVIF share the ISO BMFF container with MP4 and M4A, so only the
+// brands in the `ftyp` box tell them apart.
+function detectHeifMimeType(data: Uint8Array): string | null {
+  let brands = ftypBrands(data);
+  if (brands.some((brand) => AVIF_BRANDS.includes(brand))) return "image/avif";
+  if (brands.some((brand) => HEIC_BRANDS.includes(brand))) return "image/heic";
+  if (brands.some((brand) => HEIF_BRANDS.includes(brand))) return "image/heif";
   return null;
+}
+
+/** The major and compatible brands of a leading ISO BMFF `ftyp` box. */
+function ftypBrands(data: Uint8Array): string[] {
+  if (data.length < 12 || fourCC(data, 4) !== "ftyp") {
+    return [];
+  }
+  let brands = [fourCC(data, 8)];
+  // Compatible brands follow the 4-byte minor version at offset 12.
+  let boxSize = ((data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]) >>> 0;
+  let end = Math.min(data.length, boxSize);
+  for (let offset = 16; offset + 4 <= end; offset += 4) {
+    brands.push(fourCC(data, offset));
+  }
+  return brands;
+}
+
+function fourCC(data: Uint8Array, offset: number): string {
+  return String.fromCharCode(data[offset], data[offset + 1], data[offset + 2], data[offset + 3]);
 }
 
 /** Detect the audio MIME type from magic bytes, falling back to the file
