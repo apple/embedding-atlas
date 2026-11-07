@@ -144,6 +144,40 @@ def test_vector_auto_modality(vector_df, cache_root):
 
 
 # ---------------------------------------------------------------------------
+# 3D projection (n_components=3)
+# ---------------------------------------------------------------------------
+
+
+def test_vector_3d(vector_df, cache_root):
+    result = compute_projection(
+        vector_df,
+        inputs="vec",
+        modality="vector",
+        z="projection_z",
+        umap_args={"n_components": 3},
+        cache_root=cache_root,
+    )
+    assert len(result) == NUM_SAMPLES
+    assert "projection_x" in result.columns
+    assert "projection_y" in result.columns
+    assert "projection_z" in result.columns
+    assert result["projection_z"].notna().all()
+
+
+def test_vector_2d_has_no_z_column_by_default(vector_df, cache_root):
+    # Without n_components=3 (or without passing z), no z column should be added, even if
+    # one is requested - there's no third UMAP dimension to populate it from.
+    result = compute_projection(
+        vector_df,
+        inputs="vec",
+        modality="vector",
+        z="projection_z",
+        cache_root=cache_root,
+    )
+    assert "projection_z" not in result.columns
+
+
+# ---------------------------------------------------------------------------
 # Custom embedder receives correct data
 # ---------------------------------------------------------------------------
 

@@ -2,7 +2,11 @@
 
 export {
   EmbeddingView,
+  EmbeddingView3D,
+  EmbeddingView3DMosaic,
   EmbeddingViewMosaic,
+  type EmbeddingView3DMosaicProps,
+  type EmbeddingView3DProps,
   type EmbeddingViewMosaicProps,
   type EmbeddingViewProps,
 } from "@embedding-atlas/component";
