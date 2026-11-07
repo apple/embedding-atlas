@@ -7,7 +7,6 @@ import type { Readable, Writable } from "svelte/store";
 
 import type { HighlightScorer } from "../highlight/scheduler.js";
 import type { ColumnDesc } from "../utils/database.js";
-import type { FocusRequestTracker } from "../utils/overlay.js";
 import type { ScreenshotOptions } from "../utils/screenshot.js";
 import type { ChartThemeConfig } from "./common/theme.js";
 
@@ -116,16 +115,10 @@ export interface ChartContext {
   externalOverlay: Writable<Overlay | null | undefined>;
 
   /**
-   * The latest focus request provided externally through the `focus` prop of the viewer.
+   * The latest focus request provided externally through the `focusRequest` prop of the viewer.
    * Views animate the viewport to the requested point when a request with a new `key` arrives.
    */
   focusRequest: Writable<FocusRequest | null>;
-
-  /**
-   * Tracks which focus requests have already been handled, so that a request is
-   * acted upon only once even if views are re-created or multiple views observe it.
-   */
-  focusTracker: FocusRequestTracker;
 
   /** Highlight texts with a text query. */
   textHighlight: Writable<string | null>;

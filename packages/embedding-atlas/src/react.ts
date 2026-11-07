@@ -14,6 +14,7 @@ function makeReactWrapper<Props>(
   ComponentClass: any,
   tag: string = "div",
   style: any = { display: "flex" },
+  defaultProps?: Partial<Props>,
 ): (props: Props) => any {
   return (props) => {
     const container = useRef<any>(null);
@@ -26,18 +27,19 @@ function makeReactWrapper<Props>(
       };
     }, []);
     useEffect(() => {
-      component.current?.update(props);
+      component.current?.update({ ...defaultProps, ...props });
     }, [props]);
     return createElement(tag, { ref: container, style: style });
   };
 }
 
 // Create wrappers
-const EmbeddingAtlas = makeReactWrapper<EmbeddingAtlasProps>(EmbeddingAtlasComponent, "div", {
-  display: "flex",
-  width: "100%",
-  height: "100%",
-});
+const EmbeddingAtlas = makeReactWrapper<EmbeddingAtlasProps>(
+  EmbeddingAtlasComponent,
+  "div",
+  { display: "flex", width: "100%", height: "100%" },
+  { overlay: undefined, focusRequest: undefined },
+);
 
 const EmbeddingView = makeReactWrapper<EmbeddingViewProps>(EmbeddingViewComponent);
 const EmbeddingViewMosaic = makeReactWrapper<EmbeddingViewMosaicProps>(EmbeddingViewMosaicComponent);

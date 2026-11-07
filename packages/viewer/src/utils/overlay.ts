@@ -19,7 +19,7 @@ export function resolveEffectiveOverlay(
 }
 
 /**
- * Tracks focus requests (see the viewer's `focus` prop) for one chart context.
+ * Tracks focus requests (see the viewer's `focusRequest` prop) for one view.
  *
  * A request is acted upon only when its `key` differs from the key of the
  * previously accepted request, which makes it possible to request the same
@@ -38,7 +38,11 @@ export class FocusRequestTracker {
    * whose key was already handled).
    */
   accept(request: FocusRequest | null): number | null {
-    if (request == null || request.key === this.lastKey) {
+    if (request == null) {
+      this.latestSeq++;
+      return null;
+    }
+    if (request.key === this.lastKey) {
       return null;
     }
     this.lastKey = request.key;

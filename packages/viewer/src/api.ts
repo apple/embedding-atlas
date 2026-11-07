@@ -135,20 +135,20 @@ export interface EmbeddingAtlasProps {
   overlay?: Overlay | null;
 
   /**
-   * A request to move the viewport of the embedding view to a single point,
+   * A request to move the viewport of each embedding view of the primary table to a single point,
    * e.g. the first point of an external query result given via the `overlay` prop.
    * Changing the `overlay` prop alone never moves the viewport; only a focus
    * request does.
    *
-   * A request is acted upon only when its `key` differs from the key of the
+   * Each view acts on a request only when its `key` differs from the key of the
    * previously handled request. To focus on the same point again (e.g. after the
    * user moved the viewport), pass the same `id` with a new `key`, such as a
    * query run ID. If multiple requests arrive in quick succession, the latest
-   * one wins. Requests for IDs that do not exist in the data are ignored, and
-   * passing `null` (or leaving the prop unset) never moves the viewport.
+   * one wins. Requests for IDs that do not exist in the data are ignored.
+   * Clearing the prop prevents a pending request from moving the viewport.
    * A request given when the component mounts is executed once the data is ready.
    */
-  focus?: FocusRequest | null;
+  focusRequest?: FocusRequest | null;
 }
 
 export type { FocusRequest, Overlay };

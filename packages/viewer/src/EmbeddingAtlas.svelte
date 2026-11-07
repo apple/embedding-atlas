@@ -40,7 +40,7 @@
     cache,
     highlight: highlightProp = null,
     overlay: overlayProp,
-    focus: focusProp = null,
+    focusRequest: focusRequestProp = null,
   }: EmbeddingAtlasProps = $props();
 
   // svelte-ignore state_referenced_locally
@@ -119,7 +119,7 @@
 
   // Sync the external focus request prop.
   $effect.pre(() => {
-    store.chartContext.focusRequest.set(focusProp ?? null);
+    store.chartContext.focusRequest.set(focusRequestProp ?? null);
   });
 
   let mcpStatus = $state.raw<string | undefined>(undefined);

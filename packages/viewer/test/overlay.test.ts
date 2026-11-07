@@ -1,6 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
 import { describe, expect, it } from "vitest";
+import { latestAsync } from "../src/utils/latest_async";
 import { FocusRequestTracker, resolveEffectiveOverlay } from "../src/utils/overlay";
 import type { Overlay } from "../src/charts/chart";
 
@@ -32,6 +33,27 @@ describe("resolveEffectiveOverlay", () => {
   it("returns null when neither overlay is set", () => {
     expect(resolveEffectiveOverlay(undefined, null)).toBe(null);
     expect(resolveEffectiveOverlay(null, null)).toBe(null);
+  });
+
+  it("does not restore old external markers after clearing back to search", async () => {
+    const oldOverlay: Overlay = { nodes: [0, "A"] };
+    let resolveOld!: (value: Overlay) => void;
+    const oldLookup = new Promise<Overlay>((resolve) => {
+      resolveOld = resolve;
+    });
+    const rendered: (Overlay | null)[] = [];
+    const render = latestAsync(
+      async (overlay: Overlay | null) => (overlay === oldOverlay ? oldLookup : overlay),
+      (overlay) => rendered.push(overlay),
+    );
+
+    render(resolveEffectiveOverlay(oldOverlay, internal));
+    render(resolveEffectiveOverlay(null, internal));
+    await Promise.resolve();
+    resolveOld(oldOverlay);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(rendered).toEqual([internal]);
   });
 });
 
@@ -85,11 +107,29 @@ describe("FocusRequestTracker", () => {
     expect(tracker.isLatest(second)).toBe(true);
   });
 
-  it("an ignored request does not invalidate the latest accepted one", () => {
+  it("a duplicate request does not invalidate the latest accepted one", () => {
     const tracker = new FocusRequestTracker();
     const seq = tracker.accept({ id: "A", key: "run-1" })!;
     expect(tracker.accept({ id: "A", key: "run-1" })).toBe(null);
-    expect(tracker.accept(null)).toBe(null);
     expect(tracker.isLatest(seq)).toBe(true);
+  });
+
+  it("clearing cancels a pending request without accepting its key again", () => {
+    const tracker = new FocusRequestTracker();
+    const seq = tracker.accept({ id: 0, key: 1 })!;
+    expect(tracker.accept(null)).toBe(null);
+    expect(tracker.isLatest(seq)).toBe(false);
+    expect(tracker.accept({ id: 0, key: 1 })).toBe(null);
+    expect(tracker.accept({ id: 0, key: 2 })).not.toBe(null);
+  });
+
+  it("two views each accept the same request", () => {
+    const first = new FocusRequestTracker();
+    const second = new FocusRequestTracker();
+    const request = { id: "A", key: "run-1" };
+    expect(first.accept(request)).not.toBe(null);
+    expect(second.accept(request)).not.toBe(null);
+    expect(first.accept(request)).toBe(null);
+    expect(second.accept(request)).toBe(null);
   });
 });
