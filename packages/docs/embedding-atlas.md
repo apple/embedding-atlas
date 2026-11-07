@@ -79,6 +79,22 @@ The view can be configured with the following properties (props):
 
 <!-- @doc(ts): EmbeddingAtlasProps -->
 
+### Mark and focus external results
+
+In React or Svelte, pass these props alongside the viewer's data and coordinator:
+
+```jsx
+<EmbeddingAtlas
+  overlay={resultIds == null ? null : { nodes: resultIds }}
+  focusRequest={resultIds?.length ? { id: resultIds[0], key: queryRunId } : null}
+/>
+```
+
+`overlay` draws orange markers without changing the selection, filters, or Instances view.
+An empty `nodes` array hides the markers. Set `overlay` to `null` to restore the built-in search markers.
+Use a new `key` each time you want to move the viewport, including when the target ID stays the same.
+Omit `focusRequest` to update the markers without moving the viewport.
+
 ## State
 
 The `EmbeddingAtlasState` interface describes the state of the Embedding Atlas UI.
