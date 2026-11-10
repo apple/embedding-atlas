@@ -88,9 +88,17 @@ export interface WorkerConnection {
  * @returns A promise that resolves to a {@link WorkerConnection} once the handshake completes.
  */
 export function connectWorker(worker: Worker): Promise<WorkerConnection> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const pending = new Map<string, { resolve(v: any): void; reject(e: Error): void }>();
     const callbacks = new Map<string, (...args: any[]) => any>();
+
+    worker.onerror = (event: ErrorEvent) => {
+      const failure = event.error instanceof Error ? event.error : new Error(event.message || "Worker failed");
+      reject(failure);
+      for (const call of pending.values()) call.reject(failure);
+      pending.clear();
+      callbacks.clear();
+    };
 
     function send(msg: Record<string, any>, callArgs?: any[]): Promise<any> {
       return new Promise((res, rej) => {
