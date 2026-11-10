@@ -56,7 +56,7 @@ describe("connectWorker", () => {
     await expect(connectWorker(worker)).rejects.toThrow("startup failed");
   });
 
-  it("rejects pending and subsequent calls when the worker crashes", async () => {
+  it("rejects pending calls when the worker crashes", async () => {
     const worker = startWorker(`
       const runtime = createWorkerRuntime();
       globalThis.onmessage = runtime.handler;
@@ -70,6 +70,17 @@ describe("connectWorker", () => {
       expect(connection.call("wait")).rejects.toThrow("runtime failed"),
       expect(connection.call("crash")).rejects.toThrow("runtime failed"),
     ]);
-    await expect(connection.call("wait")).rejects.toThrow("runtime failed");
+  });
+
+  it("still accepts calls after an error the worker survives", async () => {
+    const worker = startWorker(`
+      const runtime = createWorkerRuntime();
+      globalThis.onmessage = runtime.handler;
+      runtime.registerFunction("sum", (a, b) => a + b);
+    `);
+    const connection = await connectWorker(worker);
+    // A Node thread dies on an uncaught error, while a browser worker can survive it.
+    worker.onerror({ message: "stray error" });
+    await expect(connection.call("sum", 2, 3)).resolves.toBe(5);
   });
 });
