@@ -1,6 +1,6 @@
 # Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
-from typing import TypedDict, Unpack
+from typing import Literal, TypedDict, Unpack
 
 
 class EmbeddingAtlasOptions(TypedDict, total=False):
@@ -77,7 +77,7 @@ class EmbeddingAtlasOptions(TypedDict, total=False):
 
     point_size: float | None
 
-    labels: list[dict] | None
+    labels: list[dict] | Literal["automatic", "disabled"] | None
     stop_words: list[str] | None
 
     initial_state: dict | None
@@ -127,7 +127,18 @@ def make_embedding_atlas_props(**options: Unpack[EmbeddingAtlasOptions]) -> dict
 
     # Embedding View
     set_prop("embeddingViewConfig.pointSize", options.get("point_size"))
-    set_prop("embeddingViewLabels", options.get("labels"))
+    # The frontend only takes a list of labels; "automatic" is its default and
+    # "disabled" maps to the `autoLabelEnabled` config.
+    labels = options.get("labels")
+    if isinstance(labels, str):
+        if labels not in ("automatic", "disabled"):
+            raise ValueError(
+                f'labels must be "automatic", "disabled", or a list of labels. Got {labels!r}'
+            )
+        if labels == "disabled":
+            set_prop("embeddingViewConfig.autoLabelEnabled", False)
+    else:
+        set_prop("embeddingViewLabels", labels)
     set_prop("embeddingViewConfig.autoLabelStopWords", options.get("stop_words"))
 
     # Initial state
