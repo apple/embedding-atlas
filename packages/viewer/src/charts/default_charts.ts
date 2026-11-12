@@ -23,7 +23,7 @@ export interface DefaultChartsConfig {
   table?: boolean | Partial<InstancesSpec>;
 
   /** Set to false to disable the embedding view, or an object to override spec properties */
-  embedding?: boolean | Partial<EmbeddingSpec>;
+  embedding?: boolean | (Partial<Omit<EmbeddingSpec, "data">> & { data?: Partial<EmbeddingSpec["data"]> });
 }
 
 /** Returns a list of default charts for a given data table. */
@@ -56,8 +56,15 @@ export async function defaultCharts(options: {
         neighbors: projection.neighbors,
       },
     };
-    if (typeof config.embedding == "object") {
-      spec = { ...spec, ...config.embedding };
+    if (config.embedding != null && typeof config.embedding == "object") {
+      spec = {
+        ...spec,
+        ...config.embedding,
+        data: {
+          ...spec.data,
+          ...config.embedding.data,
+        },
+      };
     }
     charts.push(spec);
     exclude.push(projection.x);
