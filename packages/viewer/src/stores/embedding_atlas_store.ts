@@ -14,6 +14,7 @@ import { defaultCharts } from "../charts/default_charts.js";
 import { EMBEDDING_ATLAS_VERSION } from "../constants.js";
 import { embeddingHighlightScorer } from "../highlight/embedding-scorer.js";
 import type { ColumnStyle } from "../renderers/types.js";
+import { createMemoryCache } from "../utils/browser_cache.js";
 import { type ColorScheme, makeColorSchemeStore } from "../utils/color_scheme.js";
 import { type ColumnDesc, columnDescriptions, predicateToString } from "../utils/database.js";
 import { findUnusedId } from "../utils/identifier.js";
@@ -119,7 +120,7 @@ export class EmbeddingAtlasStore {
       theme: this.chartTheme,
       columnStyles: this.columnStyles,
       cache: new ChartContextCache(),
-      persistentCache: options.cache ?? { get: async () => null, set: async (key, value) => {} },
+      persistentCache: options.cache ?? createMemoryCache(),
       searcher: {
         search: (query, mode) => {
           this.activePanel.set("search");
