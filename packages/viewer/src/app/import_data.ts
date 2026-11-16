@@ -87,8 +87,10 @@ async function importFileIntoTable(
         `CREATE TABLE ${table} AS SELECT *, ${literal(filename)} AS filename FROM ${literal(tempFile)}`,
       );
     } else {
+      // Match columns by name, since files can list the same columns in a different order.
+      // The subquery renames a duplicate "filename" column the same way as CREATE TABLE above.
       await connection.query(
-        `INSERT INTO ${table} SELECT *, ${literal(filename)} AS filename FROM ${literal(tempFile)}`,
+        `INSERT INTO ${table} BY NAME SELECT * FROM (SELECT *, ${literal(filename)} AS filename FROM ${literal(tempFile)})`,
       );
     }
   }
