@@ -9,6 +9,17 @@ export {
 } from "./embedding_view/api.js";
 
 export { defaultCategoryColors } from "./colors.js";
+export {
+  categoryIndexExpr,
+  DEFAULT_NULL_COLOR,
+  DEFAULT_OTHER_COLOR,
+  fieldExpr,
+  fieldKey,
+  MAX_SCALE_CATEGORIES,
+  scaleColors,
+  type ColorScale,
+  type SQLField,
+} from "./embedding_view/data/fields.js";
 
 export { ParallelCoordinatesView, type ParallelCoordinatesViewProps } from "./parallel_coordinates_view/api.js";
 export type {

@@ -102,7 +102,8 @@ export class EmbeddingAtlasStore {
       coordinator: coordinator,
       filter: this.crossFilter,
       filterFor: (table) => {
-        if (table == null) {
+        // The main table (given by name or omitted) uses the cross filter.
+        if (table == null || table == data.table) {
           return this.crossFilter;
         }
         let f = this.auxTableFilters.get(table);

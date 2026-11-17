@@ -81,6 +81,79 @@ The view can be configured with the following properties (props):
 
 <!-- @doc(ts): EmbeddingViewMosaicProps -->
 
+## Layers
+
+By default, the view draws the data as points (with a density map in the `"density"` mode), and adds labels on top.
+Use the `layers` property to control what is drawn. There are three types of layers: `"points"`, `"density"`, and `"labels"`.
+Each layer can have its own `data` (table and fields), `filter`, and colors, which default to the view's, so you can overlay multiple tables in the same view:
+
+```js
+<EmbeddingViewMosaic
+  table="data_table"
+  x="x_column"
+  y="y_column"
+  category="category_column"
+  text="text_column"
+  filter={brush}
+  layers={[
+    // Density map and contours of the main table
+    { type: "density" },
+    // Points of another table, not filtered
+    { type: "points", data: { table: "other_table", x: "x", y: "y" }, filter: null, color: "#e31a1c" },
+    // Labels generated once from the main table's text column (all data)
+    { type: "labels" },
+    // Labels that are regenerated when the filter changes
+    { type: "labels", filter: brush },
+  ]}
+  ...
+/>
+```
+
+If a layer uses the same table as the view (or doesn't specify `data.table`), its fields default to the view's fields.
+If a layer uses a different table, `data.x` and `data.y` must be specified.
+Points and density layers on the view's table use the view's `filter` by default; layers on other tables are not filtered by default, since the view's `filter` applies to the view's table. Labels layers are not filtered by default, so automatic labels stay stable. Set a labels layer's `filter` to have its labels follow the filter.
+
+Points and density layers are blended together regardless of their order; labels are drawn on top of them, and labels from all labels layers are placed together so they don't overlap.
+The tooltip and selection use the view's main data (`table`, `x`, `y`, and `filter`).
+
+### Layer Data
+
+<!-- @doc(ts): LayerData -->
+
+### Points Layer
+
+<!-- @doc(ts): PointsLayer_2 -->
+
+### Density Layer
+
+<!-- @doc(ts): DensityLayer_2 -->
+
+### Labels Layer
+
+<!-- @doc(ts): LabelsLayer_2 -->
+
+## Fields and Colors
+
+The fields (`x`, `y`, `category`, `text`, `image`, and `importance`, also in a layer's `data`) can be column names or SQL expressions, e.g., `{ sql: "x * 2" }`. A layer's expressions are evaluated for the layer's table. The `identifier` must be a column name.
+
+The `category` field colors the points and splits the density. Use `colorScale` to set how its values map to colors:
+
+```js
+<EmbeddingViewMosaic
+  category="topic"
+  colorScale={{ domain: ["sports", "politics", "science"], range: ["#1f77b4", "#ff7f0e", "#2ca02c"] }}
+  ...
+/>
+```
+
+Values are compared as text, so a domain can also list numbers or booleans. Values not in the domain use the `other` color, and null values use the `null` color.
+To color numeric values by bins, specify `thresholds` instead of `domain`; values outside the thresholds use the `other` color, and null and NaN values use the `null` color.
+Without a domain or thresholds, the category values must be category indices (integers starting from 0), colored by `colorScale.range` (or `categoryColors`).
+
+Without a `category`, the points and density use the fixed `color`.
+
+<!-- @doc(ts): ColorScale -->
+
 ## Config
 
 You can pass in an object with the following properties to the `config` property of the embedding view:

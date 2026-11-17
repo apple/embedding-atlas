@@ -4,10 +4,12 @@ import type { Coordinator } from "@uwdata/mosaic-core";
 import * as SQL from "@uwdata/mosaic-sql";
 
 import { boundingRect, type Point, type Rectangle } from "../utils.js";
+import { fieldExpr, type SQLField } from "./data/fields.js";
 import type { DataField, DataPoint, DataPointID } from "./types.js";
 
+/** A predicate for data points: by identifier, or by position (and category index, a SQL expression). */
 export function predicateForDataPoints(
-  source: { x: string; y: string; identifier?: string | null; category?: string | null },
+  source: { x: SQLField; y: SQLField; identifier?: string | null; category?: SQL.ExprNode | null },
   points: DataPoint[],
 ) {
   if (points.length == 0) {
@@ -17,26 +19,23 @@ export function predicateForDataPoints(
     let identifier = source.identifier;
     return SQL.or(...points.map((p) => SQL.eq(SQL.column(identifier), SQL.literal(p.identifier))));
   } else {
-    let x = source.x;
-    let y = source.y;
+    let x = fieldExpr(source.x);
+    let y = fieldExpr(source.y);
     let category = source.category;
     if (category != null) {
       return SQL.or(
         ...points.map((p) =>
           SQL.and(
-            SQL.eq(SQL.cast(SQL.column(x), "DOUBLE"), SQL.literal(p.x)),
-            SQL.eq(SQL.cast(SQL.column(y), "DOUBLE"), SQL.literal(p.y)),
-            SQL.eq(SQL.cast(SQL.column(category), "INTEGER"), SQL.literal(p.category)),
+            SQL.eq(SQL.cast(x, "DOUBLE"), SQL.literal(p.x)),
+            SQL.eq(SQL.cast(y, "DOUBLE"), SQL.literal(p.y)),
+            SQL.eq(SQL.cast(category, "INTEGER"), SQL.literal(p.category)),
           ),
         ),
       );
     } else {
       return SQL.or(
         ...points.map((p) =>
-          SQL.and(
-            SQL.eq(SQL.cast(SQL.column(x), "DOUBLE"), SQL.literal(p.x)),
-            SQL.eq(SQL.cast(SQL.column(y), "DOUBLE"), SQL.literal(p.y)),
-          ),
+          SQL.and(SQL.eq(SQL.cast(x, "DOUBLE"), SQL.literal(p.x)), SQL.eq(SQL.cast(y, "DOUBLE"), SQL.literal(p.y))),
         ),
       );
     }
@@ -74,7 +73,9 @@ function pointInPolygonPredicate(x: SQL.ExprNode, y: SQL.ExprNode, polygon: Poin
   return SQL.eq(SQL.mod(sum, SQL.literal(2)), SQL.literal(1));
 }
 
-export function predicateForRangeSelection(source: { x: string; y: string }, range: Rectangle | Point[]) {
+export function predicateForRangeSelection(source: { x: SQLField; y: SQLField }, range: Rectangle | Point[]) {
+  let x = fieldExpr(source.x);
+  let y = fieldExpr(source.y);
   if (range instanceof Array) {
     if (range.length < 3) {
       // Degenerate case.
@@ -82,83 +83,22 @@ export function predicateForRangeSelection(source: { x: string; y: string }, ran
     }
     let bounds = boundingRect(range);
     return SQL.and(
-      SQL.isBetween(SQL.column(source.x), [bounds.xMin, bounds.xMax]),
-      SQL.isBetween(SQL.column(source.y), [bounds.yMin, bounds.yMax]),
-      pointInPolygonPredicate(SQL.column(source.x), SQL.column(source.y), range),
+      SQL.isBetween(x, [bounds.xMin, bounds.xMax]),
+      SQL.isBetween(y, [bounds.yMin, bounds.yMax]),
+      pointInPolygonPredicate(x, y, range),
     );
   } else {
-    return SQL.and(
-      SQL.isBetween(SQL.column(source.x), [range.xMin, range.xMax]),
-      SQL.isBetween(SQL.column(source.y), [range.yMin, range.yMax]),
-    );
+    return SQL.and(SQL.isBetween(x, [range.xMin, range.xMax]), SQL.isBetween(y, [range.yMin, range.yMax]));
   }
-}
-
-export async function queryApproximateDensity(
-  coordinator: Coordinator,
-  source: { table: string; x: string; y: string; category?: string | null },
-): Promise<{
-  centerX: number;
-  centerY: number;
-  scaler: number;
-  totalCount: number;
-  categoryCount: number;
-  maxDensity: number;
-}> {
-  let { x, y, table } = source;
-  // Find the view transform that fits all data points in a square view.
-  let r = await coordinator.query(
-    SQL.Query.from(table).select({
-      centerX: SQL.sql`MEDIAN(${SQL.column(x)})`,
-      centerY: SQL.sql`MEDIAN(${SQL.column(y)})`,
-      stdX: SQL.sql`STDDEV(${SQL.column(x)})`,
-      stdY: SQL.sql`STDDEV(${SQL.column(y)})`,
-      ...(source.category != null
-        ? {
-            maxCategory: SQL.sql`MAX(${SQL.column(source.category)}::UTINYINT)`,
-          }
-        : {}),
-    }),
-  );
-  let { centerX, centerY, stdX, stdY, maxCategory } = r.get(0);
-  let scaler = 1.0 / (Math.max(stdX, stdY, 1e-3) * 3);
-
-  // Estimate maximum density.
-  // This is the approximate max number of points per square unit in data dimensions.
-  let binWidth = 0.1 / scaler;
-  let xBinClause = SQL.sql`FLOOR((${SQL.column(x)} - ${centerX}) / ${binWidth})`;
-  let yBinClause = SQL.sql`FLOOR((${SQL.column(y)} - ${centerY}) / ${binWidth})`;
-  let categoryClause = source.category != null ? SQL.column(source.category) : null;
-  let groupby = categoryClause != null ? [xBinClause, yBinClause, categoryClause] : [xBinClause, yBinClause];
-  let q = SQL.Query.from(
-    SQL.Query.from(table)
-      .select({ count: SQL.sql`COUNT(*)` })
-      .groupby(...groupby),
-  ).select({
-    totalCount: SQL.sql`SUM(count)::INT`,
-    maxCount: SQL.sql`MAX(count)::INT`,
-  });
-
-  r = await coordinator.query(q);
-  let { maxCount, totalCount } = r.get(0);
-  let maxDensity = maxCount / (binWidth * binWidth);
-
-  return {
-    centerX,
-    centerY,
-    scaler,
-    totalCount,
-    categoryCount: (maxCategory ?? 0) + 1,
-    maxDensity,
-  };
 }
 
 export interface DataPointQuerySource {
   table: string;
-  x: string;
-  y: string;
-  category?: string | null;
-  text?: string | null;
+  x: SQLField;
+  y: SQLField;
+  /** The category index (a SQL expression, see `categoryIndexExpr`). */
+  category?: SQL.ExprNode | null;
+  text?: SQLField | null;
   identifier?: string | null;
   additionalFields?: Record<string, DataField> | null;
 }
@@ -186,10 +126,10 @@ export class DataPointQuery {
       }
     }
     this.selectParams = {
-      x: SQL.sql`${SQL.column(x)}::DOUBLE`,
-      y: SQL.sql`${SQL.column(y)}::DOUBLE`,
-      ...(category != null ? { category: SQL.sql`${SQL.column(category)}::INT` } : {}),
-      ...(text != null ? { text: SQL.sql`${SQL.column(text)}` } : {}),
+      x: SQL.cast(fieldExpr(x), "DOUBLE"),
+      y: SQL.cast(fieldExpr(y), "DOUBLE"),
+      ...(category != null ? { category: SQL.cast(category, "INT") } : {}),
+      ...(text != null ? { text: fieldExpr(text) } : {}),
       ...(identifier != null ? { identifier: SQL.sql`${SQL.column(identifier)}` } : {}),
       ...fieldExpressions,
     };
@@ -226,8 +166,8 @@ export class DataPointQuery {
         continue;
       }
       let q = SQL.Query.from(this.source.table).select(this.selectParams);
-      q = q.where(SQL.sql`${SQL.column(x)} BETWEEN ${px - r} AND ${px + r}`);
-      q = q.where(SQL.sql`${SQL.column(y)} BETWEEN ${py - r} AND ${py + r}`);
+      q = q.where(SQL.isBetween(fieldExpr(x), [px - r, px + r]));
+      q = q.where(SQL.isBetween(fieldExpr(y), [py - r, py + r]));
       if (predicate) {
         q = q.where(predicate);
       }

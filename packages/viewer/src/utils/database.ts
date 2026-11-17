@@ -59,16 +59,6 @@ export function resolveSQLTemplate(template: string, vars: Record<string, string
   });
 }
 
-export interface EmbeddingLegend {
-  indexColumn: string;
-  legend: {
-    label: string;
-    color: string;
-    predicate: any;
-    count: number;
-  }[];
-}
-
 export async function columnDescriptions(coordinator: Coordinator, table: string): Promise<ColumnDesc[]> {
   let result = Array.from(await coordinator.query(`DESCRIBE ${table}`));
   return result.map((column) => ({
@@ -81,4 +71,19 @@ export async function columnDescriptions(coordinator: Coordinator, table: string
 export async function distinctCount(coordinator: Coordinator, table: string, column: string): Promise<number> {
   let r = await coordinator.query(`SELECT COUNT(DISTINCT ${SQL.column(column)}) AS count FROM ${table}`);
   return r.get(0).count;
+}
+
+/** The number of distinct non-null values of an expression (optionally of the rows matching a predicate). */
+export async function distinctCountExpr(
+  coordinator: Coordinator,
+  table: string,
+  expr: SQL.ExprNode,
+  predicate: SQL.ExprNode | null = null,
+): Promise<number> {
+  let q = SQL.Query.from(table).select({ count: SQL.sql`COUNT(DISTINCT ${expr})::INT` });
+  if (predicate != null) {
+    q = q.where(predicate);
+  }
+  let r: any = await coordinator.query(q);
+  return Number(r.get(0).count);
 }

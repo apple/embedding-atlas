@@ -80,6 +80,47 @@ The view can be configured with the following properties (props):
 
 <!-- @doc(ts): EmbeddingViewProps -->
 
+## Layers
+
+By default, the view draws the data as points (with a density map in the `"density"` mode), and adds labels on top.
+Use the `layers` property to control what is drawn. There are three types of layers: `"points"`, `"density"`, and `"labels"`.
+Each layer can have its own `data`, which defaults to the view's `data`, so you can overlay multiple datasets in the same view:
+
+```js
+<EmbeddingView
+  data={{ x: xColumn, y: yColumn, category: categoryColumn }}
+  layers={[
+    // Density map and contours of the main data
+    { type: "density" },
+    // Points of the main data
+    { type: "points" },
+    // Points of another dataset, in red
+    { type: "points", data: { x: otherX, y: otherY }, categoryColors: ["#e31a1c"], opacity: 0.8 },
+    // Labels generated automatically from the main data (with queryClusterLabels)
+    { type: "labels" },
+    // Labels supplied directly
+    { type: "labels", labels: [{ x: 0.5, y: -0.5, content: "Other dataset" }] },
+  ]}
+  queryClusterLabels={queryClusterLabels}
+  ...
+/>
+```
+
+Points and density layers are blended together regardless of their order; labels are drawn on top of them, and labels from all labels layers are placed together so they don't overlap.
+The tooltip and selection use the view's main `data` and `querySelection`.
+
+### Points Layer
+
+<!-- @doc(ts): PointsLayer -->
+
+### Density Layer
+
+<!-- @doc(ts): DensityLayer -->
+
+### Labels Layer
+
+<!-- @doc(ts): LabelsLayer -->
+
 ## Config
 
 You can pass in an object with the following properties to the `config` property of the embedding view:

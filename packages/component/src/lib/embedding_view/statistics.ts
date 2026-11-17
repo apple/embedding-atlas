@@ -91,3 +91,64 @@ export function approximateDensity2D(
   }
   return maxValue / (binWidth * binWidth);
 }
+
+/** Like `approximateDensity2D`, but counts the points of each category separately (the max over cells and
+ *  categories), matching how categorical density is drawn. The points are grouped by category (a counting sort of
+ *  their cells), then counted one category at a time in one reused grid: O(n) time and 4 bytes per point. */
+export function approximateDensity2DByCategory(
+  x: Float32Array,
+  y: Float32Array,
+  category: Uint8Array,
+  categoryCount: number,
+  binWidth: number,
+  xBinStart: number = 0,
+  yBinStart: number = 0,
+): number {
+  const g = DENSITY_GRID;
+  const h = g >> 1;
+  let cellOf = (i: number): number => {
+    let bx = Math.floor((x[i] - xBinStart) / binWidth) + h;
+    let by = Math.floor((y[i] - yBinStart) / binWidth) + h;
+    return bx < 0 || bx >= g || by < 0 || by >= g ? -1 : by * g + bx;
+  };
+  // Count the points (in the grid) of each category, then place their cells, grouped by category.
+  let starts = new Uint32Array(categoryCount + 1);
+  for (let i = 0; i < x.length; i++) {
+    if (cellOf(i) >= 0) {
+      starts[category[i] + 1] += 1;
+    }
+  }
+  for (let c = 0; c < categoryCount; c++) {
+    starts[c + 1] += starts[c];
+  }
+  let cells = new Int32Array(starts[categoryCount]);
+  let offsets = starts.slice(0, categoryCount);
+  for (let i = 0; i < x.length; i++) {
+    let cell = cellOf(i);
+    if (cell >= 0) {
+      cells[offsets[category[i]]++] = cell;
+    }
+  }
+  let grid = densityGrid;
+  if (grid == null) {
+    grid = new Int32Array(g * g);
+    densityGrid = grid;
+  } else {
+    grid.fill(0);
+  }
+  let maxValue = 0;
+  for (let c = 0; c < categoryCount; c++) {
+    let end = starts[c + 1];
+    for (let j = starts[c]; j < end; j++) {
+      let v = ++grid[cells[j]];
+      if (v > maxValue) {
+        maxValue = v;
+      }
+    }
+    // Reset the cells of this category for the next one.
+    for (let j = starts[c]; j < end; j++) {
+      grid[cells[j]] = 0;
+    }
+  }
+  return maxValue / (binWidth * binWidth);
+}
