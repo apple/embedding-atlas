@@ -17,12 +17,19 @@ def _read_csv(path):
         return list(csv.DictReader(f))
 
 
+IMPL_DOMAIN = ["rust", "rust-gpu", "python", "rust-0.6", "rust-gpu-0.6", "python-0.6"]
+IMPL_COLORS = ["#3b82f6", "#22c55e", "#f97316", "#1d4ed8", "#15803d", "#c2410c"]
+QUALITY_COLUMNS = ["trustworthiness", "knn_recall"]
+
+
 def _classify_impl(row):
-    """Return display implementation name (rust, rust-gpu, python)."""
+    """Return display implementation name (rust, rust-gpu, python, each optionally with a 0.6 suffix)."""
     impl = row["implementation"]
     gpu = row.get("gpu", "false")
     if impl == "rust" and gpu in ("true", "True"):
-        return "rust-gpu"
+        impl = "rust-gpu"
+    if row.get("layout") == "0.6":
+        impl += "-0.6"
     return impl
 
 
@@ -35,6 +42,11 @@ def _prepare_data(rows, time_col, suite="umap"):
         r["n_points"] = int(r["n_points"])
         r["dim"] = int(r.get("dim", 0))
         r[time_col] = float(r[time_col])
+        for quality_col in QUALITY_COLUMNS:
+            try:
+                r[quality_col] = float(r[quality_col])
+            except (KeyError, ValueError, TypeError):
+                r[quality_col] = None
         if suite == "nndescent":
             r["dim_metric"] = f"dim={r['dim']} / {r['metric']}"
             r["dim_metric_sort"] = r["dim"] * 1000 + hash(r["metric"]) % 100
@@ -60,8 +72,8 @@ def _timing_vegalite_spec(data, time_col, title, suite="umap"):
         "type": "nominal",
         "title": "Implementation",
         "scale": {
-            "domain": ["rust", "rust-gpu", "python"],
-            "range": ["#3b82f6", "#22c55e", "#f97316"],
+            "domain": IMPL_DOMAIN,
+            "range": IMPL_COLORS,
         },
     }
 
@@ -175,6 +187,9 @@ _IMPL_ORDER = [
     ("rust", "Rust CPU"),
     ("rust_gpu", "Rust GPU"),
     ("python", "Python"),
+    ("rust_v06", "Rust CPU 0.6"),
+    ("rust_gpu_v06", "Rust GPU 0.6"),
+    ("python_v06", "Python 0.6"),
 ]
 
 
@@ -463,6 +478,33 @@ def generate_report(csv_path, output_path, suite, datasets_dir=None):
     vegaEmbed('#recall-chart', {recall_json}, {{actions: false}})
       .catch(console.error);"""
 
+    quality_chart_html = ""
+    quality_script = ""
+    if suite == "umap" and any(r["trustworthiness"] is not None for r in data):
+        quality_chart_html = """
+    <div class="bg-white rounded-lg shadow p-6 mb-8">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Embedding Quality</h2>
+      <p class="text-sm text-gray-500 mb-2">Trustworthiness and kNN recall (k=15) on a subsample of at most 5000 points.</p>
+      <div id="trustworthiness-chart" class="w-full"></div>
+      <div id="knn-recall-chart" class="w-full"></div>
+    </div>"""
+        for column, title, element in [
+            ("trustworthiness", "Trustworthiness", "trustworthiness-chart"),
+            ("knn_recall", "kNN recall@15", "knn-recall-chart"),
+        ]:
+            quality_spec = _timing_vegalite_spec(data, column, title, suite=suite)
+            encoding = quality_spec["spec"]["encoding"]
+            encoding["y"] = {
+                "field": column,
+                "type": "quantitative",
+                "title": title,
+                "scale": {"zero": False},
+            }
+            encoding["tooltip"][-1] = {"field": column, "title": title, "format": ".4f"}
+            quality_script += f"""
+    vegaEmbed('#{element}', {json.dumps(quality_spec, indent=2)}, {{actions: false}})
+      .catch(console.error);"""
+
     # Load and serialize embeddings if available
     embeddings_html = ""
     embeddings_script = ""
@@ -493,6 +535,8 @@ def generate_report(csv_path, output_path, suite, datasets_dir=None):
 
     {recall_chart_html}
 
+    {quality_chart_html}
+
     {embeddings_html}
 
     <div class="bg-white rounded-lg shadow p-6">
@@ -505,6 +549,7 @@ def generate_report(csv_path, output_path, suite, datasets_dir=None):
     vegaEmbed('#timing-chart', {spec_json}, {{actions: false}})
       .catch(console.error);
     {recall_script}
+    {quality_script}
   </script>
   <script>
     {embeddings_script}

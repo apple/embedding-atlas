@@ -17,13 +17,19 @@
 //! ```
 
 pub mod graph;
+mod init;
+pub mod layout_modern;
 pub mod optimize;
+mod recursive_init;
 pub mod spectral;
 
+#[cfg(feature = "gpu")]
+pub mod gpu_layout_modern;
 #[cfg(feature = "gpu")]
 pub mod gpu_optimize;
 
 use std::fmt;
+use std::sync::Arc;
 
 use ndarray::Array2;
 use nndescent::rng::Xoshiro256StarStar;
@@ -35,9 +41,22 @@ use crate::graph::{
     fuzzy_simplicial_set, make_epochs_per_sample, normalize_knn_self_column, CsrMatrix,
     SparseMatrix,
 };
-use crate::spectral::{noisy_scale_coords, random_layout, spectral_layout};
+use crate::init::{
+    jitter_duplicate_rows, pca_layout, rescale_embedding, rescale_embedding_min_max,
+};
+use crate::recursive_init::{recursive_init_with_device, GpuDevice};
+use crate::spectral::{
+    noisy_scale_coords, random_layout, spectral_layout_with_centroids, tsw_spectral_layout,
+    ComponentCentroids,
+};
 
+pub use crate::init::InitRescale;
+pub use crate::layout_modern::ModernOptions;
 pub use crate::optimize::{LiveParams, Optimizer, UmapOptimizer};
+pub use crate::recursive_init::{
+    AnchorMethod, CoarseLayoutWeights, CurveExponents, CurveSchedule, GoodInitializationPolicy,
+    HubSelection, NegativeSelectionRangeMode, RecursiveInitParams,
+};
 
 // ---------- UMAP stage definitions ----------
 
@@ -111,10 +130,64 @@ impl From<nndescent::NNDescentError> for UmapError {
 /// Initialization method for the embedding.
 #[derive(Clone, Debug)]
 pub enum Init {
+    /// [`Init::Spectral`] when `compatibility_layout` is true, else [`Init::Recursive`].
+    Auto,
+    /// Principal components of the data, scaled to a small range with a little noise.
+    /// Needs the data, so it is rejected by [`Umap::builder_from_knn`].
+    Pca,
     /// Spectral embedding of the fuzzy simplicial set graph.
     Spectral,
+    /// Spectral embedding whose eigensolver is warm-started by a truncated SVD of
+    /// the graph Laplacian (umap-learn `tswspectral`).
+    TswSpectral,
     /// Random uniform initialization in [-10, 10].
     Random,
+    /// Recursive label-propagation coarsening of the fuzzy graph, anchored on a
+    /// PCA of the data (umap-learn 0.6). See [`RecursiveInitParams`].
+    Recursive,
+    /// A caller-supplied embedding of shape `(n_samples, n_components)`.
+    Custom(Array2<f32>),
+}
+
+/// Parses the names `auto`, `spectral`, `tswspectral`, `random`, `recursive` and
+/// `pca`. [`Init::Custom`] has no name.
+impl std::str::FromStr for Init {
+    type Err = String;
+
+    fn from_str(name: &str) -> Result<Self, String> {
+        match name {
+            "auto" => Ok(Self::Auto),
+            "spectral" => Ok(Self::Spectral),
+            "tswspectral" => Ok(Self::TswSpectral),
+            "random" => Ok(Self::Random),
+            "recursive" => Ok(Self::Recursive),
+            "pca" => Ok(Self::Pca),
+            other => Err(format!("unknown init method \"{other}\"")),
+        }
+    }
+}
+
+/// The high-dimensional input of a builder: borrowed from the caller, or shared.
+enum InputData<'a> {
+    Borrowed(&'a Array2<f32>),
+    Shared(Arc<Array2<f32>>),
+}
+
+impl InputData<'_> {
+    fn view(&self) -> &Array2<f32> {
+        match self {
+            InputData::Borrowed(data) => data,
+            InputData::Shared(data) => data,
+        }
+    }
+
+    /// A shared handle; borrowed data has to be copied once.
+    fn shared(&self) -> Arc<Array2<f32>> {
+        match self {
+            InputData::Borrowed(data) => Arc::new((*data).clone()),
+            InputData::Shared(data) => Arc::clone(data),
+        }
+    }
 }
 
 /// Builder for UMAP dimensionality reduction.
@@ -135,7 +208,7 @@ pub enum Init {
 ///     .unwrap();
 /// ```
 pub struct UmapBuilder<'a> {
-    data: Option<&'a Array2<f32>>,
+    data: Option<InputData<'a>>,
     /// Precomputed kNN graph (indices, distances). When set, NNDescent is skipped
     /// and `data` is unused. See [`Umap::builder_from_knn`].
     knn: Option<(Array2<i32>, Array2<f32>)>,
@@ -153,12 +226,151 @@ pub struct UmapBuilder<'a> {
     random_state: Option<u64>,
     verbose: bool,
     init: Init,
+    init_rescale: InitRescale,
+    a: Option<f32>,
+    b: Option<f32>,
+    disconnection_distance: Option<f32>,
+    negative_selection_range: usize,
+    negative_sample_scale: Option<f32>,
+    exclude_graph_neighbors: bool,
+    negative_sample_scale_adaptation_samples: usize,
+    recursive_init: RecursiveInitParams,
     gpu: bool,
-    optimizer: Optimizer,
+    optimizer: Option<Optimizer>,
+    compatibility_layout: Option<bool>,
+    init_scale_factor: f32,
     progress: Option<ProgressCallback>,
 }
 
 impl<'a> UmapBuilder<'a> {
+    fn with_inputs(data: Option<InputData<'a>>, knn: Option<(Array2<i32>, Array2<f32>)>) -> Self {
+        UmapBuilder {
+            data,
+            knn,
+            n_neighbors: 15,
+            n_components: 2,
+            min_dist: 0.1,
+            spread: 1.0,
+            metric: "euclidean".to_string(),
+            n_epochs: None,
+            learning_rate: 1.0,
+            negative_sample_rate: 5,
+            repulsion_strength: 1.0,
+            local_connectivity: 1.0,
+            set_op_mix_ratio: 1.0,
+            random_state: None,
+            verbose: false,
+            init: Init::Auto,
+            init_rescale: InitRescale::default(),
+            a: None,
+            b: None,
+            disconnection_distance: None,
+            negative_selection_range: 200_000,
+            negative_sample_scale: None,
+            exclude_graph_neighbors: false,
+            negative_sample_scale_adaptation_samples: 128,
+            recursive_init: RecursiveInitParams::default(),
+            gpu: false,
+            optimizer: None,
+            compatibility_layout: None,
+            init_scale_factor: 1.0,
+            progress: None,
+        }
+    }
+
+    fn validate(&self, n_samples: usize) -> Result<(), UmapError> {
+        let invalid = |message: &str| Err(UmapError::InvalidParameter(message.to_string()));
+        if !(0.0..=1.0).contains(&self.set_op_mix_ratio) {
+            return invalid("set_op_mix_ratio must be between 0.0 and 1.0");
+        }
+        if self.repulsion_strength.is_nan() || self.repulsion_strength < 0.0 {
+            return invalid("repulsion_strength cannot be negative");
+        }
+        if self
+            .negative_sample_scale
+            .is_some_and(|s| s.is_nan() || s < 0.0)
+        {
+            return invalid("negative_sample_scale cannot be negative");
+        }
+        if self.min_dist.is_nan() || self.min_dist < 0.0 {
+            return invalid("min_dist cannot be negative");
+        }
+        if self.min_dist > self.spread {
+            return invalid("min_dist must be less than or equal to spread");
+        }
+        if self.learning_rate.is_nan() || self.learning_rate < 0.0 {
+            return invalid("learning_rate must be positive");
+        }
+        if self.compatibility_layout == Some(true) && self.requests_modern_optimizer() {
+            return Err(UmapError::InvalidParameter(format!(
+                "optimizer={:?} requires compatibility_layout=false; \
+                 compatibility_layout=true always uses the legacy optimizer",
+                self.optimizer.expect("modern optimizer requested")
+            )));
+        }
+        if self.knn.is_none() && self.n_neighbors < 2 {
+            return invalid("n_neighbors must be greater than 1");
+        }
+        if self.n_components == 0 {
+            return invalid("n_components must be greater than 0");
+        }
+        if !self.init_scale_factor.is_finite() || self.init_scale_factor <= 0.0 {
+            return invalid("init_scale_factor must be finite and greater than zero");
+        }
+        if !matches!(self.recursive_init.coarsening_ratio, 2..=4) {
+            return invalid("recursive_coarsening_ratio must be one of 2, 3, or 4");
+        }
+        if self.a.is_some_and(|a| !a.is_finite() || a <= 0.0)
+            || self.b.is_some_and(|b| !b.is_finite() || b <= 0.0)
+        {
+            return invalid("a and b must be finite and greater than zero");
+        }
+        if self.disconnection_distance.is_some_and(f32::is_nan) {
+            return invalid("disconnection_distance must be a number");
+        }
+        match &self.init {
+            Init::Custom(embedding) if embedding.ncols() != self.n_components => {
+                invalid("init array must match n_components value")
+            }
+            Init::Custom(embedding) if embedding.nrows() != n_samples => {
+                invalid("init array must have one row per sample")
+            }
+            Init::Pca if self.data.is_none() => invalid("init \"pca\" requires the data"),
+            _ => Ok(()),
+        }
+    }
+
+    fn resolved_init(&self) -> Init {
+        match &self.init {
+            Init::Auto if self.uses_compatibility_layout() => Init::Spectral,
+            Init::Auto => Init::Recursive,
+            init => init.clone(),
+        }
+    }
+
+    fn init_plan(&self, a: f64, b: f64) -> InitPlan {
+        InitPlan {
+            init: self.resolved_init(),
+            init_rescale: self.init_rescale,
+            repulsion_strength: self.repulsion_strength,
+            init_scale_factor: self.init_scale_factor,
+            compatibility_layout: self.uses_compatibility_layout(),
+            n_components: self.n_components,
+            a,
+            b,
+            recursive_init: self.recursive_init.clone(),
+            metric: self.metric.clone(),
+            random_state: self.random_state,
+        }
+    }
+
+    fn resolved_disconnection_distance(&self) -> f32 {
+        self.disconnection_distance.unwrap_or(match self.knn {
+            Some(_) => f32::INFINITY,
+            None => default_disconnection_distance(&self.metric),
+        })
+    }
+
     /// Number of nearest neighbors. Default: 15.
     pub fn n_neighbors(mut self, n: usize) -> Self {
         self.n_neighbors = n;
@@ -237,9 +449,73 @@ impl<'a> UmapBuilder<'a> {
         self
     }
 
-    /// Initialization method. Default: Spectral.
+    /// Initialization method. Default: [`Init::Auto`].
     pub fn init_method(mut self, init: Init) -> Self {
         self.init = init;
+        self
+    }
+
+    /// How the initial embedding is scaled. Only used when `compatibility_layout`
+    /// is false. Default: [`InitRescale::Isotropic`].
+    pub fn init_rescale(mut self, method: InitRescale) -> Self {
+        self.init_rescale = method;
+        self
+    }
+
+    /// Parameter `a` of the low-dimensional curve `1 / (1 + a * x^(2b))`. Used
+    /// only together with [`b`](Self::b); otherwise both are fitted from
+    /// `min_dist` and `spread`.
+    pub fn a(mut self, a: f32) -> Self {
+        self.a = Some(a);
+        self
+    }
+
+    /// Parameter `b` of the low-dimensional curve. See [`a`](Self::a).
+    pub fn b(mut self, b: f32) -> Self {
+        self.b = Some(b);
+        self
+    }
+
+    /// Neighbors at this distance or farther are removed before the fuzzy graph is
+    /// built. Default: infinity, except 2 for `correlation` and `cosine`, and 1
+    /// for `hellinger`, `jaccard`, `bit_jaccard` and `dice`. Ignored for a
+    /// precomputed kNN graph unless set.
+    pub fn disconnection_distance(mut self, distance: f32) -> Self {
+        self.disconnection_distance = Some(distance);
+        self
+    }
+
+    /// Size of the window of nodes that negative samples are drawn from in the
+    /// modern optimizer. Default: 200000.
+    pub fn negative_selection_range(mut self, range: usize) -> Self {
+        self.negative_selection_range = range;
+        self
+    }
+
+    /// Fixed scale of the repulsive force of the modern optimizer. Default: derived
+    /// from the selection range.
+    pub fn negative_sample_scale(mut self, scale: f32) -> Self {
+        self.negative_sample_scale = Some(scale);
+        self
+    }
+
+    /// Skip negative samples that are graph neighbors of the source in the modern
+    /// optimizer. Default: false.
+    pub fn exclude_graph_neighbors(mut self, exclude: bool) -> Self {
+        self.exclude_graph_neighbors = exclude;
+        self
+    }
+
+    /// Sources sampled to adapt the negative sample scale of the Adam optimizer;
+    /// 0 disables the adaptation. Default: 128.
+    pub fn negative_sample_scale_adaptation_samples(mut self, samples: usize) -> Self {
+        self.negative_sample_scale_adaptation_samples = samples;
+        self
+    }
+
+    /// Parameters of [`Init::Recursive`]. Default: [`RecursiveInitParams::default`].
+    pub fn recursive_init_params(mut self, params: RecursiveInitParams) -> Self {
+        self.recursive_init = params;
         self
     }
 
@@ -258,9 +534,53 @@ impl<'a> UmapBuilder<'a> {
         self
     }
 
-    /// Optimizer to use for the layout SGD. Default: [`Optimizer::Sgd`].
+    /// Optimizer to use for the layout. Default: [`Optimizer::Adam`] when
+    /// `compatibility_layout` is false, else [`Optimizer::Sgd`]. Adam and Momentum
+    /// need the modern pipeline and are rejected with `compatibility_layout(true)`.
     pub fn optimizer(mut self, o: Optimizer) -> Self {
-        self.optimizer = o;
+        self.optimizer = Some(o);
+        self
+    }
+
+    fn requests_modern_optimizer(&self) -> bool {
+        matches!(self.optimizer, Some(Optimizer::Adam | Optimizer::Momentum))
+    }
+
+    /// Resolved like umap-learn's `_resolve_layout_options`: unset means the modern
+    /// pipeline exactly when a modern optimizer is requested.
+    fn uses_compatibility_layout(&self) -> bool {
+        self.compatibility_layout
+            .unwrap_or(!self.requests_modern_optimizer())
+    }
+
+    fn resolved_optimizer(&self) -> Optimizer {
+        self.optimizer
+            .unwrap_or(if self.uses_compatibility_layout() {
+                Optimizer::Sgd
+            } else {
+                Optimizer::Adam
+            })
+    }
+
+    /// Use the umap-learn 0.5 layout pipeline (`true`) or the 0.6 modern pipeline
+    /// (`false`: modern NNDescent parameters, spectral noise and isotropic init
+    /// rescaling). Default: unset, which selects the modern pipeline only when
+    /// the optimizer is Adam or Momentum.
+    pub fn compatibility_layout(self, compatibility_layout: bool) -> Self {
+        self.compatibility_layout_option(Some(compatibility_layout))
+    }
+
+    /// Like [`compatibility_layout`](Self::compatibility_layout); `None` leaves the
+    /// pipeline to be chosen from the optimizer.
+    pub fn compatibility_layout_option(mut self, compatibility_layout: Option<bool>) -> Self {
+        self.compatibility_layout = compatibility_layout;
+        self
+    }
+
+    /// Multiplier of the isotropic init rescale. Only used when
+    /// `compatibility_layout` is false. Default: 1.0.
+    pub fn init_scale_factor(mut self, factor: f32) -> Self {
+        self.init_scale_factor = factor;
         self
     }
 
@@ -274,47 +594,19 @@ impl<'a> UmapBuilder<'a> {
     ///
     /// On native, prefer [`build`](Self::build) which handles async internally.
     pub async fn build_async(self) -> Result<UmapResult, UmapError> {
-        let Prepared {
-            embedding,
-            graph: _,
-            knn_indices,
-            knn_distances,
-            head,
-            tail,
-            epochs_per_sample,
-            n_epochs,
-            n_neighbors,
-            rng_state,
-            params,
-            optimizer,
-            gpu,
-            mut logger,
-        } = self.prepare().await?;
-
-        let mut engine = build_optimizer(
-            head,
-            tail,
-            epochs_per_sample,
-            embedding,
-            params,
-            optimizer,
-            rng_state,
-            gpu,
-            n_neighbors,
-        )
-        .await;
+        let (mut setup, mut logger) = self.prepare().await?;
 
         logger.push_stage_with_message(
             STAGE_OPTIMIZATION,
-            &format!("Optimizing layout for {} epochs...", n_epochs),
+            &format!("Optimizing layout for {} epochs...", setup.n_epochs),
         );
-        engine.run_to(n_epochs, &mut logger).await;
+        setup.optimizer.run_to(setup.n_epochs, &mut logger).await;
         logger.pop_stage();
 
         Ok(UmapResult {
-            embedding: engine.into_embedding(),
-            knn_indices,
-            knn_distances,
+            embedding: setup.optimizer.into_embedding(),
+            knn_indices: setup.knn_indices,
+            knn_distances: setup.knn_distances,
         })
     }
 
@@ -322,51 +614,16 @@ impl<'a> UmapBuilder<'a> {
     /// **without** running the layout optimization. Use the returned
     /// [`UmapOptimizer`] to step/run interactively.
     pub async fn setup_async(self) -> Result<UmapSetup, UmapError> {
-        let Prepared {
-            embedding,
-            graph,
-            knn_indices,
-            knn_distances,
-            head,
-            tail,
-            epochs_per_sample,
-            n_epochs,
-            n_neighbors,
-            rng_state,
-            params,
-            optimizer,
-            gpu,
-            logger: _,
-        } = self.prepare().await?;
-
-        let optimizer = build_optimizer(
-            head,
-            tail,
-            epochs_per_sample,
-            embedding,
-            params,
-            optimizer,
-            rng_state,
-            gpu,
-            n_neighbors,
-        )
-        .await;
-
-        Ok(UmapSetup {
-            optimizer,
-            graph,
-            knn_indices,
-            knn_distances,
-            n_epochs,
-        })
+        Ok(self.prepare().await?.0)
     }
 
     /// Stages 1–7: nearest neighbors, fuzzy graph, prune, init, edge schedule.
     /// Shared by [`build_async`](Self::build_async) and [`setup_async`](Self::setup_async).
-    async fn prepare(mut self) -> Result<Prepared, UmapError> {
+    async fn prepare(mut self) -> Result<(UmapSetup, Logger), UmapError> {
         // Take ownership of any supplied kNN graph up front, so the Step 1 branch
         // below can move it without conflicting with the n_samples decision.
         let knn = self.knn.take();
+        let optimizer = self.resolved_optimizer();
 
         // n_samples comes from whichever input is present (kNN graph or data).
         let n_samples = match &knn {
@@ -381,43 +638,54 @@ impl<'a> UmapBuilder<'a> {
             }
             None => self
                 .data
+                .as_ref()
                 .expect("UmapBuilder has neither data nor a kNN graph")
+                .view()
                 .nrows(),
         };
 
-        let mut logger = Logger::new(self.verbose, self.progress, UMAP_STAGES);
+        self.validate(n_samples)?;
+        let disconnection_distance = self.resolved_disconnection_distance();
+        let mut logger = Logger::new(self.verbose, self.progress.take(), UMAP_STAGES);
 
         // Degenerate inputs have nothing to embed: with 0 or 1 points there are no
         // neighbor relationships to model. Return a trivial origin layout (empty
         // graph/knn, zero epochs) rather than erroring, so callers don't have to
         // special-case tiny datasets.
         if n_samples <= 1 {
-            return Ok(Prepared {
-                embedding: Array2::zeros((n_samples, self.n_components)),
-                graph: SparseMatrix::from_coo(n_samples, n_samples, Vec::new()).to_csr(),
-                knn_indices: Array2::zeros((n_samples, 0)),
-                knn_distances: Array2::zeros((n_samples, 0)),
-                head: Vec::new(),
-                tail: Vec::new(),
-                epochs_per_sample: Vec::new(),
-                n_epochs: 0,
-                n_neighbors: 0,
-                rng_state: [0, 0, 0],
-                params: LiveParams {
+            let optimizer = build_optimizer(
+                Vec::new(),
+                Vec::new(),
+                &[],
+                Array2::zeros((n_samples, self.n_components)),
+                LiveParams {
                     alpha: self.learning_rate,
                     gamma: self.repulsion_strength,
                     negative_sample_rate: self.negative_sample_rate as f32,
                     a: 1.0,
                     b: 1.0,
                 },
-                optimizer: self.optimizer,
-                gpu: self.gpu,
-                logger,
-            });
+                optimizer,
+                [0, 0, 0],
+                0,
+                None,
+            );
+            let setup = UmapSetup {
+                optimizer,
+                graph: SparseMatrix::from_coo(n_samples, n_samples, Vec::new()).to_csr(),
+                knn_indices: Array2::zeros((n_samples, 0)),
+                knn_distances: Array2::zeros((n_samples, 0)),
+                n_epochs: 0,
+                init_plan: self.init_plan(1.0, 1.0),
+            };
+            return Ok((setup, logger));
         }
 
         // Compute curve parameters a, b (independent of the neighbor count).
-        let (a, b) = find_ab_params(self.spread, self.min_dist);
+        let (a, b) = match (self.a, self.b) {
+            (Some(a), Some(b)) => (a as f64, b as f64),
+            _ => find_ab_params(self.spread, self.min_dist),
+        };
 
         // Step 1: obtain the kNN graph — either supplied (skip NNDescent) or computed.
         // We keep the STAGE_NEIGHBORS push/pop in both paths so a progress callback's
@@ -445,7 +713,9 @@ impl<'a> UmapBuilder<'a> {
             None => {
                 let data = self
                     .data
-                    .expect("UmapBuilder has neither data nor a kNN graph");
+                    .as_ref()
+                    .expect("UmapBuilder has neither data nor a kNN graph")
+                    .shared();
 
                 // A point can have at most `n_samples - 1` neighbors. Clamp rather
                 // than reject (mirrors umap-learn on small inputs).
@@ -497,13 +767,19 @@ impl<'a> UmapBuilder<'a> {
                     None
                 };
 
-                let mut nnd_builder = NNDescent::builder(data.clone(), &self.metric, n_neighbors)
+                let mut nnd_builder = NNDescent::builder_shared(data, &self.metric, n_neighbors)
                     .verbose(self.verbose)
                     .gpu(self.gpu)
                     .progress_option(nn_cb);
                 if let Some(seed) = self.random_state {
                     nnd_builder = nnd_builder.random_state(seed);
                 }
+                let (n_trees, max_candidates, n_iters) =
+                    nndescent_params(n_samples, n_neighbors, self.uses_compatibility_layout());
+                nnd_builder = nnd_builder
+                    .n_trees(n_trees)
+                    .max_candidates(max_candidates)
+                    .n_iters(n_iters);
                 let nnd = nnd_builder.build_async().await?;
                 let (knn_indices, knn_dists) =
                     nnd.neighbor_graph().ok_or(UmapError::NoNeighborGraph)?;
@@ -520,9 +796,11 @@ impl<'a> UmapBuilder<'a> {
 
         // Step 2: Build fuzzy simplicial set
         logger.push_stage_with_message(STAGE_GRAPH, "Constructing fuzzy simplicial set...");
+        let (graph_indices, graph_dists) =
+            disconnect_far_neighbors(&knn_indices, &knn_dists, disconnection_distance);
         let mut graph = fuzzy_simplicial_set(
-            &knn_indices,
-            &knn_dists,
+            &graph_indices,
+            &graph_dists,
             n_neighbors,
             self.set_op_mix_ratio,
             self.local_connectivity,
@@ -534,11 +812,13 @@ impl<'a> UmapBuilder<'a> {
             .unwrap_or(if n_samples <= 10000 { 500 } else { 200 });
 
         // Step 4: Prune weak edges
-        if n_epochs > 10 {
-            let max_weight = graph.max_weight();
-            let threshold = max_weight / n_epochs as f32;
-            graph.prune(threshold);
-        }
+        let default_epochs = if n_samples <= 10000 { 500 } else { 200 };
+        let pruning_epochs = if n_epochs > 10 {
+            n_epochs
+        } else {
+            default_epochs
+        };
+        graph.prune(graph.max_weight() / pruning_epochs as f32);
         logger.pop_stage();
 
         // CSR of the pruned graph: used for spectral init and retained for reset.
@@ -551,32 +831,26 @@ impl<'a> UmapBuilder<'a> {
             None => Xoshiro256StarStar::seed_from_os(),
         };
 
-        // Spectral init hurts momentum early (and costs LOBPCG time); prefer random
-        // when momentum is selected. (Single-line guard; see plan §5.)
-        let init = if self.optimizer == Optimizer::Momentum {
-            Init::Random
+        let init_plan = self.init_plan(a, b);
+        let good_initialization = init_plan.good_initialization();
+        #[cfg(feature = "gpu")]
+        let gpu_device = if self.gpu {
+            crate::gpu_optimize::request_device().await
         } else {
-            self.init.clone()
+            None
         };
-
-        let embedding = match init {
-            Init::Spectral => {
-                logger.log("Computing spectral initialization...");
-                let mut emb = spectral_layout(&csr, self.n_components, &mut rng);
-                let is_random_fallback = {
-                    let min_val = emb.iter().cloned().fold(f32::INFINITY, f32::min);
-                    let max_val = emb.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-                    max_val - min_val > 15.0
-                };
-                if is_random_fallback {
-                    logger
-                        .log("WARNING: Spectral initialization failed, fell back to random layout");
-                }
-                noisy_scale_coords(&mut emb, &mut rng, 10.0, 0.0001);
-                emb
-            }
-            Init::Random => random_layout(n_samples, self.n_components, &mut rng),
-        };
+        #[cfg(not(feature = "gpu"))]
+        let gpu_device: Option<GpuDevice> = None;
+        let embedding = init_plan
+            .embedding(
+                &csr,
+                self.data.as_ref().map(InputData::view),
+                &mut rng,
+                &mut logger,
+                gpu_device.clone(),
+            )
+            .await?;
+        self.data = None;
         logger.pop_stage();
 
         // Step 6: Extract edges and compute sampling schedule
@@ -590,94 +864,277 @@ impl<'a> UmapBuilder<'a> {
             rng.random_i64().abs(),
         ];
 
-        Ok(Prepared {
+        let mut optimizer = build_optimizer(
+            heads,
+            tails,
+            &epochs_per_sample,
             embedding,
-            graph: csr,
-            knn_indices,
-            knn_distances: knn_dists,
-            head: heads,
-            tail: tails,
-            epochs_per_sample,
-            n_epochs,
-            n_neighbors,
-            rng_state,
-            params: LiveParams {
+            LiveParams {
                 alpha: self.learning_rate,
                 gamma: self.repulsion_strength,
                 negative_sample_rate: self.negative_sample_rate as f32,
                 a: a as f32,
                 b: b as f32,
             },
-            optimizer: self.optimizer,
-            gpu: self.gpu,
-            logger,
-        })
+            optimizer,
+            rng_state,
+            n_neighbors,
+            gpu_device,
+        );
+        optimizer.set_good_initialization(good_initialization);
+        optimizer.set_modern_options(ModernOptions {
+            negative_selection_range: self.negative_selection_range,
+            negative_sample_scale: self.negative_sample_scale,
+            scale_adaptation_samples: self.negative_sample_scale_adaptation_samples,
+            exclude_graph_neighbors: self.exclude_graph_neighbors,
+        });
+        optimizer.set_n_epochs(n_epochs);
+
+        let setup = UmapSetup {
+            optimizer,
+            graph: csr,
+            knn_indices,
+            knn_distances: knn_dists,
+            n_epochs,
+            init_plan,
+        };
+        Ok((setup, logger))
     }
 }
 
-/// Construct a [`UmapOptimizer`] from prepared pieces, using the resident GPU
-/// context when `gpu` is requested and the `gpu` feature is enabled (falls back
-/// to CPU otherwise).
+/// Python's `DISCONNECTION_DISTANCES`: bounded metrics disconnect at their maximum.
+fn default_disconnection_distance(metric: &str) -> f32 {
+    match metric {
+        "correlation" | "cosine" => 2.0,
+        "hellinger" | "jaccard" | "bit_jaccard" | "dice" => 1.0,
+        _ => f32::INFINITY,
+    }
+}
+
+/// Copy of a kNN graph in which neighbors at `distance` or farther are marked
+/// missing (index -1, distance infinity).
+fn disconnect_far_neighbors(
+    indices: &Array2<i32>,
+    dists: &Array2<f32>,
+    distance: f32,
+) -> (Array2<i32>, Array2<f32>) {
+    let mut indices = indices.clone();
+    let mut dists = dists.clone();
+    if distance.is_finite() {
+        for (index, dist) in indices.iter_mut().zip(dists.iter_mut()) {
+            if *dist >= distance {
+                *index = -1;
+                *dist = f32::INFINITY;
+            }
+        }
+    }
+    (indices, dists)
+}
+
+/// NNDescent parameters chosen by umap-learn's `nearest_neighbors`:
+/// `(n_trees, max_candidates, n_iters)`.
+fn nndescent_params(
+    n_samples: usize,
+    n_neighbors: usize,
+    compatibility_layout: bool,
+) -> (usize, usize, usize) {
+    let n = n_samples as f64;
+    let tree_bonus = (n.sqrt() / 20.0).round_ties_even();
+    let (n_trees, max_candidates) = if compatibility_layout {
+        ((5.0 + tree_bonus).min(64.0) as usize, 60)
+    } else {
+        (
+            (5.0 + tree_bonus).clamp(4.0, 8.0) as usize,
+            ((1.5 * n_neighbors as f64) as usize).clamp(20, 60),
+        )
+    };
+    let n_iters = (n.log2().round_ties_even() as usize).max(5);
+    (n_trees, max_candidates, n_iters)
+}
+
+/// Construct a [`UmapOptimizer`] from prepared pieces. A `gpu_device` is only
+/// ever present when the `gpu` feature is enabled and a device was requested.
 #[allow(clippy::too_many_arguments)]
-async fn build_optimizer(
+fn build_optimizer(
     head: Vec<usize>,
     tail: Vec<usize>,
-    epochs_per_sample: Vec<f32>,
+    epochs_per_sample: &[f32],
     embedding: Array2<f32>,
     params: LiveParams,
     optimizer: Optimizer,
     rng_state: [i64; 3],
-    gpu: bool,
     n_neighbors: usize,
+    gpu_device: Option<GpuDevice>,
 ) -> UmapOptimizer {
     #[cfg(feature = "gpu")]
     {
-        if gpu {
-            return UmapOptimizer::new_gpu(
-                head,
-                tail,
-                &epochs_per_sample,
-                embedding,
-                params,
-                optimizer,
-                rng_state,
-                n_neighbors,
-            )
-            .await;
-        }
+        UmapOptimizer::new_with_device(
+            head,
+            tail,
+            epochs_per_sample,
+            embedding,
+            params,
+            optimizer,
+            rng_state,
+            n_neighbors,
+            gpu_device,
+        )
     }
     #[cfg(not(feature = "gpu"))]
     {
-        let _ = (gpu, n_neighbors);
+        let _ = (n_neighbors, gpu_device);
+        UmapOptimizer::new(
+            head,
+            tail,
+            epochs_per_sample,
+            embedding,
+            params,
+            optimizer,
+            rng_state,
+        )
     }
-    UmapOptimizer::new(
-        head,
-        tail,
-        &epochs_per_sample,
-        embedding,
-        params,
-        optimizer,
-        rng_state,
-    )
 }
 
-/// Output of [`UmapBuilder::prepare`]: everything needed to construct the
-/// optimizer plus the retained pruned graph and kNN arrays.
-struct Prepared {
-    embedding: Array2<f32>,
-    graph: CsrMatrix,
-    knn_indices: Array2<i32>,
-    knn_distances: Array2<f32>,
-    head: Vec<usize>,
-    tail: Vec<usize>,
-    epochs_per_sample: Vec<f32>,
-    n_epochs: usize,
-    n_neighbors: usize,
-    rng_state: [i64; 3],
-    params: LiveParams,
-    optimizer: Optimizer,
-    gpu: bool,
-    logger: Logger,
+/// How the initial embedding is computed and scaled. Retained after setup so the
+/// embedding can be re-initialized with another method (see
+/// [`InitPlan::initial_embedding`]).
+#[derive(Clone, Debug)]
+pub struct InitPlan {
+    init: Init,
+    init_rescale: InitRescale,
+    repulsion_strength: f32,
+    init_scale_factor: f32,
+    compatibility_layout: bool,
+    n_components: usize,
+    a: f64,
+    b: f64,
+    recursive_init: RecursiveInitParams,
+    metric: String,
+    random_state: Option<u64>,
+}
+
+impl InitPlan {
+    /// Replace the initialization method. [`Init::Auto`] resolves by
+    /// `compatibility_layout`.
+    pub fn set_init(&mut self, init: Init) {
+        self.init = match init {
+            Init::Auto if self.compatibility_layout => Init::Spectral,
+            Init::Auto => Init::Recursive,
+            init => init,
+        };
+    }
+
+    /// Whether the initial layout is good enough for the shorter Adam warm-up.
+    pub fn good_initialization(&self) -> bool {
+        matches!(self.init, Init::Recursive)
+    }
+
+    /// Compute a fresh, rescaled initial embedding of the fuzzy `graph`. `data` is
+    /// required for [`Init::Pca`] and improves [`Init::Recursive`] and the spectral
+    /// methods on disconnected graphs. Seeded by `random_state`.
+    pub fn initial_embedding(
+        &self,
+        graph: &CsrMatrix,
+        data: Option<&Array2<f32>>,
+    ) -> Result<Array2<f32>, UmapError> {
+        let mut rng = match self.random_state {
+            Some(seed) => Xoshiro256StarStar::seed_from_u64(seed),
+            None => Xoshiro256StarStar::seed_from_os(),
+        };
+        let mut logger = Logger::new(false, None, &[]);
+        pollster::block_on(self.embedding(graph, data, &mut rng, &mut logger, None))
+    }
+
+    async fn embedding(
+        &self,
+        graph: &CsrMatrix,
+        data: Option<&Array2<f32>>,
+        rng: &mut Xoshiro256StarStar,
+        logger: &mut Logger,
+        device: Option<GpuDevice>,
+    ) -> Result<Array2<f32>, UmapError> {
+        let centroids = data.map(|data| ComponentCentroids {
+            data,
+            metric: &self.metric,
+        });
+        let embedding = match &self.init {
+            Init::Spectral => {
+                logger.log("Computing spectral initialization...");
+                let mut emb =
+                    spectral_layout_with_centroids(graph, centroids, self.n_components, rng);
+                let is_random_fallback = {
+                    let min_val = emb.iter().cloned().fold(f32::INFINITY, f32::min);
+                    let max_val = emb.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                    max_val - min_val > 15.0
+                };
+                if is_random_fallback {
+                    logger
+                        .log("WARNING: Spectral initialization failed, fell back to random layout");
+                }
+                if self.compatibility_layout {
+                    noisy_scale_coords(&mut emb, rng, 10.0, 0.0001);
+                } else {
+                    noisy_scale_coords(&mut emb, rng, 40.0, 0.01);
+                }
+                emb
+            }
+            Init::TswSpectral => {
+                logger.log("Computing truncated-SVD spectral initialization...");
+                let mut emb = tsw_spectral_layout(graph, centroids, self.n_components, rng);
+                let max_coord = if self.compatibility_layout {
+                    10.0
+                } else {
+                    20.0
+                };
+                noisy_scale_coords(&mut emb, rng, max_coord, 0.0001);
+                emb
+            }
+            Init::Random => random_layout(graph.nrows, self.n_components, rng),
+            Init::Pca => {
+                logger.log("Computing PCA initialization...");
+                let data = data.ok_or_else(|| {
+                    UmapError::InvalidParameter("init \"pca\" requires the data".to_string())
+                })?;
+                let mut emb = pca_layout(data, self.n_components, rng);
+                let max_coord = if self.compatibility_layout {
+                    10.0
+                } else {
+                    20.0
+                };
+                noisy_scale_coords(&mut emb, rng, max_coord, 0.0001);
+                emb
+            }
+            Init::Custom(embedding) => jitter_duplicate_rows(embedding.clone(), rng),
+            Init::Auto => unreachable!("resolved_init never returns Auto"),
+            Init::Recursive => {
+                logger.log("Computing recursive initialization...");
+                recursive_init_with_device(
+                    graph,
+                    data,
+                    self.a,
+                    self.b,
+                    self.n_components,
+                    &self.recursive_init,
+                    rng,
+                    device,
+                )
+                .await
+            }
+        };
+        let mut embedding = embedding;
+        if self.compatibility_layout {
+            rescale_embedding_min_max(&mut embedding, 10.0);
+        } else {
+            rescale_embedding(
+                &mut embedding,
+                self.init_rescale,
+                self.repulsion_strength,
+                self.init_scale_factor,
+                graph,
+            );
+        }
+        Ok(embedding)
+    }
 }
 
 /// A prepared, not-yet-optimized UMAP: the resumable optimizer plus the retained
@@ -693,6 +1150,8 @@ pub struct UmapSetup {
     pub knn_distances: Array2<f32>,
     /// The nominal optimization horizon (default 500/200).
     pub n_epochs: usize,
+    /// How the initial embedding was computed; reuse it to re-initialize.
+    pub init_plan: InitPlan,
 }
 
 /// Result of a UMAP computation.
@@ -714,27 +1173,14 @@ impl Umap {
     /// # Arguments
     /// * `data` - Array of shape (n_samples, n_features)
     pub fn builder(data: &Array2<f32>) -> UmapBuilder<'_> {
-        UmapBuilder {
-            data: Some(data),
-            knn: None,
-            n_neighbors: 15,
-            n_components: 2,
-            min_dist: 0.1,
-            spread: 1.0,
-            metric: "euclidean".to_string(),
-            n_epochs: None,
-            learning_rate: 1.0,
-            negative_sample_rate: 5,
-            repulsion_strength: 1.0,
-            local_connectivity: 1.0,
-            set_op_mix_ratio: 1.0,
-            random_state: None,
-            verbose: false,
-            init: Init::Spectral,
-            gpu: false,
-            optimizer: Optimizer::Sgd,
-            progress: None,
-        }
+        UmapBuilder::with_inputs(Some(InputData::Borrowed(data)), None)
+    }
+
+    /// Like [`builder`](Self::builder), but takes shared ownership of the data. The
+    /// neighbor search then reads it in place instead of copying it, and the builder
+    /// frees its handle once the initial layout exists.
+    pub fn builder_shared(data: Arc<Array2<f32>>) -> UmapBuilder<'static> {
+        UmapBuilder::with_inputs(Some(InputData::Shared(data)), None)
     }
 
     /// Create a builder from a precomputed kNN graph, skipping NNDescent. No
@@ -761,27 +1207,7 @@ impl Umap {
         knn_indices: Array2<i32>,
         knn_distances: Array2<f32>,
     ) -> UmapBuilder<'static> {
-        UmapBuilder {
-            data: None,
-            knn: Some((knn_indices, knn_distances)),
-            n_neighbors: 15,
-            n_components: 2,
-            min_dist: 0.1,
-            spread: 1.0,
-            metric: "euclidean".to_string(),
-            n_epochs: None,
-            learning_rate: 1.0,
-            negative_sample_rate: 5,
-            repulsion_strength: 1.0,
-            local_connectivity: 1.0,
-            set_op_mix_ratio: 1.0,
-            random_state: None,
-            verbose: false,
-            init: Init::Spectral,
-            gpu: false,
-            optimizer: Optimizer::Sgd,
-            progress: None,
-        }
+        UmapBuilder::with_inputs(None, Some((knn_indices, knn_distances)))
     }
 }
 
@@ -1091,6 +1517,36 @@ mod tests {
         assert_eq!(result.embedding.nrows(), 200);
         assert_eq!(result.embedding.ncols(), 2);
         assert!(!result.embedding.iter().any(|x| x.is_nan()));
+    }
+
+    #[test]
+    fn test_modern_layout_builds_finite_embedding() {
+        let data = make_test_data(200, 10, 42);
+        let result = Umap::builder(&data)
+            .n_neighbors(10)
+            .n_epochs(30)
+            .compatibility_layout(false)
+            .random_state(42)
+            .build()
+            .unwrap();
+
+        assert_eq!(result.embedding.dim(), (200, 2));
+        assert!(result.embedding.iter().all(|x| x.is_finite()));
+    }
+
+    #[test]
+    fn test_modern_nndescent_params() {
+        assert_eq!(nndescent_params(100, 15, false), (5, 22, 7));
+        assert_eq!(nndescent_params(1_000_000, 15, false), (8, 22, 20));
+        assert_eq!(nndescent_params(16, 5, false), (5, 20, 5));
+        assert_eq!(nndescent_params(100, 100, false), (5, 60, 7));
+    }
+
+    #[test]
+    fn test_compatibility_nndescent_params() {
+        assert_eq!(nndescent_params(100, 15, true), (5, 60, 7));
+        assert_eq!(nndescent_params(1_000_000, 15, true), (55, 60, 20));
+        assert_eq!(nndescent_params(100_000_000, 15, true), (64, 60, 27));
     }
 
     #[test]
@@ -1491,5 +1947,393 @@ mod tests {
             .unwrap();
 
         assert!(result.embedding.iter().all(|x| x.is_finite()));
+    }
+
+    mod python_parameters {
+        use super::*;
+        use crate::init::quantile;
+
+        fn setup(builder: UmapBuilder<'_>) -> UmapSetup {
+            pollster::block_on(builder.setup_async()).unwrap()
+        }
+
+        fn invalid_message(builder: UmapBuilder<'_>) -> String {
+            match builder.build() {
+                Err(UmapError::InvalidParameter(message)) => message,
+                other => panic!("expected InvalidParameter, got {:?}", other.map(|_| ())),
+            }
+        }
+
+        fn column_spread(embedding: &Array2<f32>, column: usize) -> f32 {
+            let values = embedding.column(column).to_vec();
+            quantile(&values, 0.95) - quantile(&values, 0.05)
+        }
+
+        #[test]
+        fn invalid_parameters_are_rejected_like_python() {
+            let data = make_test_data(60, 5, 1);
+            let cases: Vec<(UmapBuilder<'_>, &str)> = vec![
+                (
+                    Umap::builder(&data).set_op_mix_ratio(1.5),
+                    "set_op_mix_ratio",
+                ),
+                (
+                    Umap::builder(&data).set_op_mix_ratio(-0.1),
+                    "set_op_mix_ratio",
+                ),
+                (
+                    Umap::builder(&data).repulsion_strength(-1.0),
+                    "repulsion_strength",
+                ),
+                (
+                    Umap::builder(&data).negative_sample_scale(-1.0),
+                    "negative_sample_scale",
+                ),
+                (
+                    Umap::builder(&data).min_dist(-0.1),
+                    "min_dist cannot be negative",
+                ),
+                (
+                    Umap::builder(&data).min_dist(2.0).spread(1.0),
+                    "less than or equal to spread",
+                ),
+                (Umap::builder(&data).learning_rate(-1.0), "learning_rate"),
+                (Umap::builder(&data).n_neighbors(1), "n_neighbors"),
+                (Umap::builder(&data).n_components(0), "n_components"),
+                (
+                    Umap::builder(&data).init_scale_factor(0.0),
+                    "init_scale_factor",
+                ),
+                (
+                    Umap::builder(&data).init_scale_factor(f32::NAN),
+                    "init_scale_factor",
+                ),
+                (Umap::builder(&data).a(0.0).b(1.0), "a and b"),
+                (
+                    Umap::builder(&data).disconnection_distance(f32::NAN),
+                    "disconnection_distance",
+                ),
+                (
+                    Umap::builder(&data).init_method(Init::Custom(Array2::zeros((60, 3)))),
+                    "match n_components",
+                ),
+                (
+                    Umap::builder(&data).init_method(Init::Custom(Array2::zeros((59, 2)))),
+                    "one row per sample",
+                ),
+            ];
+            for (builder, expected) in cases {
+                let message = invalid_message(builder);
+                assert!(
+                    message.contains(expected),
+                    "{message} should mention {expected}"
+                );
+            }
+        }
+
+        #[test]
+        fn recursive_coarsening_ratio_must_be_two_three_or_four() {
+            let data = make_test_data(60, 5, 1);
+            for ratio in [1, 5] {
+                let params = RecursiveInitParams {
+                    coarsening_ratio: ratio,
+                    ..RecursiveInitParams::default()
+                };
+                let message = invalid_message(Umap::builder(&data).recursive_init_params(params));
+                assert!(message.contains("recursive_coarsening_ratio"));
+            }
+            let params = RecursiveInitParams {
+                coarsening_ratio: 2,
+                ..RecursiveInitParams::default()
+            };
+            assert!(Umap::builder(&data)
+                .n_epochs(5)
+                .recursive_init_params(params)
+                .build()
+                .is_ok());
+        }
+
+        #[test]
+        fn pca_init_needs_data() {
+            let (indices, distances) = make_knn(&make_test_data(40, 3, 2), 6);
+            let message =
+                invalid_message(Umap::builder_from_knn(indices, distances).init_method(Init::Pca));
+            assert!(message.contains("pca"));
+        }
+
+        #[test]
+        fn explicit_a_and_b_override_the_fit() {
+            let data = make_test_data(80, 5, 3);
+            let fitted = setup(Umap::builder(&data).n_epochs(5).min_dist(0.5))
+                .optimizer
+                .params();
+            let (a, b) = find_ab_params(1.0, 0.5);
+            assert!((fitted.a - a as f32).abs() < 1e-6 && (fitted.b - b as f32).abs() < 1e-6);
+
+            let overridden = setup(Umap::builder(&data).n_epochs(5).min_dist(0.5).a(2.5).b(0.7))
+                .optimizer
+                .params();
+            assert_eq!((overridden.a, overridden.b), (2.5, 0.7));
+
+            let only_a = setup(Umap::builder(&data).n_epochs(5).min_dist(0.5).a(2.5))
+                .optimizer
+                .params();
+            assert_eq!((only_a.a, only_a.b), (fitted.a, fitted.b));
+        }
+
+        #[test]
+        fn disconnection_distance_removes_far_edges() {
+            let data = make_test_data(120, 4, 4);
+            let (indices, distances) = make_knn(&data, 10);
+            let edges =
+                |builder: UmapBuilder<'static>| setup(builder.n_epochs(50)).graph.indices.len();
+
+            let all = edges(Umap::builder_from_knn(indices.clone(), distances.clone()));
+            let median = quantile(&distances.iter().copied().collect::<Vec<_>>(), 0.5);
+            let some = edges(
+                Umap::builder_from_knn(indices.clone(), distances.clone())
+                    .disconnection_distance(median),
+            );
+            let none =
+                edges(Umap::builder_from_knn(indices, distances).disconnection_distance(0.0));
+            assert!(none < some && some < all, "{none} < {some} < {all}");
+            assert_eq!(none, 0);
+        }
+
+        #[test]
+        fn disconnection_distance_defaults_follow_the_metric() {
+            assert_eq!(default_disconnection_distance("cosine"), 2.0);
+            assert_eq!(default_disconnection_distance("correlation"), 2.0);
+            for metric in ["hellinger", "jaccard", "bit_jaccard", "dice"] {
+                assert_eq!(default_disconnection_distance(metric), 1.0);
+            }
+            assert!(default_disconnection_distance("euclidean").is_infinite());
+
+            let data = make_test_data(10, 3, 5);
+            let cosine = Umap::builder(&data).metric("cosine");
+            assert_eq!(cosine.resolved_disconnection_distance(), 2.0);
+            let overridden = Umap::builder(&data)
+                .metric("cosine")
+                .disconnection_distance(0.5);
+            assert_eq!(overridden.resolved_disconnection_distance(), 0.5);
+            let (indices, distances) = make_knn(&data, 4);
+            assert!(Umap::builder_from_knn(indices, distances)
+                .resolved_disconnection_distance()
+                .is_infinite());
+        }
+
+        #[test]
+        fn disconnecting_marks_neighbors_missing() {
+            let indices = arr2(&[[0, 1, 2], [1, 0, 2]]);
+            let distances = arr2(&[[0.0f32, 0.5, 2.0], [0.0, 1.5, 3.0]]);
+            let (new_indices, new_distances) = disconnect_far_neighbors(&indices, &distances, 1.5);
+            assert_eq!(new_indices, arr2(&[[0, 1, -1], [1, -1, -1]]));
+            assert_eq!(new_distances[[0, 2]], f32::INFINITY);
+            assert_eq!(new_distances[[0, 1]], 0.5);
+            let (same, _) = disconnect_far_neighbors(&indices, &distances, f32::INFINITY);
+            assert_eq!(same, indices);
+        }
+
+        #[test]
+        fn auto_init_follows_compatibility_layout() {
+            let data = make_test_data(20, 3, 6);
+            let compat = Umap::builder(&data);
+            assert!(matches!(compat.resolved_init(), Init::Spectral));
+            let modern = Umap::builder(&data).compatibility_layout(false);
+            assert!(matches!(modern.resolved_init(), Init::Recursive));
+            let explicit = Umap::builder(&data).init_method(Init::Pca);
+            assert!(matches!(explicit.resolved_init(), Init::Pca));
+        }
+
+        #[test]
+        fn pca_init_follows_the_top_variance_axis() {
+            let mut rng = Xoshiro256StarStar::seed_from_u64(9);
+            let data = Array2::from_shape_fn((300, 6), |(_, d)| {
+                rng.random_f32() * [0.1, 0.2, 30.0, 0.1, 0.3, 0.1][d]
+            });
+            let setup = setup(
+                Umap::builder(&data)
+                    .init_method(Init::Pca)
+                    .random_state(1)
+                    .n_neighbors(10),
+            );
+            let embedding = setup.optimizer.embedding();
+            assert!(embedding.iter().all(|x| x.is_finite()));
+
+            let correlation = correlation(&data.column(2).to_vec(), &embedding.column(0).to_vec());
+            assert!(correlation.abs() > 0.99, "correlation {correlation}");
+        }
+
+        fn correlation(a: &[f32], b: &[f32]) -> f32 {
+            let mean = |v: &[f32]| v.iter().sum::<f32>() / v.len() as f32;
+            let (mean_a, mean_b) = (mean(a), mean(b));
+            let (mut covariance, mut var_a, mut var_b) = (0.0f32, 0.0f32, 0.0f32);
+            for (x, y) in a.iter().zip(b) {
+                covariance += (x - mean_a) * (y - mean_b);
+                var_a += (x - mean_a).powi(2);
+                var_b += (y - mean_b).powi(2);
+            }
+            covariance / (var_a * var_b).sqrt()
+        }
+
+        #[test]
+        fn custom_init_keeps_the_given_layout() {
+            let data = make_test_data(50, 4, 7);
+            let init = Array2::from_shape_fn((50, 2), |(i, d)| (i * 2 + d) as f32 * 0.1);
+            let setup = setup(
+                Umap::builder(&data)
+                    .init_method(Init::Custom(init.clone()))
+                    .n_neighbors(8),
+            );
+            for column in 0..2 {
+                let correlation = correlation(
+                    &init.column(column).to_vec(),
+                    &setup.optimizer.embedding().column(column).to_vec(),
+                );
+                assert!(correlation > 0.9999, "correlation {correlation}");
+            }
+        }
+
+        #[test]
+        fn init_rescale_methods_set_their_target_spread() {
+            let data = make_test_data(400, 5, 8);
+            let target = 400f32.log10() * 3.0;
+            let build = |method| {
+                setup(
+                    Umap::builder(&data)
+                        .compatibility_layout(false)
+                        .init_method(Init::Random)
+                        .init_rescale(method)
+                        .random_state(3),
+                )
+            };
+
+            let isotropic = build(InitRescale::Isotropic);
+            let embedding = isotropic.optimizer.embedding();
+            let geometric_mean = (column_spread(embedding, 0) * column_spread(embedding, 1)).sqrt();
+            assert!((geometric_mean - target).abs() < 1e-2);
+
+            let per_axis = build(InitRescale::PerAxis);
+            for column in 0..2 {
+                let spread = column_spread(per_axis.optimizer.embedding(), column);
+                assert!((spread - target).abs() < 1e-2);
+            }
+
+            let graph_edge = build(InitRescale::GraphEdge);
+            let embedding = graph_edge.optimizer.embedding();
+            let graph = &graph_edge.graph;
+            let mut lengths_and_weights: Vec<(f32, f32)> = (0..graph.nrows)
+                .flat_map(|row| (graph.indptr[row]..graph.indptr[row + 1]).map(move |e| (row, e)))
+                .map(|(row, e)| {
+                    let delta = &embedding.row(row) - &embedding.row(graph.indices[e]);
+                    (delta.mapv(|x| x * x).sum().sqrt(), graph.data[e])
+                })
+                .collect();
+            lengths_and_weights.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let total: f32 = lengths_and_weights.iter().map(|p| p.1).sum();
+            let mut cumulative = 0.0;
+            let median = lengths_and_weights
+                .iter()
+                .find(|p| {
+                    cumulative += p.1;
+                    cumulative >= total / 2.0
+                })
+                .unwrap()
+                .0;
+            assert!((median - 1.0).abs() < 1e-3, "median edge length {median}");
+        }
+
+        #[test]
+        fn modern_optimizer_options_reach_the_adam_optimizer() {
+            let large = make_test_data(1500, 6, 10);
+            let small = make_test_data(300, 6, 11);
+            let run = |data: &Array2<f32>, configure: fn(UmapBuilder<'_>) -> UmapBuilder<'_>| {
+                configure(
+                    Umap::builder(data)
+                        .compatibility_layout(false)
+                        .init_method(Init::Random)
+                        .n_epochs(15)
+                        .random_state(2),
+                )
+                .build()
+                .unwrap()
+                .embedding
+            };
+            let baseline = run(&large, |b| b);
+            assert!(baseline.iter().all(|x| x.is_finite()));
+            assert_eq!(baseline, run(&large, |b| b));
+            assert_ne!(baseline, run(&large, |b| b.negative_sample_scale(0.25)));
+            assert_ne!(baseline, run(&large, |b| b.negative_selection_range(100)));
+            assert_ne!(
+                run(&large, |b| b.negative_selection_range(100)),
+                run(&large, |b| b
+                    .negative_selection_range(100)
+                    .negative_sample_scale_adaptation_samples(0))
+            );
+            assert_ne!(
+                run(&small, |b| b),
+                run(&small, |b| b.exclude_graph_neighbors(true))
+            );
+        }
+
+        #[test]
+        fn unset_compatibility_layout_follows_the_optimizer() {
+            let data = make_test_data(20, 3, 12);
+            let layout = |builder: UmapBuilder<'_>| {
+                (
+                    builder.uses_compatibility_layout(),
+                    builder.resolved_optimizer(),
+                )
+            };
+            assert_eq!(layout(Umap::builder(&data)), (true, Optimizer::Sgd));
+            let sgd = Umap::builder(&data).optimizer(Optimizer::Sgd);
+            assert_eq!(layout(sgd), (true, Optimizer::Sgd));
+            for optimizer in [Optimizer::Adam, Optimizer::Momentum] {
+                let modern = Umap::builder(&data).optimizer(optimizer);
+                assert_eq!(layout(modern), (false, optimizer));
+            }
+            let explicit_modern = Umap::builder(&data).compatibility_layout(false);
+            assert_eq!(layout(explicit_modern), (false, Optimizer::Adam));
+            let modern_with_sgd = Umap::builder(&data)
+                .compatibility_layout(false)
+                .optimizer(Optimizer::Sgd);
+            assert_eq!(layout(modern_with_sgd), (false, Optimizer::Sgd));
+        }
+
+        #[test]
+        fn modern_optimizer_with_compatibility_layout_true_is_rejected() {
+            let data = make_test_data(30, 3, 13);
+            for optimizer in [Optimizer::Adam, Optimizer::Momentum] {
+                let message = invalid_message(
+                    Umap::builder(&data)
+                        .compatibility_layout(true)
+                        .optimizer(optimizer),
+                );
+                assert!(
+                    message.contains("requires compatibility_layout=false"),
+                    "{message}"
+                );
+            }
+            assert!(Umap::builder(&data)
+                .compatibility_layout(true)
+                .optimizer(Optimizer::Sgd)
+                .n_epochs(5)
+                .build()
+                .is_ok());
+        }
+
+        #[test]
+        fn custom_init_with_coincident_rows_is_jittered() {
+            let data = make_test_data(50, 4, 14);
+            let init = Array2::from_shape_fn((50, 2), |(i, d)| (i.max(1) * 2 + d) as f32);
+            let setup = setup(
+                Umap::builder(&data)
+                    .init_method(Init::Custom(init))
+                    .n_neighbors(8)
+                    .random_state(1),
+            );
+            let embedding = setup.optimizer.embedding();
+            assert_ne!(embedding.row(0), embedding.row(1));
+        }
     }
 }

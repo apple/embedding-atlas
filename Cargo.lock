@@ -1262,6 +1262,7 @@ dependencies = [
  "nndescent",
  "pollster",
  "rayon",
+ "web-sys",
  "wgpu",
 ]
 

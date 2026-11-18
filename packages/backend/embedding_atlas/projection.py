@@ -67,7 +67,9 @@ def compute_projection(
         batch_size: int or None, batch size for processing.
         max_concurrency: int or None, maximum number of concurrent batches.
         embedder_args: dict, embedder-specific arguments (e.g., api_key, api_base).
-        umap_args: dict, arguments for the UMAP algorithm.
+        umap_args: dict, arguments for the UMAP algorithm. The projection uses the
+            umap-learn 0.6 pipeline by default; pass ``compatibility_layout=True``
+            for the 0.5 pipeline.
         cache_root: str or Path or None, root directory for caching results.
 
     Returns:
@@ -164,7 +166,7 @@ async def async_compute_projection(
         max_concurrency = min(embedder_max_concurrency, max_concurrency)
 
     cache_key = {
-        "version": 1,
+        "version": 2,
         "inputs": canonical,
         "modality": modality,
         "embedder": embedder_name,
@@ -448,8 +450,7 @@ def _run_umap(
     *,
     umap_args: dict | None = None,
 ) -> Projection:
-    if umap_args is None:
-        umap_args = {}
+    umap_args = {"compatibility_layout": False, **(umap_args or {})}
 
     logger.info("Running UMAP for input with shape %s...", str(hidden_vectors.shape))  # type: ignore
 
@@ -466,6 +467,7 @@ def _run_umap(
         metric_kwds=None,
         angular=False,
         random_state=umap_args.get("random_state"),
+        compatibility_layout=umap_args["compatibility_layout"] is not False,
     )
 
     kwargs = {k: v for k, v in umap_args.items() if k != "metric"}

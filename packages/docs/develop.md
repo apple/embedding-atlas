@@ -31,7 +31,7 @@ This repository is organized as a monorepo with the following packages:
 - [uv](https://docs.astral.sh/uv/) package manager
 - [Rust](https://www.rust-lang.org/)
 - WebAssembly target: `rustup target add wasm32-unknown-unknown`
-- wasm-bindgen CLI: `cargo install -f wasm-bindgen-cli --version 0.2.114`
+- wasm-bindgen CLI: `cargo install -f wasm-bindgen-cli --version 0.2.121`. The CLI version must match the `wasm-bindgen = "=..."` pin in the root `Cargo.toml`. Update this line when you change the pin.
 
 ## Install and Build
 

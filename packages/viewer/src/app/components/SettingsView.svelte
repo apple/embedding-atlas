@@ -17,6 +17,7 @@
   import { defaultModels } from "../../inference/model_config_store.js";
   import { inferProvider } from "../../inference/resolve.js";
   import { jsTypeFromDBType } from "../../utils/database.js";
+  import { DEFAULT_UMAP_OPTIMIZER, type UMAPOptimizer } from "../umap_optimizer.js";
 
   // Fallbacks when the user clears the model field on confirm.
   const DEFAULT_TEXT_MODEL = "Xenova/all-MiniLM-L6-v2";
@@ -63,12 +64,16 @@
 
   let umapMinDist = $state(0.1);
   let umapNNeighbors = $state(15);
+  let umapRepulsionStrength = $state(1);
   let umapGpu = $state(true);
+  let umapOptimizer: UMAPOptimizer = $state(DEFAULT_UMAP_OPTIMIZER);
 
   let umapOptions = $derived<UMAPOptions>({
     minDist: umapMinDist,
     nNeighbors: umapNNeighbors,
+    repulsionStrength: umapRepulsionStrength,
     gpu: umapGpu,
+    optimizer: umapOptimizer,
   });
 
   let numericalColumns = $derived(columns.filter((x) => jsTypeFromDBType(x.column_type) == "number"));
@@ -251,6 +256,23 @@
         <div class="w-full flex flex-row items-center">
           <div class="w-[6rem] dark:text-slate-400">Neighbors</div>
           <NumberInput className="flex-1 min-w-0" bind:value={umapNNeighbors} min={2} max={200} step={1} />
+        </div>
+        <div class="w-full flex flex-row items-center">
+          <div class="w-[6rem] dark:text-slate-400">Repulsion</div>
+          <NumberInput className="flex-1 min-w-0" bind:value={umapRepulsionStrength} min={0.1} max={64} step={0.5} />
+        </div>
+        <div class="w-full flex flex-row items-center">
+          <div class="w-[6rem] dark:text-slate-400">Optimizer</div>
+          <Select
+            class="flex-1 min-w-0"
+            value={umapOptimizer}
+            onChange={(v) => (umapOptimizer = v)}
+            options={[
+              { value: "adam", label: "Adam" },
+              { value: "momentum", label: "Momentum" },
+              { value: "sgd", label: "SGD" },
+            ]}
+          />
         </div>
         <div class="w-full flex flex-row items-center">
           <div class="w-[6rem] dark:text-slate-400">GPU</div>

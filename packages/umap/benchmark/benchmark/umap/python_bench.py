@@ -25,7 +25,12 @@ def write_f32_bin(path, data):
 @click.argument("metric")
 @click.option("--output", default=None, help="JSON output path")
 @click.option("--embedding-path", default=None, help="Embedding output path")
-def main(data_dir, metric, output, embedding_path):
+@click.option(
+    "--compatibility-layout/--no-compatibility-layout",
+    default=True,
+    help="umap-learn 0.5 layout (default) or the 0.6 pipeline.",
+)
+def main(data_dir, metric, output, embedding_path, compatibility_layout):
     output_path = output or os.path.join(data_dir, "result.json")
 
     with open(os.path.join(data_dir, "meta.json")) as f:
@@ -51,6 +56,7 @@ def main(data_dir, metric, output, embedding_path):
         n_components=2,
         min_dist=0.1,
         metric=metric,
+        compatibility_layout=compatibility_layout,
         n_jobs=n_jobs_val,
     )
 
@@ -72,6 +78,7 @@ def main(data_dir, metric, output, embedding_path):
         "dim": dim,
         "metric": metric,
         "gpu": False,
+        "layout": "0.5" if compatibility_layout else "0.6",
         "time_s": round(elapsed, 3),
     }
     with open(output_path, "w") as f:

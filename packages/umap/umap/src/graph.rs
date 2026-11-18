@@ -215,7 +215,12 @@ pub fn smooth_knn_dist(
     let n_samples = distances.nrows();
     let n_neighbors = distances.ncols();
 
-    let mean_distances: f32 = distances.mean().unwrap_or(0.0);
+    let finite_count = distances.iter().filter(|d| d.is_finite()).count();
+    let mean_distances: f32 = if finite_count > 0 {
+        distances.iter().filter(|d| d.is_finite()).sum::<f32>() / finite_count as f32
+    } else {
+        0.0
+    };
 
     let results: Vec<(f32, f32)> = (0..n_samples)
         .into_par_iter()
@@ -224,7 +229,7 @@ pub fn smooth_knn_dist(
             let non_zero_dists: Vec<f32> = (0..n_neighbors)
                 .filter_map(|j| {
                     let d = distances[[i, j]];
-                    if d > 0.0 {
+                    if d.is_finite() && d > 0.0 {
                         Some(d)
                     } else {
                         None
@@ -233,9 +238,8 @@ pub fn smooth_knn_dist(
                 .collect();
 
             // Compute rho: distance to the local_connectivity-th nearest neighbor
-            let lc = local_connectivity as usize;
             let mut rho = 0.0f32;
-            if non_zero_dists.len() >= lc {
+            if non_zero_dists.len() as f32 >= local_connectivity {
                 let index = local_connectivity.floor() as usize;
                 let interpolation = local_connectivity - index as f32;
                 if index > 0 {
@@ -252,7 +256,7 @@ pub fn smooth_knn_dist(
 
             // Binary search for sigma
             let mut lo = 0.0f64;
-            let mut hi = f64::INFINITY;
+            let mut hi = f32::MAX as f64;
             let mut mid = 1.0f64;
             let rho_i = rho as f64;
 
@@ -278,7 +282,7 @@ pub fn smooth_knn_dist(
                     mid = (lo + hi) / 2.0;
                 } else {
                     lo = mid;
-                    if hi == f64::INFINITY {
+                    if hi >= f32::MAX as f64 {
                         mid *= 2.0;
                     } else {
                         mid = (lo + hi) / 2.0;
@@ -290,7 +294,13 @@ pub fn smooth_knn_dist(
 
             // Apply minimum distance scale
             if rho > 0.0 {
-                let mean_ith: f32 = distances.row(i).iter().sum::<f32>() / n_neighbors as f32;
+                let finite_row: Vec<f32> = distances
+                    .row(i)
+                    .iter()
+                    .copied()
+                    .filter(|d| d.is_finite())
+                    .collect();
+                let mean_ith = finite_row.iter().sum::<f32>() / finite_row.len() as f32;
                 if sigma < MIN_K_DIST_SCALE * mean_ith {
                     sigma = MIN_K_DIST_SCALE * mean_ith;
                 }
@@ -537,5 +547,45 @@ mod tests {
         assert_eq!(od, arr2(&[[0.0, 1.0, 2.0], [0.0, 1.0, 4.0]]));
         // No fabricated (-1) entries anywhere.
         assert!(oi.iter().all(|&v| v >= 0));
+    }
+
+    #[test]
+    fn smooth_knn_dist_ignores_infinite_distances() {
+        let inf = f32::INFINITY;
+        let with_inf = arr2(&[[0.0, 1.0, 2.0, inf], [0.0, 1.5, 2.5, 3.5]]);
+        let (sigmas, rhos) = smooth_knn_dist(&with_inf, 4.0, 64, 1.0, 1.0);
+        assert!(
+            sigmas.iter().all(|s| s.is_finite() && *s > 0.0),
+            "{sigmas:?}"
+        );
+        assert_eq!(rhos, vec![1.0, 1.5]);
+    }
+
+    #[test]
+    fn smooth_knn_dist_all_infinite_row_uses_zero_rho() {
+        let inf = f32::INFINITY;
+        let distances = arr2(&[[0.0, inf, inf], [0.0, 1.0, 2.0]]);
+        let (sigmas, rhos) = smooth_knn_dist(&distances, 3.0, 64, 1.0, 1.0);
+        assert_eq!(rhos[0], 0.0);
+        assert!(sigmas.iter().all(|s| s.is_finite()), "{sigmas:?}");
+    }
+
+    #[test]
+    fn smooth_knn_dist_fractional_local_connectivity_with_few_neighbors() {
+        let inf = f32::INFINITY;
+        let distances = arr2(&[[0.0, 2.0, inf], [0.0, inf, inf], [0.0, 1.0, 3.0]]);
+        let (_, rhos) = smooth_knn_dist(&distances, 3.0, 64, 1.5, 1.0);
+        assert_eq!(rhos, vec![2.0, 0.0, 2.0]);
+        let (_, rhos) = smooth_knn_dist(&distances, 3.0, 64, 0.5, 1.0);
+        assert_eq!(rhos, vec![1.0, 0.0, 0.5]);
+    }
+
+    #[test]
+    fn smooth_knn_dist_all_non_finite_input_does_not_panic() {
+        let inf = f32::INFINITY;
+        let distances = arr2(&[[inf, inf], [inf, inf]]);
+        let (sigmas, rhos) = smooth_knn_dist(&distances, 2.0, 64, 1.0, 1.0);
+        assert_eq!(rhos, vec![0.0, 0.0]);
+        assert!(sigmas.iter().all(|s| s.is_finite()));
     }
 }

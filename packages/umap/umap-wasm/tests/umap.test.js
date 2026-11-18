@@ -187,6 +187,192 @@ describe("createUMAP", () => {
     }
   });
 
+  it("runs the 0.6 pipeline (compatibilityLayout false) and is deterministic", async () => {
+    const data = makeRandomData(COUNT, INPUT_DIM);
+    const run = async () => {
+      const instance = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, {
+        seed: 42,
+        nEpochs: 30,
+        compatibilityLayout: false,
+      });
+      await instance.run();
+      const embedding = new Float32Array(instance.embedding);
+      instance.destroy();
+      return embedding;
+    };
+    const first = await run();
+    const second = await run();
+    expect(first.length).toBe(COUNT * OUTPUT_DIM);
+    for (const v of first) expect(Number.isFinite(v)).toBe(true);
+    expect(second).toEqual(first);
+  });
+
+  it("accepts adam, recursive init and initScaleFactor explicitly", async () => {
+    const data = makeRandomData(COUNT, INPUT_DIM);
+    umap = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, {
+      seed: 42,
+      nEpochs: 20,
+      compatibilityLayout: false,
+      optimizer: "adam",
+      initializeMethod: "recursive",
+      initScaleFactor: 0.5,
+    });
+    await umap.run();
+    for (const v of umap.embedding) expect(Number.isFinite(v)).toBe(true);
+  });
+
+  it("setOptimizer('adam') keeps the embedding finite", async () => {
+    const data = makeRandomData(COUNT, INPUT_DIM);
+    umap = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, {
+      seed: 42,
+      nEpochs: 30,
+      initializeMethod: "random",
+    });
+    umap.setOptimizer("adam");
+    await umap.step(10);
+    for (const v of umap.embedding) expect(Number.isFinite(v)).toBe(true);
+  });
+
+  for (const optimizer of ["momentum", "adam"]) {
+    it(`rejects optimizer=${optimizer} with compatibilityLayout=true`, async () => {
+      const data = makeRandomData(COUNT, INPUT_DIM);
+      await expect(
+        createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, { seed: 42, compatibilityLayout: true, optimizer }),
+      ).rejects.toThrow(/compatibility_layout/);
+    });
+
+    it(`selects the 0.6 pipeline for optimizer=${optimizer} when compatibilityLayout is unset`, async () => {
+      const options = { seed: 42, nEpochs: 20, optimizer };
+      const data = makeRandomData(COUNT, INPUT_DIM);
+      const unset = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, options);
+      const modern = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, { ...options, compatibilityLayout: false });
+      await unset.run();
+      await modern.run();
+      expect(Array.from(unset.embedding)).toEqual(Array.from(modern.embedding));
+      unset.destroy();
+      modern.destroy();
+    });
+  }
+
+  for (const compatibilityLayout of [true, false]) {
+    for (const optimizer of ["sgd", "momentum", "adam"]) {
+      if (compatibilityLayout && optimizer !== "sgd") continue;
+      it(`runs optimizer=${optimizer} with compatibilityLayout=${compatibilityLayout}`, async () => {
+        const data = makeRandomData(COUNT, INPUT_DIM);
+        umap = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, {
+          seed: 42,
+          nEpochs: 20,
+          compatibilityLayout,
+          optimizer,
+        });
+        await umap.run();
+        expect(umap.embedding.length).toBe(COUNT * OUTPUT_DIM);
+        for (const v of umap.embedding) expect(Number.isFinite(v)).toBe(true);
+      });
+    }
+  }
+
+  for (const initializeMethod of ["auto", "spectral", "tswspectral", "random", "recursive", "pca"]) {
+    it(`builds with initializeMethod=${initializeMethod}`, async () => {
+      const data = makeRandomData(COUNT, INPUT_DIM);
+      umap = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, { seed: 42, nEpochs: 10, initializeMethod });
+      expect(umap.embedding.length).toBe(COUNT * OUTPUT_DIM);
+      for (const v of umap.embedding) expect(Number.isFinite(v)).toBe(true);
+    });
+  }
+
+  for (const method of ["auto", "spectral", "tswspectral", "random", "recursive", "pca"]) {
+    it(`reset('${method}') restarts from epoch 0 with a finite embedding`, async () => {
+      const data = makeRandomData(COUNT, INPUT_DIM);
+      umap = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, {
+        seed: 42,
+        nEpochs: 20,
+        compatibilityLayout: false,
+      });
+      await umap.step(5);
+      umap.reset(method, data);
+      expect(umap.epoch).toBe(0);
+      await umap.step(5);
+      for (const v of umap.embedding) expect(Number.isFinite(v)).toBe(true);
+    });
+  }
+
+  it("reset needs data for pca, validates its size, and works without it otherwise", async () => {
+    const data = makeRandomData(COUNT, INPUT_DIM);
+    umap = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, { seed: 42, nEpochs: 10 });
+    expect(() => umap.reset("pca")).toThrow(/input data/);
+    expect(() => umap.reset("pca", data.subarray(1))).toThrow(/does not match/);
+    for (const method of ["spectral", "tswspectral", "random", "recursive"]) {
+      umap.reset(method);
+      for (const v of umap.embedding) expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it("rejects unknown option values", async () => {
+    const data = makeRandomData(COUNT, INPUT_DIM);
+    const create = (options) => createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, { nEpochs: 5, ...options });
+    await expect(create({ initializeMethod: "bogus" })).rejects.toThrow(/init method/);
+    await expect(create({ optimizer: "bogus" })).rejects.toThrow(/optimizer/);
+    await expect(create({ initRescale: "bogus" })).rejects.toThrow(/initRescale/);
+    await expect(create({ recursiveInit: { hubSelection: "bogus" } })).rejects.toThrow(/hubSelection/);
+  });
+
+  it("accepts the layout tuning options", async () => {
+    const data = makeRandomData(COUNT, INPUT_DIM);
+    for (const initRescale of ["isotropic", "perAxis", "graphEdge"]) {
+      const instance = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, {
+        seed: 42,
+        nEpochs: 15,
+        compatibilityLayout: false,
+        initRescale,
+        a: 1.5,
+        b: 0.9,
+        disconnectionDistance: 100,
+        negativeSelectionRange: 50,
+        negativeSampleScale: 1,
+        excludeGraphNeighbors: true,
+        negativeSampleScaleAdaptationSamples: 0,
+      });
+      await instance.run();
+      for (const v of instance.embedding) expect(Number.isFinite(v)).toBe(true);
+      instance.destroy();
+    }
+  });
+
+  it("accepts recursiveInit options", async () => {
+    const data = makeRandomData(COUNT, INPUT_DIM);
+    umap = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, {
+      seed: 42,
+      nEpochs: 15,
+      initializeMethod: "recursive",
+      recursiveInit: {
+        baseInitThreshold: 32,
+        nEmbeddingEpochs: 10,
+        coarseningRatio: 2,
+        hubSelection: "random",
+        coarseLayoutWeights: "fuzzyUnion",
+        curveSchedule: { initialA: 0.5, initialB: 0.5, recursiveA: 0.5, recursiveB: 0.5 },
+        goodInitializationPolicy: "always",
+        anchorMethod: "fullPca",
+        negativeSelectionRangeMode: "coarseN",
+      },
+    });
+    await umap.run();
+    for (const v of umap.embedding) expect(Number.isFinite(v)).toBe(true);
+  });
+
+  it("accepts hubSelection diverse", async () => {
+    const data = makeRandomData(COUNT, INPUT_DIM);
+    umap = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, {
+      seed: 42,
+      nEpochs: 15,
+      initializeMethod: "recursive",
+      recursiveInit: { baseInitThreshold: 32, coarseningRatio: 2, hubSelection: "diverse" },
+    });
+    await umap.run();
+    for (const v of umap.embedding) expect(Number.isFinite(v)).toBe(true);
+  });
+
   it("destroy() clears the embedding", async () => {
     const data = makeRandomData(COUNT, INPUT_DIM);
     umap = await createUMAP(COUNT, INPUT_DIM, OUTPUT_DIM, data, {
@@ -502,5 +688,34 @@ describe("createUMAPFromKNN", () => {
     await expect(createUMAPFromKNN(20, OUTPUT_DIM, indices, distances, { nEpochs: 5 })).rejects.toThrow(
       /divisible|nRows/i,
     );
+  });
+
+  it("runs the 0.6 pipeline from a precomputed kNN graph", async () => {
+    const { knnIndices, knnDistances } = await makeKnn();
+    umap = await createUMAPFromKNN(COUNT, OUTPUT_DIM, knnIndices, knnDistances, {
+      seed: 42,
+      nEpochs: 20,
+      compatibilityLayout: false,
+      optimizer: "adam",
+      initializeMethod: "recursive",
+      initScaleFactor: 1,
+    });
+    await umap.run();
+    expect(umap.embedding.length).toBe(COUNT * OUTPUT_DIM);
+    for (const v of umap.embedding) expect(Number.isFinite(v)).toBe(true);
+  });
+
+  it("rejects pca init and pca reset without data", async () => {
+    const { knnIndices, knnDistances } = await makeKnn();
+    await expect(
+      createUMAPFromKNN(COUNT, OUTPUT_DIM, knnIndices, knnDistances, { nEpochs: 5, initializeMethod: "pca" }),
+    ).rejects.toThrow(/pca/);
+    umap = await createUMAPFromKNN(COUNT, OUTPUT_DIM, knnIndices, knnDistances, { seed: 42, nEpochs: 5 });
+    expect(() => umap.reset("pca")).toThrow(/input data/);
+    expect(() => umap.reset("spectral", new Float32Array(COUNT * INPUT_DIM))).toThrow(/kNN graph/);
+    for (const method of ["tswspectral", "random", "recursive"]) {
+      umap.reset(method);
+      for (const v of umap.embedding) expect(Number.isFinite(v)).toBe(true);
+    }
   });
 });

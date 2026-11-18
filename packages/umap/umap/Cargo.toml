@@ -9,7 +9,7 @@ description = "UMAP - Uniform Manifold Approximation and Projection for Dimensio
 
 [features]
 default = []
-gpu = ["nndescent/gpu", "wgpu", "bytemuck"]
+gpu = ["nndescent/gpu", "wgpu", "bytemuck", "dep:web-sys"]
 
 [dependencies]
 nndescent = { path = "../nndescent" }
@@ -18,6 +18,9 @@ rayon = { workspace = true }
 pollster = { workspace = true }
 wgpu = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["console"], optional = true }
 
 [lints]
 workspace = true

@@ -10,6 +10,7 @@
   import EmbeddingViewExample from "./svelte/EmbeddingViewExample.svelte";
   import EmbeddingViewMosaicExample from "./svelte/EmbeddingViewMosaicExample.svelte";
   import FindClustersExample from "./svelte/FindClustersExample.svelte";
+  import UMAPExample from "./svelte/UMAPExample.svelte";
 
   import ReactEmbeddingAtlasExample from "./react/EmbeddingAtlas.js";
   import ReactEmbeddingViewExample from "./react/EmbeddingView.js";
@@ -24,6 +25,7 @@
     "/svelte/embedding-view": EmbeddingViewExample,
     "/svelte/embedding-view-mosaic": EmbeddingViewMosaicExample,
     "/svelte/find-clusters": FindClustersExample,
+    "/svelte/umap": UMAPExample,
     "/react/embedding-view": reactWrap(ReactEmbeddingViewExample),
     "/react/embedding-atlas": reactWrap(ReactEmbeddingAtlasExample),
   };
@@ -35,7 +37,6 @@
         { title: "EmbeddingView", href: "/svelte/embedding-view" },
         { title: "EmbeddingViewMosaic", href: "/svelte/embedding-view-mosaic" },
         { title: "EmbeddingAtlas", href: "/svelte/embedding-atlas" },
-        { title: "findClusters", href: "/svelte/find-clusters" },
       ],
     },
     {
@@ -43,6 +44,13 @@
       items: [
         { title: "EmbeddingView", href: "/react/embedding-view" },
         { title: "EmbeddingAtlas", href: "/react/embedding-atlas" },
+      ],
+    },
+    {
+      title: "Algorithms",
+      items: [
+        { title: "findClusters", href: "/svelte/find-clusters" },
+        { title: "UMAP", href: "/svelte/umap" },
       ],
     },
   ];

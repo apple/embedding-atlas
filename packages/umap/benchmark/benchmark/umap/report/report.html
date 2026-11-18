@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>UMAP sweep report</title>
+    <style>
+      .rp-root {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        padding: 10px 14px 0;
+        box-sizing: border-box;
+        font:
+          13px/1.4 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        color: #1c1c1e;
+        background: #fff;
+      }
+      .rp-root * {
+        box-sizing: border-box;
+      }
+      .rp-title {
+        margin: 0 0 6px;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .rp-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+      .rp-controls label,
+      .rp-group {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .rp-group {
+        gap: 10px;
+      }
+      .rp-group-title {
+        font-weight: 600;
+      }
+      .rp-hint {
+        margin: 2px 0 8px;
+        font-size: 12px;
+        color: #777;
+      }
+      .rp-hover {
+        display: inline-block;
+        min-width: 14em;
+        font-variant-numeric: tabular-nums;
+        color: #333;
+      }
+      .rp-scroll {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+      }
+      .rp-matrix {
+        display: grid;
+        gap: 4px;
+        align-items: start;
+        width: max-content;
+      }
+      .rp-head,
+      .rp-corner,
+      .rp-rowhead {
+        position: sticky;
+        font-size: 12px;
+        font-weight: 600;
+        background: #fff;
+      }
+      .rp-head,
+      .rp-corner {
+        top: 0;
+        z-index: 3;
+        padding: 4px 0;
+        text-align: center;
+        white-space: pre-line;
+      }
+      .rp-corner {
+        left: 0;
+        z-index: 4;
+      }
+      .rp-rowhead {
+        left: 0;
+        z-index: 2;
+        min-width: 120px;
+        padding: 4px 8px 0 0;
+        text-align: right;
+        white-space: nowrap;
+      }
+      .rp-rowhead.rp-baseline {
+        border-top: 2px solid #bbb;
+      }
+      .rp-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 3px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      .rp-plot {
+        position: relative;
+        background: #fff;
+        cursor: grab;
+        touch-action: none;
+      }
+      .rp-canvas,
+      .rp-overlay {
+        position: absolute;
+        inset: 0;
+      }
+      .rp-overlay {
+        pointer-events: none;
+      }
+      .rp-empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px;
+        font-size: 11px;
+        color: #999;
+        text-align: center;
+        background: #f6f7f9;
+        border: 1px dashed #ccc;
+      }
+      .rp-metrics {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+      .rp-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px;
+        min-height: 14px;
+      }
+      .rp-badge {
+        max-width: 150px;
+        padding: 0 4px;
+        overflow: hidden;
+        font-size: 9px;
+        color: #fff;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        background: #c77d00;
+        border-radius: 6px;
+      }
+      .rp-badge.rp-nan,
+      .rp-badge.rp-error {
+        background: #c0392b;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="rp-root" id="rp-root">
+      <h1 class="rp-title">UMAP sweep report</h1>
+      <div class="rp-controls">
+        <label
+          >Dataset
+          <select id="rp-dataset"></select
+        ></label>
+        <label
+          >Axis
+          <select id="rp-axis"></select
+        ></label>
+        <label id="rp-seed-label"
+          >Seed
+          <select id="rp-seed"></select
+        ></label>
+        <label><input type="checkbox" id="rp-align" /> Align Rust to Python (Procrustes)</label>
+        <label><input type="checkbox" id="rp-link" /> Link zoom and pan</label>
+        <label
+          >Cell size <input type="range" id="rp-size" min="120" max="400" step="10" /> <span id="rp-size-text"></span
+        ></label>
+        <label
+          >Tint cells by Rust-Python delta of
+          <select id="rp-tint"></select
+        ></label>
+        <label
+          >Warn if trust worse by <input type="number" id="rp-threshold" step="0.005" min="0" style="width: 5em"
+        /></label>
+      </div>
+      <div class="rp-controls">
+        <div class="rp-group" id="rp-implementations"><span class="rp-group-title">Implementation</span></div>
+        <div class="rp-group" id="rp-optimizers"><span class="rp-group-title">Optimizer</span></div>
+      </div>
+      <p class="rp-hint">
+        Each cell shows trustworthiness (T) and kNN recall (R) for a fixed random subset of
+        <span id="rp-subset"></span>. Hover a cell for time, kNN and layout split, Procrustes, and mean and standard
+        deviation over seeds. Green tint means Rust is better than its Python partner, red means worse. Scroll or pinch
+        to zoom, drag to pan, double-click to reset. Hovering a point marks the same point in all cells:
+        <span class="rp-hover" id="rp-hover"></span>
+      </p>
+      <div class="rp-scroll"><div class="rp-matrix" id="rp-matrix"></div></div>
+    </div>
+    <script type="application/json" id="rp-data">
+      __REPORT_DATA__
+    </script>
+    <script>
+      /*__REPORT_LIB__*/
+    </script>
+    <script>
+      (() => {
+        const manifest = JSON.parse(document.getElementById("rp-data").textContent);
+        const index = createRunIndex(manifest.runs, manifest.main_seed);
+        const ratio = window.devicePixelRatio || 1;
+        let state = reconcileState(manifest, decodeHash(location.hash));
+        let sharedView = IDENTITY_VIEW;
+        let hover = null;
+        let cells = [];
+        const rawCache = new Map();
+        const datasetCache = new Map();
+        let redrawScheduled = false;
+
+        function $(id) {
+          return document.getElementById(id);
+        }
+
+        function element(tag, className, text) {
+          const node = document.createElement(tag);
+          if (className) node.className = className;
+          if (text != null) node.textContent = text;
+          return node;
+        }
+
+        function sizeBox(node, width, height) {
+          node.style.width = width + "px";
+          node.style.height = height + "px";
+          return node;
+        }
+
+        function fillSelect(select, options, selected) {
+          select.textContent = "";
+          options.forEach((o) => {
+            const option = element("option", "", o.label);
+            option.value = o.value;
+            select.appendChild(option);
+          });
+          select.value = String(selected);
+        }
+
+        function datasetData(name) {
+          if (!datasetCache.has(name)) {
+            const info = manifest.datasets.find((d) => d.name === name);
+            const decoded = decodeDataset(info);
+            const lists = groupByClass(decoded.labels, decoded.labels.length);
+            datasetCache.set(name, {
+              indices: decoded.indices,
+              labels: decoded.labels,
+              lists: lists,
+              colors: categoryColors(lists.length),
+              info: info,
+            });
+          }
+          return datasetCache.get(name);
+        }
+
+        function rawPoints(run) {
+          if (!rawCache.has(run)) rawCache.set(run, decodeRunPoints(run));
+          return rawCache.get(run);
+        }
+
+        // ---- Drawing ----
+
+        function viewOf(cell) {
+          return state.link ? sharedView : cell.localView;
+        }
+
+        function drawCell(cell) {
+          if (!cell.layout) return;
+          const size = state.size;
+          const data = datasetData(state.dataset);
+          const context = cell.canvas.getContext("2d");
+          context.setTransform(ratio, 0, 0, ratio, 0, 0);
+          context.clearRect(0, 0, size, size);
+          const view = viewOf(cell);
+          const layout = cell.layout;
+          const unit = size - THUMB_PADDING;
+          data.lists.forEach((list, k) => {
+            context.fillStyle = data.colors[k];
+            for (let j = 0; j < list.length; j++) {
+              const i = list[j];
+              const x = size / 2 + (layout.bx[i] * view.zoom + view.panX) * unit;
+              const y = size / 2 - (layout.by[i] * view.zoom + view.panY) * unit;
+              if (x < -2 || y < -2 || x > size + 2 || y > size + 2) continue;
+              context.fillRect(x - 1, y - 1, 2, 2);
+            }
+          });
+          drawOverlay(cell);
+        }
+
+        function drawOverlay(cell) {
+          if (!cell.layout) return;
+          const size = state.size;
+          const context = cell.overlay.getContext("2d");
+          context.setTransform(ratio, 0, 0, ratio, 0, 0);
+          context.clearRect(0, 0, size, size);
+          if (hover == null || hover >= cell.layout.bx.length) return;
+          const p = projectPoint(cell.layout, hover, viewOf(cell), size);
+          context.beginPath();
+          context.arc(p.x, p.y, 6, 0, Math.PI * 2);
+          context.lineWidth = 3;
+          context.strokeStyle = "#fff";
+          context.stroke();
+          context.lineWidth = 1.5;
+          context.strokeStyle = "#000";
+          context.stroke();
+        }
+
+        function scheduleRedraw() {
+          if (redrawScheduled) return;
+          redrawScheduled = true;
+          requestAnimationFrame(() => {
+            redrawScheduled = false;
+            cells.forEach((cell) => {
+              if (cell.visible) drawCell(cell);
+            });
+          });
+        }
+
+        function prepare(cell) {
+          if (cell.layout || cell.failed) return;
+          const points = alignedPoints(cell.run, cell.reference, state.align, rawPoints);
+          if (points == null) {
+            cell.failed = true;
+            return;
+          }
+          cell.layout = buildLayout(points);
+        }
+
+        function setView(cell, view) {
+          if (state.link) sharedView = view;
+          else cell.localView = view;
+          scheduleRedraw();
+        }
+
+        function setHover(next) {
+          if (next === hover) return;
+          hover = next;
+          let text = "";
+          if (hover != null) {
+            const data = datasetData(state.dataset);
+            text = "Point #" + data.indices[hover] + ", class " + data.labels[hover];
+          }
+          $("rp-hover").textContent = text;
+          cells.forEach((cell) => {
+            if (cell.visible) drawOverlay(cell);
+          });
+        }
+
+        // ---- Interaction ----
+
+        function attachInteraction(cell) {
+          const plot = cell.plot;
+          let dragging = null;
+          let pending = null;
+          let frame = false;
+
+          function localPosition(event) {
+            const rect = plot.getBoundingClientRect();
+            return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+          }
+
+          function flush() {
+            frame = false;
+            if (pending == null) return;
+            const at = pending;
+            pending = null;
+            setHover(cell.layout ? nearestPoint(cell.layout, viewOf(cell), state.size, at.x, at.y) : null);
+          }
+
+          plot.addEventListener(
+            "wheel",
+            (event) => {
+              event.preventDefault();
+              const at = localPosition(event);
+              const extent = cursorToExtent(at.x, at.y, state.size);
+              setView(cell, zoomAround(viewOf(cell), wheelFactor(event.deltaY, event.ctrlKey), extent.cx, extent.cy));
+            },
+            { passive: false },
+          );
+          plot.addEventListener("pointerdown", (event) => {
+            plot.setPointerCapture(event.pointerId);
+            dragging = { x: event.clientX, y: event.clientY };
+          });
+          plot.addEventListener("pointermove", (event) => {
+            if (dragging) {
+              setView(cell, panBy(viewOf(cell), event.clientX - dragging.x, event.clientY - dragging.y, state.size));
+              dragging = { x: event.clientX, y: event.clientY };
+              return;
+            }
+            pending = localPosition(event);
+            if (!frame) {
+              frame = true;
+              requestAnimationFrame(flush);
+            }
+          });
+          plot.addEventListener("pointerup", () => {
+            dragging = null;
+          });
+          plot.addEventListener("pointerleave", () => {
+            pending = null;
+            setHover(null);
+          });
+          plot.addEventListener("dblclick", () => {
+            setView(cell, IDENTITY_VIEW);
+          });
+        }
+
+        // ---- Matrix ----
+
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            const cell = entry.target.rpCell;
+            cell.visible = entry.isIntersecting;
+            if (cell.visible) {
+              prepare(cell);
+              if (cell.failed) showEmpty(cell, "cannot decode");
+              drawCell(cell);
+            }
+          });
+        });
+
+        function emptyBox(text, fullWidth) {
+          const empty = element("div", "rp-empty", text);
+          empty.style.height = state.size + "px";
+          if (fullWidth) empty.style.width = state.size + "px";
+          return empty;
+        }
+
+        function showEmpty(cell, text) {
+          cell.plot.replaceWith(emptyBox(text, true));
+        }
+
+        function buildCell(model) {
+          const size = state.size;
+          const root = element("div", "rp-cell");
+          root.style.width = size + 8 + "px";
+          root.style.background = model.tint;
+          root.title = model.tooltip;
+          const cell = {
+            run: model.run,
+            reference: model.reference,
+            layout: null,
+            visible: false,
+            failed: false,
+            localView: IDENTITY_VIEW,
+          };
+          if (model.run && model.run.q != null) {
+            const plot = sizeBox(element("div", "rp-plot"), size, size);
+            const [canvas, overlay] = ["rp-canvas", "rp-overlay"].map((name) => {
+              const node = sizeBox(element("canvas", name), size, size);
+              node.width = node.height = Math.round(size * ratio);
+              plot.appendChild(node);
+              return node;
+            });
+            cell.canvas = canvas;
+            cell.overlay = overlay;
+            cell.plot = plot;
+            plot.rpCell = cell;
+            root.appendChild(plot);
+            attachInteraction(cell);
+            observer.observe(plot);
+            cells.push(cell);
+          } else {
+            root.appendChild(emptyBox(emptyReason(model.run), false));
+          }
+          if (model.run) {
+            const metrics = element("div", "rp-metrics");
+            ["T " + formatMetric("trustworthiness", model.run.trustworthiness), "R " + formatMetric("knn_recall", model.run.knn_recall)].forEach((text) => metrics.appendChild(element("span", "", text)));
+            root.appendChild(metrics);
+            const badges = element("div", "rp-badges");
+            model.warnings.forEach((w) => {
+              const badge = element("span", "rp-badge rp-" + w.kind, w.text);
+              badge.title = w.text;
+              badges.appendChild(badge);
+            });
+            root.appendChild(badges);
+          }
+          return root;
+        }
+
+        function renderMatrix() {
+          observer.disconnect();
+          cells = [];
+          const matrixElement = $("rp-matrix");
+          matrixElement.textContent = "";
+          const matrix = buildMatrix(manifest, index, state);
+          matrixElement.style.gridTemplateColumns = "max-content repeat(" + matrix.columns.length + ", max-content)";
+          matrixElement.appendChild(element("div", "rp-corner"));
+          matrix.columns.forEach((column) => {
+            matrixElement.appendChild(element("div", "rp-head", column.label));
+          });
+          matrix.rows.forEach((row) => {
+            matrixElement.appendChild(element("div", "rp-rowhead" + (row.baseline ? " rp-baseline" : ""), row.label));
+            row.cells.forEach((model) => {
+              matrixElement.appendChild(model ? buildCell(model) : emptyBox("No run", true));
+            });
+          });
+          hover = null;
+          $("rp-hover").textContent = "";
+        }
+
+        // ---- Controls ----
+
+        function writeHash() {
+          try {
+            history.replaceState(null, "", "#" + encodeHash(state, location.hash));
+          } catch (e) {
+            // A sandboxed frame may forbid changing the URL. The view still works.
+          }
+        }
+
+        function syncControls() {
+          const dataset = datasetData(state.dataset).info;
+          $("rp-subset").textContent =
+            dataset.count + " of " + dataset.n + " points (" + dataset.name + ", n=" + dataset.n + ")";
+          fillSelect(
+            $("rp-dataset"),
+            manifest.datasets.map((d) => ({ value: d.name, label: d.name + " (n=" + d.n + ")" })),
+            state.dataset,
+          );
+          fillSelect(
+            $("rp-axis"),
+            [{ value: NO_AXIS, label: "None (compare implementations)" }].concat(
+              axesOf(manifest, state.dataset).map((a) => ({ value: a.param, label: a.param })),
+            ),
+            state.axis,
+          );
+          const seeds = seedsOf(manifest, state.dataset);
+          fillSelect(
+            $("rp-seed"),
+            seeds.map((s) => ({ value: s, label: String(s) })),
+            state.seed,
+          );
+          $("rp-seed-label").style.display = seeds.length > 1 ? "" : "none";
+          $("rp-align").checked = state.align;
+          $("rp-link").checked = state.link;
+          $("rp-size").value = state.size;
+          $("rp-size-text").textContent = state.size + "px";
+          fillSelect(
+            $("rp-tint"),
+            [{ value: "none", label: "none" }].concat(
+              METRIC_KEYS.map((key) => ({ value: key, label: METRIC_INFO[key].label })),
+            ),
+            state.tint,
+          );
+          $("rp-threshold").value = state.threshold;
+          document.querySelectorAll("#rp-root input[data-rp-group]").forEach((box) => {
+            box.checked = state[box.dataset.rpGroup].indexOf(box.dataset.rpId) >= 0;
+          });
+        }
+
+        function update() {
+          state = reconcileState(manifest, state);
+          writeHash();
+          syncControls();
+          renderMatrix();
+        }
+
+        function buildChecks(containerId, group, options) {
+          options.forEach((o) => {
+            const label = element("label");
+            const box = element("input");
+            box.type = "checkbox";
+            box.dataset.rpGroup = group;
+            box.dataset.rpId = o.id;
+            box.addEventListener("change", () => {
+              const others = state[group].filter((id) => id !== o.id);
+              state[group] = box.checked ? others.concat(o.id) : others;
+              update();
+            });
+            label.appendChild(box);
+            label.appendChild(document.createTextNode(" " + o.label));
+            $(containerId).appendChild(label);
+          });
+        }
+
+        function bind(id, apply) {
+          $(id).addEventListener("change", (e) => {
+            apply(e.target);
+            update();
+          });
+        }
+
+        buildChecks("rp-implementations", "impl", IMPLEMENTATION_OPTIONS);
+        buildChecks("rp-optimizers", "opt", OPTIMIZER_OPTIONS);
+        bind("rp-dataset", (t) => Object.assign(state, { dataset: t.value, axis: "", seed: -1 }));
+        bind("rp-axis", (t) => (state.axis = t.value));
+        bind("rp-seed", (t) => (state.seed = Number(t.value)));
+        bind("rp-align", (t) => (state.align = t.checked));
+        bind("rp-link", (t) => {
+          state.link = t.checked;
+          sharedView = IDENTITY_VIEW;
+        });
+        bind("rp-size", (t) => (state.size = Number(t.value)));
+        bind("rp-tint", (t) => (state.tint = t.value));
+        bind("rp-threshold", (t) => (state.threshold = Math.max(0, Number(t.value) || 0)));
+        $("rp-size").addEventListener("input", (e) => {
+          $("rp-size-text").textContent = e.target.value + "px";
+        });
+        window.addEventListener("hashchange", () => {
+          state = decodeHash(location.hash);
+          update();
+        });
+
+        update();
+      })();
+    </script>
+  </body>
+</html>
