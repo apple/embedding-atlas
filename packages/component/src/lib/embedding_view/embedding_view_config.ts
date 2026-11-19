@@ -40,4 +40,13 @@ export interface EmbeddingViewConfig {
    * Higher values mean more aggressive culling in dense areas.
    * Default: 5 */
   downsampleDensityWeight?: number | null;
+
+  /** Delay in ms before showing tooltip on hover. Default: 300 */
+  tooltipDelay?: number | null;
+
+  /** Threshold in ms for "recently visible" fast-path for tooltips. Default: 300 */
+  tooltipRecentThreshold?: number | null;
+
+  /** Search radius multiplier for hit detection. Default: 12 */
+  hoverRadius?: number | null;
 }
