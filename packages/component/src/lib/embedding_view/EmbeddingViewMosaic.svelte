@@ -55,6 +55,7 @@
     onTooltip = null,
     onSelection = null,
     onRangeSelection = null,
+    onLabelsChange = null,
     cache = null,
   }: EmbeddingViewMosaicProps = $props();
 
@@ -513,6 +514,7 @@
     effectiveRangeSelection = v;
     onRangeSelection?.(v);
   }}
+  onLabelsChange={onLabelsChange}
   cache={cache}
   cacheIdentifier={{ table, x, y, text }}
 />

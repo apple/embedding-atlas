@@ -36,6 +36,7 @@
     onExportSelection,
     onStateChange,
     onPredicateChange,
+    onLabelsChange,
     modelContext,
     cache,
     highlight: highlightProp = null,
@@ -56,6 +57,7 @@
     onExportSelection,
     onStateChange,
     onPredicateChange,
+    onLabelsChange,
     modelContext,
     cache,
   });

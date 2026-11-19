@@ -1,5 +1,7 @@
 // Copyright (c) 2025 Apple Inc. Licensed under MIT License.
 
+import type { Rectangle } from "../utils.js";
+
 export type DataPointID = string | number | bigint;
 
 export interface DataPoint {
@@ -32,6 +34,14 @@ export interface Label {
   level?: number | null;
   /** Placement priority. */
   priority?: number | null;
+}
+
+/** A generated cluster label with optional stable id and data-space region bounds. */
+export interface LabelWithBounds extends Label {
+  /** Stable id for this label within the current generation. */
+  id?: string;
+  /** Bounding rectangles in data coordinates covering the cluster region. */
+  rects?: Rectangle[];
 }
 
 export interface OverlayProxy {

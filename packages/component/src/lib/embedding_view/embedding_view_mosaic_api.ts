@@ -8,7 +8,16 @@ import Component from "./EmbeddingViewMosaic.svelte";
 import type { Point, Rectangle, ViewportState } from "../utils.js";
 import type { EmbeddingViewConfig } from "./embedding_view_config.js";
 import type { ThemeConfig } from "./theme.js";
-import type { Cache, CustomComponent, DataField, DataPoint, DataPointID, Label, OverlayProxy } from "./types.js";
+import type {
+  Cache,
+  CustomComponent,
+  DataField,
+  DataPoint,
+  DataPointID,
+  Label,
+  LabelWithBounds,
+  OverlayProxy,
+} from "./types.js";
 
 export interface EmbeddingViewMosaicProps {
   /** The Mosaic coordinator.
@@ -123,6 +132,11 @@ export interface EmbeddingViewMosaicProps {
 
   /** A callback for when `rangeSelection` changes. */
   onRangeSelection?: ((value: Rectangle | Point[] | null) => void) | null;
+
+  /** A callback when generated or provided cluster labels change.
+   *  Fires after label recomputation when the label set materially changes
+   *  (not on every pan/zoom). Labels include data-coordinate cluster bounds when available. */
+  onLabelsChange?: ((labels: LabelWithBounds[]) => void) | null;
 
   /** A custom renderer to draw the tooltip content. */
   customTooltip?: CustomComponent<HTMLDivElement, { tooltip: DataPoint }> | null;
