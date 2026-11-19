@@ -29,6 +29,7 @@
     onTooltip: ((value: Selection | null) => void) | null;
     onSelection: ((value: Selection[] | null) => void) | null;
     onRangeSelection: ((value: Rectangle | Point[] | null) => void) | null;
+    onRangeSelectionEnd: ((value: Rectangle | Point[]) => void) | null;
     cache: Cache | null;
     cacheIdentifier?: any | null;
   }
@@ -146,6 +147,7 @@
     onTooltip = null,
     onSelection = null,
     onRangeSelection = null,
+    onRangeSelectionEnd = null,
     cache = null,
     cacheIdentifier = undefined,
   }: Props<Selection> = $props();
@@ -419,8 +421,15 @@
 
     let p1 = localCoordinates(e1);
 
+    function finishRangeSelection(geometry: Rectangle | Point[] | null) {
+      if (geometry != null) {
+        onRangeSelectionEnd?.(geometry);
+      }
+    }
+
     switch (mode) {
       case "marquee": {
+        let lastRect: Rectangle | null = null;
         return {
           move: (e2: CursorValue) => {
             setTooltip(null);
@@ -430,17 +439,20 @@
             let p2 = localCoordinates(e2);
             let l1 = coordinateAtPoint(p1.x, p1.y);
             let l2 = coordinateAtPoint(p2.x, p2.y);
-            setRangeSelection({
+            lastRect = {
               xMin: Math.min(l1.x, l2.x),
               yMin: Math.min(l1.y, l2.y),
               xMax: Math.max(l1.x, l2.x),
               yMax: Math.max(l1.y, l2.y),
-            });
+            };
+            setRangeSelection(lastRect);
           },
+          up: () => finishRangeSelection(lastRect),
         };
       }
       case "lasso": {
         let points = [coordinateAtPoint(p1.x, p1.y)];
+        let lastPolygon: Point[] | null = null;
         return {
           move: (e2: CursorValue) => {
             setTooltip(null);
@@ -450,9 +462,11 @@
             let p2 = localCoordinates(e2);
             points = [...points, coordinateAtPoint(p2.x, p2.y)];
             if (points.length >= 3) {
-              setRangeSelection(simplifyPolygon(points, 24));
+              lastPolygon = simplifyPolygon(points, 24);
+              setRangeSelection(lastPolygon);
             }
           },
+          up: () => finishRangeSelection(lastPolygon),
         };
       }
       case "pan": {
