@@ -53,14 +53,37 @@ jobs:
           npm ci
           cd packages/backend && uv sync --frozen
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: cache-files
+      # Caches are immutable once saved, so use a unique key per run and restore
+      # the most recent one via the prefix. The cache is saved explicitly below
+      # (only when new entries were produced) instead of in a post-job step, so
+      # newly computed projections are kept even if later steps fail.
+      - name: Restore embedding cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/embedding_atlas
-          key: ${{ runner.os }}-embedding-atlas
+          key: ${{ runner.os }}-embedding-atlas-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ runner.os }}-embedding-atlas-
 
       - name: Generate cached demo data
-        run: cd packages/docs && npm run generate_cache
+        id: generate-cache
+        run: |
+          list_cache_files() {
+            find ~/.cache/embedding_atlas -type f 2>/dev/null | sort | sha256sum
+          }
+          before="$(list_cache_files)"
+          cd packages/docs && npm run generate_cache
+          after="$(list_cache_files)"
+          if [ "$before" != "$after" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save embedding cache
+        if: steps.generate-cache.outputs.changed == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/embedding_atlas
+          key: ${{ runner.os }}-embedding-atlas-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build
         run: npm run build
