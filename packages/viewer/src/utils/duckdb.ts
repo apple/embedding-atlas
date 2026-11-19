@@ -15,14 +15,8 @@ import duckdb_wasm_eh from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
 // import duckdb_worker_coi from "@duckdb/duckdb-wasm/dist/duckdb-browser-coi.worker.js?url";
 // import duckdb_wasm_coi from "@duckdb/duckdb-wasm/dist/duckdb-coi.wasm?url";
 
-function extensionRepositoryUrl() {
-  let pageUrl = window.location.href;
-  pageUrl = pageUrl.replace(/#.*$/, "");
-  pageUrl = pageUrl.replace(/\/[^/]*$/, "/");
-  if (!pageUrl.endsWith("/")) {
-    pageUrl += "/";
-  }
-  return pageUrl + "duckdb-wasm";
+export function extensionRepositoryUrl(pageUrl: string = window.location.href): string {
+  return new URL("duckdb-wasm", pageUrl).toString();
 }
 
 export async function createDuckDB({ log = false } = {}) {
