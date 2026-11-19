@@ -18,12 +18,14 @@
   import { downloadBuffer } from "../utils/download.js";
   import { exportMosaicSelection, type ExportFormat } from "../utils/mosaic_exporter.js";
   import { getQueryPayload, setQueryPayload } from "../utils/query_payload.js";
+  import { MemoryCache } from "../utils/memory_cache.js";
   import { computeProjection } from "./compute_projection.js";
   import { importDataTable } from "./import_data.js";
   import { Logger } from "./logging.js";
 
   const coordinator = defaultCoordinator();
   const databaseInitialized = initializeDatabase(coordinator, "wasm", null);
+  const labelCache = new MemoryCache();
 
   let stage: "load-data" | "columns" | "ready" | "messages" = $state.raw("load-data");
   let logger = new Logger();
@@ -164,6 +166,7 @@
   {#if stage == "ready" && props !== undefined}
     <EmbeddingAtlas
       coordinator={coordinator}
+      cache={labelCache}
       onStateChange={debounce(onStateChange, 200)}
       onExportSelection={onExportSelection}
       {...props}
