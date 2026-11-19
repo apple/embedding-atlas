@@ -437,3 +437,14 @@ fn test_hellinger() {
     let d = hellinger(&a, &b);
     assert!(d >= 0.0, "hellinger should be non-negative");
 }
+
+#[test]
+fn test_hellinger_proportional_inputs_not_nan() {
+    let a: Vec<f32> = vec![0.1, 0.7, 0.2, 3.3];
+    let b: Vec<f32> = a.iter().map(|v| v * 3.0).collect();
+    for (x, y) in [(&a, &b), (&b, &a), (&a, &a)] {
+        let d = hellinger(x, y);
+        assert!(!d.is_nan(), "hellinger returned NaN");
+        assert!(d < 1e-3, "hellinger of proportional inputs = {d}");
+    }
+}

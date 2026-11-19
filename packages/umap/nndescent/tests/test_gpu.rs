@@ -194,3 +194,91 @@ fn test_gpu_high_dimensional() {
         }
     }
 }
+
+/// Run NN-descent iterations on the GPU with the given block size and return the final graph.
+fn descend_with_block_size(
+    data: &Array2<f32>,
+    k: usize,
+    max_candidates: usize,
+    max_pairs_per_block: Option<usize>,
+) -> Option<Array2<i32>> {
+    use nndescent::gpu::GpuContext;
+    use nndescent::heap::{deheap_sort, make_heap};
+    use nndescent::nn_descent::new_build_candidates;
+    use nndescent::nn_descent_gpu::{
+        init_rp_tree_gpu, process_candidates_gpu, process_candidates_gpu_in_blocks,
+    };
+    use nndescent::rng::TauRng;
+
+    let gpu = pollster::block_on(GpuContext::new(data, "euclidean"))?;
+    let n = data.nrows();
+    let mut heap = make_heap(n, k);
+    let mut rng = TauRng::new(42);
+
+    let leaf_width = 24;
+    let mut shuffle_rng = nndescent::rng::Xoshiro256StarStar::seed_from_u64(3);
+    let mut leaf_rows: Vec<Vec<i32>> = Vec::new();
+    for _ in 0..3 {
+        let mut order: Vec<i32> = (0..n as i32).collect();
+        for i in (1..n).rev() {
+            let j = (shuffle_rng.next_u64() % (i as u64 + 1)) as usize;
+            order.swap(i, j);
+        }
+        for leaf in order.chunks(leaf_width) {
+            let mut row = leaf.to_vec();
+            row.resize(leaf_width, -1);
+            leaf_rows.push(row);
+        }
+    }
+    let leaves = Array2::from_shape_fn((leaf_rows.len(), leaf_width), |(l, i)| leaf_rows[l][i]);
+    pollster::block_on(init_rp_tree_gpu(&gpu, &mut heap, &leaves));
+
+    for _ in 0..8 {
+        let (new_candidates, old_candidates) =
+            new_build_candidates(&mut heap, max_candidates, &mut rng);
+        match max_pairs_per_block {
+            Some(block) => pollster::block_on(process_candidates_gpu_in_blocks(
+                &gpu,
+                &mut heap,
+                &new_candidates,
+                &old_candidates,
+                block,
+            )),
+            None => pollster::block_on(process_candidates_gpu(
+                &gpu,
+                &mut heap,
+                &new_candidates,
+                &old_candidates,
+            )),
+        };
+    }
+
+    let mut distances = heap.distances.clone();
+    let mut indices = heap.indices.clone();
+    deheap_sort(&mut indices, &mut distances);
+    Some(indices)
+}
+
+#[test]
+fn test_gpu_blocked_candidates_match_unblocked() {
+    let data = make_test_data(600, 16, 7);
+    let k = 10;
+    let exact = brute_force_knn(&data, k);
+
+    let Some(unblocked) = descend_with_block_size(&data, k, 20, None) else {
+        eprintln!("No GPU available, skipping");
+        return;
+    };
+    let blocked = descend_with_block_size(&data, k, 20, Some(500)).unwrap();
+
+    let unblocked_recall = compute_recall(&unblocked, &exact);
+    let blocked_recall = compute_recall(&blocked, &exact);
+    assert!(
+        unblocked_recall > 0.85,
+        "unblocked recall {unblocked_recall}"
+    );
+    assert!(
+        (unblocked_recall - blocked_recall).abs() < 0.01,
+        "blocked recall {blocked_recall} differs from unblocked {unblocked_recall}"
+    );
+}

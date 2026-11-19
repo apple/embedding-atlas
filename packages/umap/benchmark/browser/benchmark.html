@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>umap-wasm benchmark</title>
+    <!-- prettier-ignore -->
+    <style>
+      body { font: 14px/1.5 system-ui, sans-serif; color: #222; margin: 0; padding: 32px; max-width: 1200px; }
+      .ub-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 32px; margin-bottom: 24px; }
+      .ub-group { display: grid; gap: 10px; align-content: start; }
+      .ub-group-title { font-weight: 600; }
+      .ub-field { display: grid; gap: 4px; }
+      .ub-note { color: #555; font-size: 13px; }
+      .ub-check { display: flex; align-items: center; gap: 10px; }
+      .ub-buttons { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+      .ub-status { margin-bottom: 24px; min-height: 1.5em; color: #555; }
+      .ub-system { margin: 0 0 24px; padding: 12px 16px; background: #f4f4f4; border-radius: 6px; white-space: pre-wrap; }
+      .ub-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+      .ub-table th, .ub-table td { padding: 8px 12px; border-bottom: 1px solid #ddd; text-align: left; }
+      h1 { margin: 0 0 8px; font-size: 20px; }
+      p { margin: 0 0 24px; max-width: 70ch; color: #555; }
+    </style>
+  </head>
+  <body>
+    <h1>umap-wasm benchmark</h1>
+    <p>
+      Times createUMAP and run for several variants on synthetic clusters or on the sweep datasets. It does not check
+      the quality of the result.
+    </p>
+    <div class="ub-options" id="ub-options"></div>
+    <div class="ub-buttons">
+      <button id="ub-run">Run</button>
+      <button id="ub-stop" disabled>Stop</button>
+      <button id="ub-copy">Copy as Markdown</button>
+      <button id="ub-download">Download JSON</button>
+    </div>
+    <div class="ub-status" id="ub-status">Ready. Press Run.</div>
+    <pre class="ub-system" id="ub-system">Collecting system information...</pre>
+    <table class="ub-table" id="ub-table"></table>
+
+    <script type="module">
+      import { LARGE_DATASET_BYTES, SWEEP_MISSING, datasetBytes, describeSize, fetchSweep } from "./shared.js";
+
+      const DEFAULT_SWEEP_SELECTION = ["mnist10k_euclidean", "blobs10k"];
+
+      const METRICS = ["euclidean", "cosine"];
+
+      const DATASETS = [
+        { id: "10k x 64", count: 10000, dim: 64, enabled: true },
+        { id: "50k x 384", count: 50000, dim: 384, enabled: true },
+        { id: "200k x 384", count: 200000, dim: 384, enabled: false },
+      ];
+
+      const VARIANTS = [
+        { label: "0.5 SGD GPU", gpu: true, options: { optimizer: "sgd", compatibilityLayout: true } },
+        { label: "0.5 SGD CPU", gpu: false, options: { optimizer: "sgd", compatibilityLayout: true } },
+        { label: "0.6 Adam GPU", gpu: true, options: { optimizer: "adam" } },
+        { label: "0.6 Adam CPU", gpu: false, options: { optimizer: "adam" } },
+        { label: "0.6 Momentum GPU", gpu: true, options: { optimizer: "momentum" } },
+      ];
+
+      const COLUMNS = "Dataset Metric Rows Variant Run Total kNN Graph Init Layout Notes".split(" ");
+
+      /** "1000, 5000" -> [1000, 5000]. An empty text gives [] (all rows). */
+      function parseRowCounts(text) {
+        const parts = text
+          .split(",")
+          .map((part) => part.trim())
+          .filter((part) => part !== "");
+        const counts = parts.map(Number);
+        if (counts.some((n) => !Number.isInteger(n) || n < 1)) {
+          throw new Error(`Row counts must be positive whole numbers separated by commas, got "${text}".`);
+        }
+        return counts;
+      }
+
+      function formatMs(ms) {
+        if (ms == null) return "-";
+        return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms.toFixed(0)} ms`;
+      }
+
+      function resultCells(result) {
+        const notes = result.error ?? (result.gpuMessages.length ? `GPU fallback: ${result.gpuMessages[0]}` : "");
+        const { totals } = result;
+        return [
+          result.dataset,
+          result.metric,
+          result.rows,
+          result.variant,
+          result.warmedUp ? "warm" : "cold",
+          formatMs(result.totalMs),
+          ...["knn", "graph", "init", "layout"].map((step) => formatMs(totals?.[step])),
+          notes,
+        ];
+      }
+
+      const systemLines = (info) => [`User agent: ${info.userAgent}`, `Cores: ${info.cores}`, `GPU: ${info.gpu}`];
+
+      const escapeHtml = (text) => new Option(text).innerHTML;
+
+      function toMarkdown(system, results) {
+        const row = (cells) => `| ${cells.map((cell) => String(cell).replaceAll("|", "\\|")).join(" | ")} |`;
+        const lines = [
+          ...systemLines(system).map((line) => `- ${line}`),
+          "",
+          row(COLUMNS),
+          row(COLUMNS.map(() => "---")),
+          ...results.map((result) => row(resultCells(result))),
+        ];
+        return lines.join("\n") + "\n";
+      }
+
+      // The worker does all the work (see benchmark.worker.js).
+      const state = {
+        results: [],
+        system: null,
+        running: false,
+        worker: null,
+        statusText: "Ready. Press Run.",
+        runStart: 0,
+        ticker: null,
+        datasets: DATASETS.map((dataset) => ({ ...dataset, metric: "euclidean" })),
+      };
+
+      const byId = (id) => document.getElementById(id);
+
+      /** Shows the status text, with the elapsed time of the run. The timer runs on the page, so a frozen page would stop it. */
+      function showStatus() {
+        const elapsed = state.running ? ` (${((performance.now() - state.runStart) / 1000).toFixed(1)} s)` : "";
+        byId("ub-status").textContent = state.statusText + elapsed;
+      }
+
+      function setStatus(text) {
+        state.statusText = text;
+        showStatus();
+      }
+
+      function showSystem(info) {
+        state.system = info;
+        byId("ub-system").textContent = systemLines(info).join("\n");
+      }
+
+      function checkbox(name, index, label, checked) {
+        return `<label class="ub-check"><input type="checkbox" data-ub="${name}" data-index="${index}" ${checked ? "checked" : ""} /><span>${label}</span></label>`;
+      }
+
+      const isLarge = (dataset) => datasetBytes(dataset.count, dataset.dim) > LARGE_DATASET_BYTES;
+
+      function renderDatasets() {
+        const row = (dataset, index) => {
+          const metrics = METRICS.map((m) => `<option ${m === dataset.metric ? "selected" : ""}>${m}</option>`).join(
+            "",
+          );
+          return `<div class="ub-check">
+            ${checkbox("dataset", index, `${escapeHtml(dataset.id)} <small>${dataset.count} x ${dataset.dim}${isLarge(dataset) ? `, ${describeSize(dataset.count, dataset.dim)}, loaded when run` : ""}</small>`, dataset.enabled)}
+            <select data-ub="metric" data-index="${index}" aria-label="Metric of ${escapeHtml(dataset.id)}">${metrics}</select>
+          </div>`;
+        };
+        byId("ub-datasets").innerHTML = state.datasets.map(row).join("");
+      }
+
+      function renderOptions() {
+        const variants = VARIANTS.map((v, i) => checkbox("variant", i, v.label, true)).join("");
+        byId("ub-options").innerHTML = `
+          <div class="ub-group">
+            <div class="ub-group-title">Datasets</div>
+            <div class="ub-note" id="ub-sweep-note"></div>
+            <div class="ub-group" id="ub-datasets"></div>
+          </div>
+          <div class="ub-group"><div class="ub-group-title">Variants</div>${variants}</div>
+          <div class="ub-group">
+            <div class="ub-group-title">Options</div>
+            ${checkbox("warmup", 0, "Discarded warm-up run before each measurement", true)}
+            <label class="ub-field"><span>Row counts (comma list; empty = all rows)</span><input id="ub-rows" type="text" placeholder="1000,5000,10000" /></label>
+          </div>`;
+        renderDatasets();
+      }
+
+      /** Adds the datasets of index.json to the list, when it is there. */
+      async function discoverSweep() {
+        const sweep = await fetchSweep();
+        const note = byId("ub-sweep-note");
+        if (sweep == null || sweep.length === 0) {
+          note.textContent = SWEEP_MISSING;
+          return;
+        }
+        for (const { name, n, dim, metric, urls } of sweep) {
+          const enabled = DEFAULT_SWEEP_SELECTION.includes(name);
+          state.datasets.push({ id: name, count: n, dim, metric, urls, enabled });
+        }
+        note.textContent = `Loaded ${sweep.length} sweep datasets.`;
+        renderDatasets();
+      }
+
+      function checkedItems(name, items) {
+        return [...document.querySelectorAll(`[data-ub="${name}"]`)]
+          .filter((box) => box.checked)
+          .map((box) => items[box.dataset.index]);
+      }
+
+      function renderTable() {
+        const row = (tag, texts) => `<tr>${texts.map((text) => `<${tag}>${escapeHtml(text)}</${tag}>`).join("")}</tr>`;
+        byId("ub-table").innerHTML = row("th", COLUMNS) + state.results.map((r) => row("td", resultCells(r))).join("");
+      }
+
+      function setRunning(running) {
+        state.running = running;
+        byId("ub-run").disabled = running;
+        byId("ub-stop").disabled = !running;
+        clearInterval(state.ticker);
+        state.ticker = running ? setInterval(showStatus, 100) : null;
+        if (running) state.runStart = performance.now();
+      }
+
+      function finishRun(text) {
+        setRunning(false);
+        setStatus(text);
+      }
+
+      function handleMessage({ data }) {
+        if (data.type === "status") setStatus(data.text);
+        if (data.type === "system") showSystem(data.info);
+        if (data.type === "result") {
+          state.results.push(data.row);
+          renderTable();
+        }
+        if (data.type === "done") finishRun("Done.");
+        if (data.type === "error") finishRun(`Error: ${data.message}`);
+      }
+
+      function startWorker() {
+        const worker = new Worker(new URL("./benchmark.worker.js", import.meta.url), { type: "module" });
+        worker.onmessage = handleMessage;
+        worker.onerror = (event) => {
+          finishRun(`Error: ${event.message || "the benchmark worker failed"}`);
+          replaceWorker();
+        };
+        worker.onmessageerror = () => {
+          finishRun("Error: the page could not read a message of the benchmark worker.");
+          replaceWorker();
+        };
+        state.worker = worker;
+      }
+
+      /** A worker that is stuck in WebAssembly cannot be interrupted, so Stop and errors replace it. */
+      function replaceWorker() {
+        state.worker.terminate();
+        startWorker();
+      }
+
+      function run() {
+        if (state.running) return;
+        let rowCounts;
+        try {
+          rowCounts = parseRowCounts(byId("ub-rows").value);
+        } catch (error) {
+          setStatus(`Error: ${error.message}`);
+          return;
+        }
+        state.results = [];
+        renderTable();
+        const jobs = checkedItems("dataset", state.datasets).map(({ id, count, dim, metric, urls }) => ({
+          id,
+          count,
+          dim,
+          metric,
+          urls: urls == null ? null : { data: urls.data },
+        }));
+        const options = {
+          variants: checkedItems("variant", VARIANTS),
+          warmUp: checkedItems("warmup", [true]).length > 0,
+          rowCounts,
+        };
+        setRunning(true);
+        setStatus("Starting...");
+        state.worker.postMessage({ type: "run", jobs, options });
+      }
+
+      function stop() {
+        if (!state.running) return;
+        replaceWorker();
+        finishRun("Stopped.");
+      }
+
+      function download() {
+        const blob = new Blob([JSON.stringify({ system: state.system, results: state.results }, null, 2)], {
+          type: "application/json",
+        });
+        const link = Object.assign(document.createElement("a"), {
+          href: URL.createObjectURL(blob),
+          download: "umap-wasm-benchmark.json",
+        });
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }
+
+      async function copy() {
+        await navigator.clipboard.writeText(toMarkdown(state.system, state.results));
+        setStatus("Copied the results as Markdown.");
+      }
+
+      function main() {
+        renderOptions();
+        byId("ub-datasets").addEventListener("change", ({ target }) => {
+          const { ub, index } = target.dataset;
+          if (ub === "metric") state.datasets[index].metric = target.value;
+          if (ub === "dataset") state.datasets[index].enabled = target.checked;
+        });
+        discoverSweep();
+        startWorker();
+        byId("ub-run").addEventListener("click", run);
+        byId("ub-stop").addEventListener("click", stop);
+        byId("ub-copy").addEventListener("click", copy);
+        byId("ub-download").addEventListener("click", download);
+      }
+
+      main();
+    </script>
+  </body>
+</html>
