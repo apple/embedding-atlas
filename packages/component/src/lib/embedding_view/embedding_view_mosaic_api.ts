@@ -60,7 +60,8 @@ interface PointsLayer {
   opacity?: number | "auto";
   /** The point size. Defaults to `config.pointSize`, or automatically calculated based on density. */
   pointSize?: number | null;
-  /** Approximate maximum number of points to render. Defaults to `config.downsampleMaxPoints`. */
+  /** Approximate maximum number of points to render. Defaults to `config.downsampleMaxPoints`.
+   *  Set to null or Infinity to disable downsampling. */
   downsampleMaxPoints?: number | null;
   /** Density weight for downsampling (0-10). Defaults to `config.downsampleDensityWeight`. */
   downsampleDensityWeight?: number | null;
@@ -256,7 +257,7 @@ export interface EmbeddingViewMosaicProps {
 
   /** A callback for the effective values of the layers (read-only), including automatically determined
    *  values (e.g., the opacity with `opacity: "auto"`, and automatically generated labels).
-   *  `pointSize` is in CSS pixels. `labels` is null if there are no labels, or they are still being generated.
+   *  `pointSize` is in CSS pixels. `labels` is null or empty if there are no labels (e.g., they are still being generated).
    *  This is called whenever any value changes, including continuously while zooming.
    *  Unchanged entries (and labels) keep their identity, so you can compare them by reference. */
   onLayerValues?:

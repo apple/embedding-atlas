@@ -31,8 +31,8 @@
     dataTable: string;
     /** The color used when a layer has no category or color. */
     defaultColor: string;
-    /** The legend of the main category field, used for the default fixed color. */
-    mainCategoryLegend: EmbeddingLegend | null;
+    /** The legend of a layer's category, used for the default fixed color. */
+    layerLegend: (data: LayerData) => EmbeddingLegend | null;
     /** The view's layers (the spec's layers, or the default layers) with their resolved data. */
     resolvedLayers: { layer: LayerSpec; data: LayerData }[];
     /** The viewer's options for default labels layers (see `defaultLabelsLayer`). */
@@ -47,7 +47,7 @@
     spec,
     dataTable,
     defaultColor,
-    mainCategoryLegend,
+    layerLegend,
     resolvedLayers,
     labelsOptions,
     layerValues,
@@ -59,10 +59,14 @@
 
   // Layers with `visible: false` stay in the spec but are not listed. For a spec without `layers`, these are the
   // default layers until the controls are touched. `index` is the layer's index (for edits and `layerValues`).
+  /** The order of layer types in the editor (layers of the same type keep their order in the spec). */
+  const typeOrder: Record<LayerType, number> = { points: 0, density: 1, labels: 2 };
+
   let listedLayers = $derived(
     resolvedLayers
       .map(({ layer, data }, index) => ({ layer, data, index }))
-      .filter(({ layer }) => layer.visible !== false),
+      .filter(({ layer }) => layer.visible !== false)
+      .sort((a, b) => typeOrder[a.layer.type] - typeOrder[b.layer.type] || a.index - b.index),
   );
 
   /** Edit the layers, converting the spec to explicit layers first if needed. */
@@ -214,14 +218,14 @@
     {@const values = layerValue(layer, index)}
     {@const TypeIcon = typeIcons[layer.type]}
     <div
-      class="group bg-white dark:bg-slate-900 p-2 rounded-md border border-slate-200 dark:border-slate-700 flex flex-col gap-2"
+      class="bg-white dark:bg-slate-900 p-2 rounded-md border border-slate-200 dark:border-slate-700 flex flex-col gap-2"
     >
       <div class="flex items-center gap-2">
         <div class="flex-1 font-medium text-slate-700 dark:text-slate-300 select-none flex items-center gap-2">
           <TypeIcon class="w-5 h-5 text-slate-400 dark:text-slate-500 flex-none" />
           {typeLabels[layer.type]}
         </div>
-        <div class="flex-none flex gap-1 sm:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+        <div class="flex-none flex gap-1">
           <CornerButton icon={IconClose} title="Remove layer" onClick={() => removeLayer(index)} />
         </div>
       </div>
@@ -302,7 +306,7 @@
                   if (v == colorMain) {
                     delete l.color;
                   } else {
-                    l.color = l.color ?? mainCategoryLegend?.items[0]?.color ?? defaultColor;
+                    l.color = l.color ?? layerLegend(data)?.items[0]?.color ?? defaultColor;
                   }
                 });
               }}

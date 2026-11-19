@@ -49,7 +49,8 @@ class EmbeddingAtlasOptions(TypedDict, total=False):
         control the zoom level where the label appears, and ``priority`` for the label's priority.
         Higher priority labels have a better chance to appear when multiple labels overlap.
         The embedding view shows these labels instead of automatically generated labels.
-        These options only affect embedding views without explicit layers.
+        These options determine the labels of embedding views without explicit layers, and of the default
+        labels layer (e.g., in the layer presets). Labels layers can refer to the provided labels as ``"$labels"``.
 
     stop_words:
         Stop words for automatic label generation.

@@ -53,16 +53,14 @@
   import { untrack } from "svelte";
   import { cubicOut } from "svelte/easing";
 
-  import Button from "../../widgets/Button.svelte";
   import PopupButton from "../../widgets/PopupButton.svelte";
+  import SegmentedControl from "../../widgets/SegmentedControl.svelte";
   import Select from "../../widgets/Select.svelte";
-  import Slider from "../../widgets/Slider.svelte";
   import ConfirmButton from "../builder/ConfirmButton.svelte";
   import SpecEditor from "../builder/SpecEditor.svelte";
-  import SegmentedControl from "../../widgets/SegmentedControl.svelte";
   import LayerControls from "./LayerControls.svelte";
-  import SliderRow from "./SliderRow.svelte";
   import Legend from "./Legend.svelte";
+  import SliderRow from "./SliderRow.svelte";
 
   import { IconSettings } from "../../assets/icons.js";
   import { isolatedWritable } from "../../utils/store.js";
@@ -179,17 +177,16 @@
     return legend;
   }
 
-  let mainLegendSpec: LegendSpec | null = $derived(
-    categoryField != null ? { table: dataTable, field: categoryField, colorScale: spec.colorScale ?? null } : null,
-  );
-  let categoryLegend: EmbeddingLegend | null = $derived(mainLegendSpec != null ? legendOf(mainLegendSpec) : null);
-
-  /** The legend of a layer's category: the main legend, or the layer's own. */
+  /** The legend spec of a layer's category (null if the layer has none). Layers with the same table, category, and
+   *  color scale (e.g., layers inheriting `data.category`) have the same legend. */
   function layerLegendSpec(d: LayerData): LegendSpec | null {
-    if (d.category == null) {
-      return null;
-    }
-    return d.categoryIsMain ? mainLegendSpec : { table: d.table, field: d.category, colorScale: d.colorScale };
+    return d.category != null ? { table: d.table, field: d.category, colorScale: d.colorScale } : null;
+  }
+
+  /** The legend of a layer's category (null if it has none, or until its categories are loaded). */
+  function layerLegend(d: LayerData): EmbeddingLegend | null {
+    let l = layerLegendSpec(d);
+    return l != null ? legendOf(l) : null;
   }
 
   function resolveLayer(layer: LayerSpec, d: LayerData): ComponentLayer {
@@ -209,8 +206,7 @@
     switch (layer.type) {
       case "points":
       case "density": {
-        let legendSpec = layerLegendSpec(d);
-        let legend = legendSpec != null ? legendOf(legendSpec) : null;
+        let legend = layerLegend(d);
         // Until the legend is loaded, the layer is drawn with the default color.
         let colorProps = {
           data: { ...data, category: legend != null ? resolveField(d.category, d.table) : null },
@@ -344,11 +340,11 @@
 
   let componentLayers: ComponentLayer[] = $derived(resolvedLayers.map(({ layer, data }) => resolveLayer(layer, data)));
 
-  // The legends to load: the main legend and the legends of the layers. Keyed by a string, so editing other
-  // layer options (e.g., dragging a slider) doesn't run this again.
+  // The legends to load: the legends of the layers. Keyed by a string, so editing other layer options (e.g.,
+  // dragging a slider) doesn't run this again.
   let neededLegendsKey = $derived.by(() => {
     let specs = new Map<string, LegendSpec>();
-    for (let l of [mainLegendSpec, ...resolvedLayers.map(({ data }) => layerLegendSpec(data))]) {
+    for (let l of resolvedLayers.map(({ data }) => layerLegendSpec(data))) {
       if (l != null) {
         specs.set(legendDataKey(l), legendDataSpec(l));
       }
@@ -359,7 +355,17 @@
   $effect.pre(() => {
     let specs: LegendSpec[] = JSON.parse(neededLegendsKey);
     let coordinator = context.coordinator;
-    let mainKey = untrack(() => (mainLegendSpec != null ? legendDataKey(mainLegendSpec) : null));
+    // The legends of density layers (to switch to points if they have too many categories).
+    let densityKeys = untrack(
+      () =>
+        new Set(
+          resolvedLayers
+            .filter(({ layer }) => layer.type == "density")
+            .map(({ data }) => layerLegendSpec(data))
+            .filter((l) => l != null)
+            .map((l) => legendDataKey(l)),
+        ),
+    );
     for (let l of specs) {
       let key = legendDataKey(l);
       context.cache
@@ -373,7 +379,7 @@
           // Density mode can't show many categories: switch to points (for views with the default layers).
           let k = v?.labels.length ?? 0;
           let count = v != null ? k + (v.counts[k] > 0 ? 1 : 0) + (v.counts[k + 1] > 0 ? 1 : 0) : 0;
-          if (key == mainKey && count > maxCategories && spec.layers == null && spec.mode == "density") {
+          if (densityKeys.has(key) && count > maxCategories && spec.layers == null && spec.mode == "density") {
             onSpecChange((draft) => {
               draft.mode = "points";
             });
@@ -385,8 +391,8 @@
     }
   });
 
-  // Legends to display besides the main legend: the legends of layers with their own category or color scale.
-  let extraLegends = $derived.by(() => {
+  // The legends to display: the legends of the visible layers, in layer order (layers can share a legend).
+  let legends = $derived.by(() => {
     let result: { key: string; table: string; legend: EmbeddingLegend }[] = [];
     for (let { layer, data } of resolvedLayers) {
       if (layer.visible === false) {
@@ -397,15 +403,25 @@
         continue;
       }
       let key = legendKey(l);
-      if (mainLegendSpec != null && key == legendKey(mainLegendSpec)) {
-        continue;
-      }
       let legend = legendOf(l);
       if (legend != null && !result.some((x) => x.key == key)) {
         result.push({ key, table: l.table, legend });
       }
     }
     return result;
+  });
+
+  // The category the component reports for points in tooltips and selections: the category of the first visible
+  // points or density layer on the view's table.
+  let pointCategory = $derived.by(() => {
+    for (let { layer, data } of resolvedLayers) {
+      if (layer.visible === false || layer.type == "labels" || !data.isDataTable || data.category == null) {
+        continue;
+      }
+      let legend = layerLegend(data);
+      return legend != null ? { field: resolveField(data.category, dataTable), scale: legend.scale } : null;
+    }
+    return null;
   });
 
   $effect.pre(() => {
@@ -573,8 +589,8 @@
     text={resolveField(spec.data.text, dataTable)}
     image={resolveField(spec.data.image, dataTable)}
     importance={resolveField(spec.data.importance, dataTable)}
-    category={categoryLegend != null ? resolveField(categoryField, dataTable) : null}
-    colorScale={categoryLegend?.scale ?? null}
+    category={pointCategory?.field ?? null}
+    colorScale={pointCategory?.scale ?? null}
     color={spec.color ?? theme.embeddingColor}
     theme={{ brandingLink: null }}
     config={{
@@ -648,56 +664,33 @@
     }}
   />
   <div class="absolute top-0 left-0 right-0 flex flex-wrap justify-between items-start pointer-events-none">
-    {#if categoryLegend != null}
-      <div
-        class="flex-none m-2 p-2 rounded-md bg-slate-100/75 dark:bg-slate-800/75 backdrop-blur-sm pointer-events-auto order-3"
-      >
-        <Legend
-          context={context}
-          filter={filter}
-          spec={{ items: categoryLegend.items }}
-          state={chartState.legend ?? {}}
-          mode="view"
-          onSpecChange={() => {}}
-          onStateChange={(update) => {
-            onStateChange((draft) => {
-              if (typeof update == "function") {
-                draft.legend ??= {};
-                update(draft.legend);
-              } else {
-                draft.legend = update;
-              }
-            });
-          }}
-        />
-      </div>
-    {/if}
-    {#each extraLegends as item (item.key)}
-      <div
-        class="flex-none m-2 p-2 rounded-md bg-slate-100/75 dark:bg-slate-800/75 backdrop-blur-sm pointer-events-auto order-3"
-      >
-        <Legend
-          context={context}
-          filter={context.filterFor(item.table)}
-          spec={{ items: item.legend.items }}
-          state={chartState.layerLegends?.[item.key] ?? {}}
-          mode="view"
-          onSpecChange={() => {}}
-          onStateChange={(update) => {
-            onStateChange((draft) => {
-              draft.layerLegends ??= {};
-              if (typeof update == "function") {
-                update((draft.layerLegends[item.key] ??= {}));
-              } else if (update != null) {
-                draft.layerLegends[item.key] = update;
-              } else {
-                delete draft.layerLegends[item.key];
-              }
-            });
-          }}
-        />
-      </div>
-    {/each}
+    <!-- The legends, flowing to the right. -->
+    <div class="flex-1 flex flex-wrap justify-end items-start gap-2 p-2 order-3">
+      {#each legends as item (item.key)}
+        <div class="flex-none p-2 rounded-md bg-slate-100/75 dark:bg-slate-800/75 backdrop-blur-sm pointer-events-auto">
+          <Legend
+            context={context}
+            filter={context.filterFor(item.table)}
+            spec={{ items: item.legend.items }}
+            state={chartState.legends?.[item.key] ?? {}}
+            mode="view"
+            onSpecChange={() => {}}
+            onStateChange={(update) => {
+              onStateChange((draft) => {
+                draft.legends ??= {};
+                if (typeof update == "function") {
+                  update((draft.legends[item.key] ??= {}));
+                } else if (update != null) {
+                  draft.legends[item.key] = update;
+                } else {
+                  delete draft.legends[item.key];
+                }
+              });
+            }}
+          />
+        </div>
+      {/each}
+    </div>
     <div
       class="flex-none p-2 rounded-ee-md bg-white/75 dark:bg-black/75 backdrop-blur-sm flex items-center gap-2 pointer-events-auto order-1"
     >
@@ -791,7 +784,7 @@
               labelsOptions={labelsOptions}
               layerValues={layerValues}
               defaultColor={theme.embeddingColor}
-              mainCategoryLegend={categoryLegend}
+              layerLegend={layerLegend}
               onSpecChange={onSpecChange}
             />
             {#if hasDensityLayer || showMaxPoints}

@@ -161,14 +161,8 @@ export interface EmbeddingSpec {
 export interface EmbeddingState {
   /** The viewport state */
   viewport?: ViewportState;
-  /** State of the legend */
-  legend?: {
-    /** Selected categories */
-    selection?: string[];
-  };
-  /** State of the legends of layers with a different table, category, or color scale than `data`, keyed by the
-   *  legend. */
-  layerLegends?: Record<
+  /** State of the legends, keyed by the legend (its table, category, and color scale). */
+  legends?: Record<
     string,
     {
       /** Selected categories */

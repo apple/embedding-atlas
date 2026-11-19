@@ -133,9 +133,13 @@ export function resolvePointsLayer(
     opacity: spec.opacity ?? "auto",
     pointSize: spec.pointSize ?? config?.pointSize ?? null,
     minimumDensity: config?.minimumDensity ?? 1 / 16,
-    // null disables downsampling, undefined uses the config.
+    // null disables downsampling, undefined uses the config (and then the default).
     downsampleMaxPoints:
-      spec.downsampleMaxPoints !== undefined ? spec.downsampleMaxPoints : (config?.downsampleMaxPoints ?? 4000000),
+      spec.downsampleMaxPoints !== undefined
+        ? spec.downsampleMaxPoints
+        : config?.downsampleMaxPoints !== undefined
+          ? config.downsampleMaxPoints
+          : 4000000,
     downsampleDensityWeight: spec.downsampleDensityWeight ?? config?.downsampleDensityWeight ?? 5,
   };
 }

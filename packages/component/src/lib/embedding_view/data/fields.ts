@@ -75,7 +75,9 @@ export function categoryIndexExpr(value: SQL.ExprNode, scale: ColorScale | null 
     let cases = scale!.domain
       .slice(0, k)
       .map((v, i) => SQL.sql`WHEN ${text} = ${SQL.literal(String(v))} THEN ${SQL.literal(i)}`);
-    return SQL.sql`(CASE WHEN ${value} IS NULL THEN ${nullIndex} ${joinSQL(cases)} ELSE ${other} END)`;
+    // NaN is "null" (as with thresholds); the type check keeps string values like 'nan' as categories.
+    let isNaNValue = SQL.sql`(typeof(${value}) IN ('FLOAT', 'DOUBLE') AND isnan(TRY_CAST(${value} AS DOUBLE)))`;
+    return SQL.sql`(CASE WHEN ${value} IS NULL OR ${isNaNValue} THEN ${nullIndex} ${joinSQL(cases)} ELSE ${other} END)`;
   }
   let t = scale!.thresholds!.slice(0, k + 1);
   let x = scale!.type == "time" ? SQL.cast(SQL.epoch_ms(value), "DOUBLE") : SQL.cast(value, "DOUBLE");

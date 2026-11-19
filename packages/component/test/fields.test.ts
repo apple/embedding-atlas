@@ -26,10 +26,10 @@ describe("categoryIndexExpr", () => {
     expect(String(categoryIndexExpr(SQL.column("c"), { range: ["red"] }))).toBe('"c"');
   });
 
-  test("domain values compare as text; other and null come last", () => {
+  test("domain values compare as text; other and null (and NaN) come last", () => {
     let e = String(categoryIndexExpr(SQL.column("c"), { domain: ["a", 1, true] }));
     expect(e).toBe(
-      `(CASE WHEN "c" IS NULL THEN 4 WHEN ("c")::TEXT = 'a' THEN 0 WHEN ("c")::TEXT = '1' THEN 1 WHEN ("c")::TEXT = 'true' THEN 2 ELSE 3 END)`,
+      `(CASE WHEN "c" IS NULL OR (typeof("c") IN ('FLOAT', 'DOUBLE') AND isnan(TRY_CAST("c" AS DOUBLE))) THEN 4 WHEN ("c")::TEXT = 'a' THEN 0 WHEN ("c")::TEXT = '1' THEN 1 WHEN ("c")::TEXT = 'true' THEN 2 ELSE 3 END)`,
     );
   });
 

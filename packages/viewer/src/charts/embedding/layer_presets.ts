@@ -32,5 +32,15 @@ export function layerPresets(options: DefaultLabelsOptions): LayerPreset[] {
       label: "Density",
       layers: [{ type: "density" }, { type: "points" }, ...labels],
     },
+    // Density contours and points of the filtered data over a faint gray density of all data.
+    {
+      label: "Density with Context",
+      layers: [
+        { type: "density", filter: null, color: contextColor, opacity: 0.3 },
+        { type: "density" },
+        { type: "points" },
+        ...labels,
+      ],
+    },
   ];
 }

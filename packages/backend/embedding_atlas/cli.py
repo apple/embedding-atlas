@@ -390,7 +390,7 @@ def import_modules(names: list[str]):
     default=None,
     help="Labels for the embedding view: 'automatic' (default) to generate labels automatically, 'disabled' to disable automatic labels, "
     "or a path to a file containing labels. The file should be a table with columns 'x', 'y', 'content' (the label text), and optionally 'level' and 'priority'; "
-    "the embedding view shows these labels instead of automatically generated labels. Only affects embedding views without explicit layers.",
+    'the embedding view shows these labels instead of automatically generated labels. This determines the labels of embedding views without explicit layers, and of the default labels layer (e.g., in the layer presets); labels layers can refer to the provided labels as "$labels".',
 )
 @click.option(
     "--state",
