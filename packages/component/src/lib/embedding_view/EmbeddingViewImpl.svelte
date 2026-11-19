@@ -150,7 +150,7 @@
     cacheIdentifier = undefined,
   }: Props<Selection> = $props();
 
-  let showClusterLabels = true;
+  let showClusterLabels = $derived(config?.showLabels ?? true);
 
   let colorScheme = $derived(config?.colorScheme ?? "light");
   let resolvedTheme = $derived(resolveTheme(theme, colorScheme));
@@ -216,6 +216,7 @@
   let minimumDensity = $derived(config?.minimumDensity ?? 1 / 16);
   let userPointSize = $derived(config?.pointSize ?? null);
   let mode = $derived(config?.mode ?? "points");
+  let showPoints = $derived(config?.showPoints ?? true);
   let autoLabelEnabled = $derived(config?.autoLabelEnabled);
   let downsampleMaxPoints = $derived(config?.downsampleMaxPoints ?? 4000000);
   let downsampleDensityWeight = $derived(config?.downsampleDensityWeight ?? 5);
@@ -259,6 +260,8 @@
       downsampleMaxPoints,
       downsampleDensityWeight,
       ...viewingParams,
+      pointAlpha: showPoints ? viewingParams.pointAlpha : 0,
+      pointsAlpha: showPoints ? viewingParams.pointsAlpha : 0,
     });
 
     if (needsRender) {
