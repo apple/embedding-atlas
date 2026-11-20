@@ -76,3 +76,8 @@ export { default as IconStringType } from "~icons/fluent/text-t-16-filled";
 
 // Spinner icon (animating)
 export { default as IconSpinner } from "~icons/svg-spinners/270-ring-with-bg";
+
+// Icons for embedding view layers
+export { default as IconPointsLayer } from "~icons/fluent/data-scatter-20-regular";
+export { default as IconDensityLayer } from "~icons/fluent/circle-multiple-concentric-16-regular";
+export { default as IconLabelsLayer } from "~icons/fluent/tag-16-regular";

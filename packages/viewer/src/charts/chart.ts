@@ -55,7 +55,7 @@ export interface ChartContext {
 
   /**
    * Get the global cross filter for a given table.
-   * If the table is undefined, returns the filter for the data table (aka., same as `filter`).
+   * If the table is undefined or the main data table, returns the filter for the data table (aka., same as `filter`).
    * Aux tables always get a Selection; if the table has no declared relation, the
    * returned Selection isn't bridged to the main filter (charts on it still work
    * locally, just no cross-table propagation).

@@ -370,9 +370,8 @@ registerChartBuilder({
     type: "embedding",
     title: "Embedding",
     data: {
-      // The builder passes undefined for the main table, so single-table specs stay
-      // clean (and filterFor(mainTable) is not accidentally triggered). When a
-      // non-default table is set, its id column must be set too, since it differs per table.
+      // The builder passes undefined for the main table, so single-table specs stay clean.
+      // When a non-default table is set, its id column must be set too, since it differs per table.
       ...(table != null ? { table, id: context.tables[table]?.id } : {}),
       x: x.name,
       y: y.name,

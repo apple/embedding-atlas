@@ -71,7 +71,9 @@ export interface EmbeddingAtlasProps {
   /** Configuration for the embedding view. See docs for the EmbeddingView. */
   embeddingViewConfig?: EmbeddingViewConfig | null;
 
-  /** Labels for the embedding view. */
+  /** Labels for the embedding view. Each label has `x`, `y`, `content` (the label text), and optionally
+   *  `level` and `priority`. If specified, embedding views without explicit layers show these labels instead of
+   *  automatically generated labels. In an embedding view's spec, labels layers refer to them as `"$labels"`. */
   embeddingViewLabels?: Label[] | null;
 
   /** Theme config for charts. */

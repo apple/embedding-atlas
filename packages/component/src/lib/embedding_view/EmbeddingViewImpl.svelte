@@ -1,11 +1,10 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts" module>
   interface Props<Selection> {
-    data: {
-      x: Float32Array<ArrayBuffer>;
-      y: Float32Array<ArrayBuffer>;
-      category: Uint8Array<ArrayBuffer> | null;
-    };
+    layers: ResolvedLayer[];
+    /** Number of points in the main data (for the status bar). */
+    pointCount: number;
+    /** Category colors of the main data (for the selection markers). */
     categoryCount: number;
     categoryColors: string[] | null;
     width: number;
@@ -13,10 +12,6 @@
     pixelRatio: number;
     theme: ThemeConfig | null;
     config: EmbeddingViewConfig | null;
-    totalCount: number | null;
-    maxDensity: number | null;
-    labels?: Label[] | null;
-    queryClusterLabels: ((clusters: Rectangle[][]) => Promise<(LabelContent | null)[]>) | null;
     tooltip: Selection | null;
     selection: Selection[] | null;
     querySelection: ((x: number, y: number, unitDistance: number) => Promise<Selection | null>) | null;
@@ -29,8 +24,8 @@
     onTooltip: ((value: Selection | null) => void) | null;
     onSelection: ((value: Selection[] | null) => void) | null;
     onRangeSelection: ((value: Rectangle | Point[] | null) => void) | null;
+    onLayerValues: ((values: LayerValues[]) => void) | null;
     cache: Cache | null;
-    cacheIdentifier?: any | null;
   }
 
   interface Cluster {
@@ -92,7 +87,7 @@
 
 <script lang="ts">
   import { deepEquals, interactionHandler, objectHash, type CursorValue } from "@embedding-atlas/utils";
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
 
   import EditableRectangle from "./EditableRectangle.svelte";
   import Lasso from "./Lasso.svelte";
@@ -102,11 +97,21 @@
   import { defaultCategoryColors } from "../colors.js";
   import { pointDistance, throttleTooltip, type Point, type Rectangle, type ViewportState } from "../utils.js";
   import { Viewport } from "../viewport_utils.js";
-  import { EmbeddingRenderer } from "../webgpu_renderer/renderer.js";
+  import { EmbeddingRenderer, type RendererLayer, type RendererSource } from "../webgpu_renderer/renderer.js";
   import { requestWebGPUDevice } from "../webgpu_renderer/utils.js";
   import { customComponentAction, customComponentProps } from "./custom_component_helper.js";
   import type { EmbeddingViewConfig } from "./embedding_view_config.js";
-  import { layoutLabels, type LabelWithPlacement } from "./labels.js";
+  import { layoutLabels, type LabelGroup, type LabelWithPlacement } from "./labels.js";
+  import { LabelLayers, type LayerLabels } from "./label_layers.js";
+  import {
+    MAX_DENSITY_CATEGORIES,
+    type AutoLabels,
+    type LabelSnapshot,
+    type LayerValues,
+    type ResolvedLabelsLayer,
+    type ResolvedLayer,
+    type ResolvedSource,
+  } from "./layers.js";
   import { simplifyPolygon } from "./simplify_polygon.js";
   import { resolveTheme, type ThemeConfig } from "./theme.js";
   import type { Cache, CustomComponent, Label, LabelContent, OverlayProxy } from "./types.js";
@@ -122,7 +127,8 @@
   type Selection = $$Generic<SelectionBase>;
 
   let {
-    data = { x: new Float32Array(), y: new Float32Array(), category: null },
+    layers = [],
+    pointCount = 0,
     categoryCount = 1,
     categoryColors = null,
     width = 800,
@@ -130,10 +136,6 @@
     pixelRatio = 2,
     theme = null,
     config = null,
-    totalCount = null,
-    maxDensity = null,
-    labels = null,
-    queryClusterLabels = null,
     tooltip = null,
     selection = null,
     querySelection = null,
@@ -146,11 +148,9 @@
     onTooltip = null,
     onSelection = null,
     onRangeSelection = null,
+    onLayerValues = null,
     cache = null,
-    cacheIdentifier = undefined,
   }: Props<Selection> = $props();
-
-  let showClusterLabels = true;
 
   let colorScheme = $derived(config?.colorScheme ?? "light");
   let resolvedTheme = $derived(resolveTheme(theme, colorScheme));
@@ -201,8 +201,9 @@
     onRangeSelection?.(newValue);
   }
 
-  let clusterLabels: LabelWithPlacement[] = $state([]);
-  let statusMessage: string | null = $state(null);
+  let clusterLabels: (LabelWithPlacement & { layer: string })[] = $state([]);
+  let labelsGeneratingCount = $state(0);
+  let statusMessage: string | null = $derived(labelsGeneratingCount > 0 ? "Generating labels..." : null);
 
   let selectionMode = $state<"marquee" | "lasso" | "none">("none");
 
@@ -213,68 +214,142 @@
   let renderer: EmbeddingRenderer | null = $state(null);
   let webGPUError: string | null = $state(null);
 
-  let minimumDensity = $derived(config?.minimumDensity ?? 1 / 16);
-  let userPointSize = $derived(config?.pointSize ?? null);
-  let mode = $derived(config?.mode ?? "points");
-  let autoLabelEnabled = $derived(config?.autoLabelEnabled);
-  let downsampleMaxPoints = $derived(config?.downsampleMaxPoints ?? 4000000);
-  let downsampleDensityWeight = $derived(config?.downsampleDensityWeight ?? 5);
+  interface LayerViewingParameters {
+    /** Point size for the tooltip / selection markers (before clamping for rendering). */
+    pointSize: number;
+    renderLayers: RendererLayer[];
+    sources: Record<string, RendererSource>;
+    /** Effective values of the points and density layers (reported with onLayerValues), by layer key. */
+    values: Record<string, LayerValues>;
+  }
 
-  let viewingParams = $derived(
-    viewingParameters(
-      maxDensity ?? (totalCount ?? data.x.length) / 4,
+  function sourceViewingParameters(source: ResolvedSource, minimumDensity: number, userPointSize: number | null) {
+    return viewingParameters(
+      source.maxDensity ?? (source.totalCount ?? source.x.length) / 4,
       minimumDensity,
       resolvedViewportState.scale,
       pixelWidth,
       pixelHeight,
       pixelRatio,
       userPointSize,
-    ),
-  );
+    );
+  }
 
-  let pointSize = $derived(viewingParams.pointSize);
+  /** The color of a density layer that has more categories than MAX_DENSITY_CATEGORIES.
+   *  A constant array, so the renderer's layer inputs don't change on every frame. */
+  const tooManyCategoriesDensityColors = ["#7f7f7f"];
 
-  let needsUpdateLabels = true;
-  let previousLabels: Label[] | null = null;
+  function computeLayerViewingParameters(layers: ResolvedLayer[]): LayerViewingParameters {
+    let sources: Record<string, RendererSource> = {};
+    let renderLayers: RendererLayer[] = [];
+    let values: LayerViewingParameters["values"] = {};
+    let round = (v: number) => Math.round(v * 1000) / 1000;
+    // Tooltip and selection markers are for points of the main data: size them like the main data's points
+    // layer, or the first points layer if no points layer draws the main data.
+    let markerPointSize: number | null = null;
+    let mainMarkerPointSize: number | null = null;
+    // Points are drawn smaller when a density layer is present (matches the previous density mode).
+    let hasDensity = layers.some((l) => l.type == "density");
+    for (let layer of layers) {
+      if (layer.type == "labels") {
+        continue;
+      }
+      let source = layer.source;
+      sources[source.key] = { x: source.x, y: source.y, category: source.category };
+      switch (layer.type) {
+        case "points": {
+          let params = sourceViewingParameters(source, layer.minimumDensity, layer.pointSize);
+          markerPointSize = markerPointSize ?? params.pointSize;
+          if (source.key == "main") {
+            mainMarkerPointSize = mainMarkerPointSize ?? params.pointSize;
+          }
+          // Points are drawn by area coverage, so any size works (sizes below a pixel fade out smoothly). The
+          // automatic size keeps a minimum, so zoomed-out views stay visible; a specified size is used as is.
+          let renderedPointSize =
+            layer.pointSize != null ? params.pointSize : Math.max(hasDensity ? 1 : 3, params.pointSize);
+          let pointsAlpha = layer.opacity == "auto" ? params.pointsAlpha : layer.opacity;
+          values[layer.key] = {
+            type: "points",
+            id: layer.id,
+            opacity: round(pointsAlpha),
+            pointSize: round(renderedPointSize / pixelRatio),
+          };
+          renderLayers.push({
+            key: layer.key,
+            type: "points",
+            source: source.key,
+            categoryCount: layer.useCategory ? source.categoryCount : 1,
+            categoryColors: layer.categoryColors,
+            pointSize: renderedPointSize,
+            pointAlpha: params.pointAlpha,
+            pointsAlpha: pointsAlpha,
+            densityScaler: params.densityScaler,
+            densityQuantizationStep: 0.1,
+            densityAlpha: 0,
+            contoursAlpha: 0,
+            downsampleMaxPoints: layer.downsampleMaxPoints,
+            downsampleDensityWeight: layer.downsampleDensityWeight,
+          });
+          break;
+        }
+        case "density": {
+          let params = sourceViewingParameters(source, layer.minimumDensity, null);
+          let alpha = layer.opacity == "auto" ? params.densityAlpha : layer.opacity;
+          let tooManyCategories = layer.useCategory && source.categoryCount > MAX_DENSITY_CATEGORIES;
+          let useCategories = layer.useCategory && !tooManyCategories;
+          values[layer.key] = { type: "density", id: layer.id, opacity: round(alpha) };
+          renderLayers.push({
+            key: layer.key,
+            type: "density",
+            source: source.key,
+            categoryCount: useCategories ? source.categoryCount : 1,
+            // With too many categories, the density of all categories is drawn together in a neutral color
+            // (using the first category's color would suggest it's the density of that category only).
+            categoryColors: tooManyCategories ? tooManyCategoriesDensityColors : layer.categoryColors,
+            pointSize: params.pointSize,
+            pointAlpha: 0,
+            pointsAlpha: 0,
+            densityScaler: params.densityScaler,
+            densityQuantizationStep: 0.1,
+            densityAlpha: layer.fill ? alpha : 0,
+            contoursAlpha: layer.contours ? alpha : 0,
+            downsampleMaxPoints: null,
+            downsampleDensityWeight: 0,
+          });
+          break;
+        }
+      }
+    }
+    markerPointSize = mainMarkerPointSize ?? markerPointSize;
+    if (markerPointSize == null) {
+      let firstSource = layers.find((l) => l.type != "labels")?.source;
+      markerPointSize =
+        firstSource != null
+          ? sourceViewingParameters(firstSource, config?.minimumDensity ?? 1 / 16, config?.pointSize ?? null).pointSize
+          : 3 * pixelRatio;
+    }
+    return { pointSize: markerPointSize, renderLayers, sources, values };
+  }
+
+  let layerViewingParams = $derived(computeLayerViewingParameters(layers));
+
+  let pointSize = $derived(layerViewingParams.pointSize);
 
   $effect.pre(() => {
-    if (labels !== previousLabels) {
-      previousLabels = labels;
-      needsUpdateLabels = true;
-    }
-
     let needsRender = renderer?.setProps({
-      mode: mode,
       colorScheme: colorScheme,
       viewportX: resolvedViewportState.x,
       viewportY: resolvedViewportState.y,
       viewportScale: resolvedViewportState.scale,
       width: pixelWidth,
       height: pixelHeight,
-      x: data.x,
-      y: data.y,
-      category: data.category,
-      categoryCount,
-      categoryColors: resolvedCategoryColors,
-      downsampleMaxPoints,
-      downsampleDensityWeight,
-      ...viewingParams,
+      densityBandwidth: 20,
+      sources: layerViewingParams.sources,
+      layers: layerViewingParams.renderLayers,
     });
 
     if (needsRender) {
       setNeedsRender();
-    }
-
-    if (
-      (autoLabelEnabled !== false || labels != null) &&
-      needsUpdateLabels &&
-      renderer != null &&
-      data.x != null &&
-      data.x.length > 0 &&
-      defaultViewportState != null
-    ) {
-      needsUpdateLabels = false;
-      updateLabels(defaultViewportState);
     }
   });
 
@@ -546,11 +621,11 @@
 
   async function generateClusters(
     renderer: EmbeddingRenderer,
+    snapshot: LabelSnapshot,
     bandwidth: number,
-    viewport: ViewportState,
     densityThreshold: number = 0.005,
   ): Promise<Cluster[]> {
-    let map = await renderer.densityMap(1000, 1000, bandwidth, viewport);
+    let map = await renderer.densityMap(snapshot, 1000, 1000, bandwidth, snapshot.viewport);
     let cs = await findClusters(map.data, map.width, map.height);
     let collectedClusters: Cluster[] = [];
     for (let idx = 0; idx < cs.length; idx++) {
@@ -578,32 +653,47 @@
     return collectedClusters.filter((x) => x.sumDensity / maxDensity > densityThreshold);
   }
 
-  async function generateLabels(viewport: ViewportState): Promise<Label[]> {
-    if (renderer == null || queryClusterLabels == null) {
-      return [];
+  // Label generations in progress, shared by layers with the same merge key.
+  let pendingLabelGenerations = new Map<string, Promise<LayerLabels>>();
+
+  function generateLabels(auto: AutoLabels): Promise<LayerLabels> {
+    let pending = pendingLabelGenerations.get(auto.mergeKey);
+    if (pending == null) {
+      pending = generateLabelsUncached(auto).finally(() => {
+        pendingLabelGenerations.delete(auto.mergeKey);
+      });
+      pendingLabelGenerations.set(auto.mergeKey, pending);
     }
+    return pending;
+  }
 
-    let cacheKey = await objectHash({
-      autoLabel: {
-        version: 3,
-        identifier: cacheIdentifier,
-        viewport,
-        stopWords: config?.autoLabelStopWords,
-        densityThreshold: config?.autoLabelDensityThreshold,
-      },
-    });
-
-    if (cache != null) {
-      let cached = await cache.get(cacheKey);
-      if (cached != null) {
+  /** Generate automatic labels: from the persistent cache if they're there (without loading the data), otherwise
+   *  from a snapshot of the data (density maps, clusters, and the labels of the clusters). */
+  async function generateLabelsUncached(auto: AutoLabels): Promise<LayerLabels> {
+    let densityThreshold = auto.densityThreshold ?? config?.autoLabelDensityThreshold ?? null;
+    let cacheKey =
+      auto.persistKey != null && cache != null
+        ? await objectHash({ autoLabels: { version: 5, key: auto.persistKey, densityThreshold } })
+        : null;
+    if (cacheKey != null) {
+      let cached = await cache!.get(cacheKey);
+      if (cached != null && Array.isArray(cached.labels) && cached.viewport != null) {
         return cached;
       }
     }
 
-    let newClusters = await generateClusters(renderer, 10, viewport, config?.autoLabelDensityThreshold ?? 0.005);
-    newClusters = newClusters.concat(await generateClusters(renderer, 5, viewport));
+    let snapshot = await auto.loadSnapshot();
+    let currentRenderer = renderer;
+    if (snapshot.x.length == 0 || currentRenderer == null) {
+      return { labels: [], viewport: snapshot.viewport };
+    }
+    let newClusters = await generateClusters(currentRenderer, snapshot, 10, densityThreshold ?? 0.005);
+    newClusters = newClusters.concat(await generateClusters(currentRenderer, snapshot, 5));
 
-    let labels = await queryClusterLabels(newClusters.map((x) => x.rects));
+    let labels = await auto.queryClusterLabels(
+      newClusters.map((x) => x.rects),
+      snapshot,
+    );
     for (let i = 0; i < newClusters.length; i++) {
       let label = labels[i];
       newClusters[i].content = label;
@@ -615,42 +705,118 @@
       }
     }
 
-    let result: Label[] = newClusters
-      .filter((x) => x.content != null && (typeof x.content !== "string" || x.content.length > 0))
-      .map((x) => ({
-        x: x.x,
-        y: x.y,
-        content: x.content!,
-        priority: x.sumDensity,
-        level: x.bandwidth == 10 ? 0 : 1,
-      }));
-
-    if (cache != null) {
-      await cache.set(cacheKey, result);
+    let result: LayerLabels = {
+      labels: newClusters
+        .filter((x) => x.content != null && (typeof x.content !== "string" || x.content.length > 0))
+        .map((x) => ({
+          x: x.x,
+          y: x.y,
+          content: x.content!,
+          priority: x.sumDensity,
+          level: x.bandwidth == 10 ? 0 : 1,
+        })),
+      viewport: snapshot.viewport,
+    };
+    if (cacheKey != null) {
+      await cache!.set(cacheKey, result);
     }
-
     return result;
   }
 
-  async function updateLabels(viewport: ViewportState) {
-    let vp = new Viewport(viewport, 1000, 1000);
-    if (renderer == null) {
-      return;
+  /** The labels of each labels layer (reported with onLayerValues), by layer key. */
+  let labelResults: Record<string, Label[] | null> = $state.raw({});
+  let labelLayoutGeneration = 0;
+
+  const labelLayers = new LabelLayers({
+    generate: generateLabels,
+    onChange: () => layoutAllLabels(),
+    onGenerating: (count) => {
+      labelsGeneratingCount = count;
+    },
+    onError: (error) => console.error("Error while generating labels", error),
+  });
+  onDestroy(() => labelLayers.destroy());
+
+  $effect.pre(() => {
+    let layersWithLabels = layers.filter((l): l is ResolvedLabelsLayer => l.type == "labels");
+    // Wait for the renderer (to generate labels) and the default viewport (to lay out static labels).
+    if (renderer != null && defaultViewportState != null) {
+      untrack(() => labelLayers.sync(layersWithLabels));
     }
-    if (labels != null) {
-      clusterLabels = await layoutLabels(vp.scale(), labels, resolvedTheme.fontFamily);
-    } else {
-      statusMessage = "Generating labels...";
-      try {
-        let result = await generateLabels(viewport);
-        clusterLabels = await layoutLabels(vp.scale(), result, resolvedTheme.fontFamily);
-      } catch (e) {
-        console.error("Error while generating labels", e);
-      } finally {
-        statusMessage = null;
+  });
+
+  /** Lay out labels from all labels layers together so that labels from different layers don't overlap.
+   *  Called whenever the labels of any layer change. */
+  async function layoutAllLabels() {
+    let results = labelLayers.results();
+    labelResults = Object.fromEntries(results.map(({ key, labels }) => [key, labels?.labels ?? null]));
+    let generation = ++labelLayoutGeneration;
+    let mainViewport = untrack(() => defaultViewportState ?? resolvedViewportState);
+    let scaleOf = (viewport: ViewportState) => new Viewport(viewport, 1000, 1000).scale();
+    // Each layer's labels are a group: their zoom ranges come from their own levels, relative to the scale they
+    // were generated at (static labels: the main viewport), so layers don't change each other's zoom behavior.
+    let groups: LabelGroup[] = [];
+    let labelLayerKeys: string[] = [];
+    for (let { key, labels } of results) {
+      if (labels == null || labels.labels.length == 0) {
+        continue;
+      }
+      groups.push({ labels: labels.labels, normalScale: scaleOf(labels.viewport ?? mainViewport) });
+      for (let _ of labels.labels) {
+        labelLayerKeys.push(key);
       }
     }
+    let result = await layoutLabels(groups, resolvedTheme.fontFamily);
+    if (generation != labelLayoutGeneration) {
+      return;
+    }
+    clusterLabels = result.map((label, i) => ({ ...label, layer: labelLayerKeys[i] }));
   }
+
+  let labelOpacity = $derived(
+    Object.fromEntries(
+      layers.filter((l) => l.type == "labels").map((l) => [l.key, l.opacity ?? resolvedTheme.clusterLabelOpacity]),
+    ),
+  );
+
+  let layerValues: LayerValues[] = $derived(
+    layers.flatMap((layer): LayerValues[] => {
+      if (layer.type == "labels") {
+        let labels = labelResults[layer.key] ?? null;
+        return [{ type: "labels", id: layer.id, opacity: labelOpacity[layer.key], labels: labels }];
+      }
+      let values = layerViewingParams.values[layer.key];
+      return values != null ? [values] : [];
+    }),
+  );
+
+  function shallowEquals(a: Record<string, any>, b: Record<string, any>): boolean {
+    let keys = Object.keys(a);
+    return keys.length == Object.keys(b).length && keys.every((k) => a[k] === b[k]);
+  }
+
+  // Unchanged entries keep their identity, so consumers can compare entries (and labels) by reference:
+  // the values change continuously while zooming, but labels change rarely.
+  let lastLayerValues: LayerValues[] | null = null;
+  $effect(() => {
+    let values = layerValues;
+    if (onLayerValues == null) {
+      return;
+    }
+    let changed = lastLayerValues == null || values.length != lastLayerValues.length;
+    let result = values.map((value, i) => {
+      let last = lastLayerValues?.[i];
+      if (last != null && shallowEquals(value, last)) {
+        return last;
+      }
+      changed = true;
+      return value;
+    });
+    if (changed) {
+      lastLayerValues = result;
+      onLayerValues(result);
+    }
+  });
 
   class DefaultTooltipRenderer {
     content: HTMLElement;
@@ -746,13 +912,14 @@
       {/each}
     {/if}
     <!-- Cluster labels -->
-    {#if showClusterLabels}
+    {#if clusterLabels.length > 0}
       <g>
         {#each clusterLabels as label}
           {@const location = pointLocation(label.coordinate.x, label.coordinate.y)}
           {@const scale = resolvedViewport.scale()}
           {@const isVisible =
             label.placement != null && label.placement.minScale <= scale && scale <= label.placement.maxScale}
+          {@const opacity = labelOpacity[label.layer] ?? resolvedTheme.clusterLabelOpacity}
           <g transform="translate({location.x},{location.y})">
             {#if isVisible}
               {#if typeof label.content !== "string"}
@@ -764,7 +931,7 @@
                   height={label.content.height}
                   style:user-select="none"
                   style:-webkit-user-select="none"
-                  style:opacity={resolvedTheme.clusterLabelOpacity}
+                  style:opacity={opacity}
                 />
               {:else}
                 {@const rows = label.content.split("\n")}
@@ -778,7 +945,7 @@
                       style:text-anchor="middle"
                       style:fill={resolvedTheme.clusterLabelColor}
                       style:stroke={resolvedTheme.clusterLabelOutlineColor}
-                      style:opacity={resolvedTheme.clusterLabelOpacity}
+                      style:opacity={opacity}
                       style:user-select="none"
                       style:-webkit-user-select="none"
                       style:font-family={resolvedTheme.fontFamily}
@@ -834,7 +1001,7 @@
       resolvedTheme={resolvedTheme}
       statusMessage={statusMessage ?? webGPUError}
       distancePerPoint={1 / (pointLocation(1, 0).x - pointLocation(0, 0).x)}
-      pointCount={data.x.length}
+      pointCount={pointCount}
       selectionMode={selectionMode}
       onSelectionMode={(v) => (selectionMode = v)}
     />

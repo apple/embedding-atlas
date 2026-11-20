@@ -10,6 +10,7 @@
   const coordinator = new Coordinator();
 
   let mode: "points" | "density" = $state("density");
+  let layersMode: "default" | "overlay" = $state("default");
   let colorScheme: "light" | "dark" = $state("light");
   let minimumDensity: number = $state(1 / 16);
   let pointCount: number = $state(0);
@@ -41,11 +42,21 @@
     coordinator.clear();
 
     await coordinator.exec(`DROP TABLE IF EXISTS data_table`);
+    await coordinator.exec(`DROP TABLE IF EXISTS other_table`);
 
     let dataset = generateSampleDataset({ numPoints: 500000, numCategories: 3, numSubClusters: 32 });
     let db = await (coordinator.databaseConnector()! as DuckDBWASMConnector).getDuckDB();
     await db.registerFileText("rows.json", JSON.stringify(dataset));
     await (await db.connect()).insertJSONFromPath("rows.json", { name: "data_table" });
+
+    // A second table to overlay on top of the main table (with the "Overlay" layers).
+    let otherDataset = generateSampleDataset({ numPoints: 20000, numCategories: 1, numSubClusters: 4 }).map((r) => ({
+      ...r,
+      x: r.x * 0.5 + 0.5,
+      y: r.y * 0.5 - 0.5,
+    }));
+    await db.registerFileText("other_rows.json", JSON.stringify(otherDataset));
+    await (await db.connect()).insertJSONFromPath("other_rows.json", { name: "other_table" });
 
     let r = await coordinator.query("SELECT COUNT(*) AS count FROM data_table");
     pointCount = r.get(0).count;
@@ -138,6 +149,14 @@
 
     <input type="range" bind:value={minimumDensity} min={0} max={0.2} step={0.0001} />
     {minimumDensity.toFixed(4)}
+
+    <label style="display:flex;align-items:center;gap:4px">
+      Layers:
+      <select bind:value={layersMode}>
+        <option value="default">Default</option>
+        <option value="overlay">Overlay</option>
+      </select>
+    </label>
   </div>
   <div style="display:flex;gap:8px">
     <div>
@@ -163,6 +182,26 @@
             onViewportState={(v) => (viewportState = v)}
             rangeSelection={brush}
             filter={brush}
+            layers={layersMode == "overlay"
+              ? [
+                  // Density of the main table (filtered by the brush).
+                  { type: "density" },
+                  // Points of the main table (filtered by the brush).
+                  { type: "points" },
+                  // Points of another table, not filtered.
+                  {
+                    type: "points",
+                    data: { table: "other_table", x: "x", y: "y" },
+                    filter: null,
+                    color: "#e31a1c",
+                    opacity: 0.8,
+                  },
+                  // Labels of the main table, regenerated when the brush changes.
+                  { type: "labels", filter: brush },
+                  // Static labels for the other table.
+                  { type: "labels", labels: [{ x: 0.5, y: -0.5, content: "Other Table" }], opacity: 1 },
+                ]
+              : null}
           />
         </div>
       {/if}

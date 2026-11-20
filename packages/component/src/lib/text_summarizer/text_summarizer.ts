@@ -39,15 +39,20 @@ export class TextSummarizer {
   }
 
   /** Add data to the summarizer */
-  add(data: { x: ArrayLike<number>; y: ArrayLike<number>; text: ArrayLike<string> }) {
+  add(data: { x: ArrayLike<number>; y: ArrayLike<number>; text: ArrayLike<string | null> }) {
     for (let i = 0; i < data.text.length; i++) {
+      let text = data.text[i];
+      if (text == null) {
+        // Null texts (e.g., null values of the text field) have no words.
+        continue;
+      }
       let key = this.binning.key(data.x[i], data.y[i]);
       let indices = this.key2RegionIndices.get(key);
       if (indices == null) {
         continue;
       }
       let words = [];
-      for (let s of this.segmenter.segment(data.text[i])) {
+      for (let s of this.segmenter.segment(text)) {
         let word = s.segment.trim();
         if (word.length > 1) {
           words.push(word);

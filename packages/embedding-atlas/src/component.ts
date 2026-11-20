@@ -17,6 +17,7 @@ export type {
   EmbeddingViewConfig,
   EmbeddingViewTheme,
   Label,
+  LabelContent,
   OverlayProxy,
   Point,
   Rectangle,

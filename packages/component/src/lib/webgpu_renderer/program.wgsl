@@ -121,10 +121,61 @@ fn accumulate(@builtin(global_invocation_id) id: vec3<u32>) {
 // Draw Discrete Points
 // =====================================================
 
+// Points are drawn by area coverage: each pixel gets the fraction of its area covered by the point's footprint
+// (times the point's opacity), so the total "ink" of a point doesn't depend on where it falls within a pixel, and
+// changes continuously with its size and position (points don't pop while panning, and stay visible when smaller
+// than a pixel). See `point_coverage` (and test/point_coverage.test.ts for a reference implementation).
+
 struct PointsVertexOutput {
   @builtin(position) position: vec4<f32>,
-  @location(0) dp: vec3<f32>,
-  @location(1) color: vec4<f32>,
+  // The offset of the vertex from the point's center, in framebuffer pixels (interpolated: the pixel's offset).
+  @location(0) offset: vec2<f32>,
+  // The footprint's radius (see `footprint_radius`), and the point's optical depth -log(1 - alpha).
+  @location(1) @interpolate(flat) params: vec2<f32>,
+  @location(2) color: vec4<f32>,
+}
+
+/** The radius of a point's footprint (a disk of that area), in pixels, for the point size (the radius of the
+ *  drawn disk's outer edge). Large points are disks of radius `size - 0.5` with a 1px antialiased edge, as before;
+ *  below 1.5px, the radius shrinks smoothly (C1) to zero with the size. */
+fn footprint_radius(size: f32) -> f32 {
+  if (size >= 1.5) {
+    return size - 0.5;
+  }
+  let s = max(size, 0.0);
+  return s * s * (2.0 / 9.0) + s / 3.0;
+}
+
+/** The length of [x - 0.5, x + 0.5] ∩ [-h, h]. */
+fn overlap_1d(x: f32, h: f32) -> f32 {
+  return clamp(min(x + 0.5, h) - max(x - 0.5, -h), 0.0, 1.0);
+}
+
+/** The fraction of the pixel at `offset` (from the point's center) covered by a footprint of radius `re`.
+ *  Small footprints are squares of the disk's area (exact area coverage, separable); larger ones are disks with
+ *  a 1px ramp (normalized to the disk's area). The two are blended for radii in [1, 2] (the ramp sampled at
+ *  pixel centers doesn't conserve the area of smaller disks). */
+fn point_coverage(offset: vec2<f32>, re: f32) -> f32 {
+  let h = 0.886226925 * re; // half the side of a square of area pi * re^2
+  let square = overlap_1d(offset.x, h) * overlap_1d(offset.y, h);
+  let ramp = clamp(re + 0.5 - length(offset), 0.0, 1.0) * (re * re / (re * re + 1.0 / 12.0));
+  let t = clamp(re - 1.0, 0.0, 1.0);
+  return mix(square, ramp, t);
+}
+
+fn point_vertex(point: PointData, part: u32, alpha: f32) -> PointsVertexOutput {
+  let framebuffer_size = vec2(f32(uniforms.framebuffer_width), f32(uniforms.framebuffer_height));
+  let dp = vec2<f32>(f32(part % 2), f32(part / 2)) * 2.0 - 1.0;
+  let pos = uniforms.matrix * point.position;
+  let re = footprint_radius(uniforms.point_size);
+  // The footprint reaches pixels whose centers are within re + 0.5 of the point's center.
+  let half_size = re + 0.5;
+  var out: PointsVertexOutput;
+  out.position = vec4<f32>(pos.xy + dp * half_size / framebuffer_size * 2.0, 0.0, 1.0);
+  out.offset = dp * half_size;
+  out.color = uniforms.category_colors[point.category] * alpha;
+  out.params = vec2(re, -log(max(1.0 - out.color.a, 1e-6)));
+  return out;
 }
 
 @vertex
@@ -132,26 +183,18 @@ fn points_vs(
   @builtin(instance_index) index: u32,
   @builtin(vertex_index) part: u32,
 ) -> PointsVertexOutput {
-  let framebuffer_size = vec2(f32(uniforms.framebuffer_width), f32(uniforms.framebuffer_height));
   let alpha = uniforms.point_alpha * uniforms.points_alpha;
-  let dp = vec2<f32>(f32(part % 2), f32(part / 2)) * 2.0 - 1.0;
-  let point = get_point(index);
-  let pos = uniforms.matrix * point.position;
-
-  var out: PointsVertexOutput;
-  out.position = vec4<f32>(pos.xy + dp * uniforms.point_size / framebuffer_size * 2.0, 0.0, 1.0);
-  out.dp = vec3(dp, uniforms.point_size);
-  out.color = uniforms.category_colors[point.category] * alpha;
-  return out;
+  return point_vertex(get_point(index), part, alpha);
 }
 
 @fragment
 fn points_fs(in: PointsVertexOutput) -> FragmentOutput {
-  let r = length(in.dp.xy) * in.dp.z;
-  let a = max(0.0, min(1.0, in.dp.z - r));
+  let coverage = point_coverage(in.offset, in.params.x);
   var out: FragmentOutput;
-  out.color = in.color * a;
-  out.log1malpha = log(1 - out.color.a);
+  // Colors are weighted by coverage; opacity accumulates as optical depth (linear in coverage), so a point spread
+  // over several pixels adds the same total as one covering a single pixel.
+  out.color = in.color * coverage;
+  out.log1malpha = -in.params.y * coverage;
   return out;
 }
 
@@ -572,13 +615,6 @@ fn points_downsampled_vs(
     return out;
   }
 
-  let framebuffer_size = vec2(f32(uniforms.framebuffer_width), f32(uniforms.framebuffer_height));
   let alpha = uniforms.point_alpha * uniforms.points_alpha;
-  let dp = vec2<f32>(f32(part % 2), f32(part / 2)) * 2.0 - 1.0;
-  let point = get_point(instance);
-  let pos = uniforms.matrix * point.position;
-  out.position = vec4<f32>(pos.xy + dp * uniforms.point_size / framebuffer_size * 2.0, 0.0, 1.0);
-  out.dp = vec3(dp, uniforms.point_size);
-  out.color = uniforms.category_colors[point.category] * alpha;
-  return out;
+  return point_vertex(get_point(instance), part, alpha);
 }

@@ -48,8 +48,8 @@ export function makeDrawPointsCommand(
     (pipeline, group0, group1, count, colorTexture, alphaTexture) => (encoder) => {
       let pass = encoder.beginRenderPass({
         colorAttachments: [
-          { clearValue: [0, 0, 0, 0], loadOp: "clear", storeOp: "store", view: colorTexture.createView() },
-          { clearValue: [0, 0, 0, 0], loadOp: "clear", storeOp: "store", view: alphaTexture.createView() },
+          { loadOp: "load", storeOp: "store", view: colorTexture.createView() },
+          { loadOp: "load", storeOp: "store", view: alphaTexture.createView() },
         ],
       });
       pass.setPipeline(pipeline);
@@ -115,8 +115,8 @@ export function makeDrawPointsDownsampledCommand(
     (pipeline, group0, group1, group5, colorTexture, alphaTexture) => (encoder, count) => {
       let pass = encoder.beginRenderPass({
         colorAttachments: [
-          { clearValue: [0, 0, 0, 0], loadOp: "clear", storeOp: "store", view: colorTexture.createView() },
-          { clearValue: [0, 0, 0, 0], loadOp: "clear", storeOp: "store", view: alphaTexture.createView() },
+          { loadOp: "load", storeOp: "store", view: colorTexture.createView() },
+          { loadOp: "load", storeOp: "store", view: alphaTexture.createView() },
         ],
       });
       pass.setPipeline(pipeline);

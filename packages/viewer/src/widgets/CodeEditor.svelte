@@ -97,7 +97,8 @@
     },
   ) {
     const fixedHeightEditor = EditorView.theme({
-      "&.cm-editor": { height: "100%" },
+      "&.cm-editor": { height: "100%", backgroundColor: "transparent" },
+      ".cm-gutters": { backgroundColor: "transparent" },
       ".cm-scroller": { overflow: "auto" },
       "&.cm-focused": { outline: "none" },
       ".cm-content": {
@@ -246,6 +247,6 @@
 <div class={props.class ?? ""}>
   <div
     bind:this={container}
-    class="rounded-md overflow-hidden border border-slate-200 dark:border-slate-600 w-full h-full"
+    class="rounded-md overflow-hidden border border-slate-200 dark:border-slate-600 bg-white dark:bg-black w-full h-full"
   ></div>
 </div>
