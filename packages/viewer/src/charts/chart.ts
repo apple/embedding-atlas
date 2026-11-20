@@ -55,7 +55,7 @@ export interface ChartContext {
 
   /**
    * Get the global cross filter for a given table.
-   * If the table is undefined, returns the filter for the data table (aka., same as `filter`).
+   * If the table is undefined or the main data table, returns the filter for the data table (aka., same as `filter`).
    * Aux tables always get a Selection; if the table has no declared relation, the
    * returned Selection isn't bridged to the main filter (charts on it still work
    * locally, just no cross-table propagation).
@@ -108,9 +108,8 @@ export interface ChartContext {
 
   /**
    * The overlay provided externally through the `overlay` prop of the viewer.
-   * `undefined` means no external overlay is provided, and views render the internal
-   * overlay (`overlay`, e.g. produced by search) instead. Any other value, including
-   * `null` and an overlay with no nodes, takes precedence over the internal overlay.
+   * `null` or `undefined` restores the internal overlay (e.g. produced by search).
+   * An external overlay object takes precedence, even if it has no nodes.
    */
   externalOverlay: Writable<Overlay | null | undefined>;
 

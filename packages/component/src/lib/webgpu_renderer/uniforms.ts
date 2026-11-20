@@ -139,9 +139,10 @@ export function makeModuleUniforms(df: Dataflow, device: DataflowNode<GPUDevice>
       let gamma = uniforms.gamma;
       for (let i = 0; i < Math.min(uniforms.category_colors.length, 256); i++) {
         let { r, g, b, a } = uniforms.category_colors[i];
-        r = Math.pow(r, gamma);
-        g = Math.pow(g, gamma);
-        b = Math.pow(b, gamma);
+        // Premultiplied by the color's alpha (the shaders blend premultiplied colors).
+        r = Math.pow(r, gamma) * a;
+        g = Math.pow(g, gamma) * a;
+        b = Math.pow(b, gamma) * a;
         writer.vec4f(r, g, b, a);
       }
       device.queue.writeBuffer(uniformBuffer, 0, buffer, 0, writer.byteOffset());

@@ -8,8 +8,8 @@ hero:
   tagline: Visualize, cross-filter, and search embeddings and metadata.
 
   image:
-    light: ./assets/embedding-atlas-light.png
-    dark: ./assets/embedding-atlas-dark.png
+    light: ./assets/embedding-atlas-light.avif
+    dark: ./assets/embedding-atlas-dark.avif
     alt: a screenshot of embedding atlas
   actions:
     - theme: brand

@@ -55,8 +55,12 @@ export function defaultCategoryColors(count: number): string[] {
   }
 }
 
-/** Parse color string into normalized sRGB values (all between 0 and 1). */
+/** Parse color string into normalized sRGB values (all between 0 and 1). Fully transparent colors (for which d3
+ *  gives NaN channels, e.g., "transparent" or "#00000000") and invalid colors are transparent black. */
 export function parseColorNormalizedRgb(str: string): { r: number; g: number; b: number; a: number } {
   let { r, g, b, opacity } = rgb(str);
+  if (!(opacity > 0) || isNaN(r) || isNaN(g) || isNaN(b)) {
+    return { r: 0, g: 0, b: 0, a: 0 };
+  }
   return { r: r / 255.0, g: g / 255.0, b: b / 255.0, a: opacity };
 }

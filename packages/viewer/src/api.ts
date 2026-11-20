@@ -71,7 +71,9 @@ export interface EmbeddingAtlasProps {
   /** Configuration for the embedding view. See docs for the EmbeddingView. */
   embeddingViewConfig?: EmbeddingViewConfig | null;
 
-  /** Labels for the embedding view. */
+  /** Labels for the embedding view. Each label has `x`, `y`, `content` (the label text), and optionally
+   *  `level` and `priority`. If specified, embedding views without explicit layers show these labels instead of
+   *  automatically generated labels. In an embedding view's spec, labels layers refer to them as `"$labels"`. */
   embeddingViewLabels?: Label[] | null;
 
   /** Theme config for charts. */
@@ -146,7 +148,8 @@ export interface EmbeddingAtlasProps {
    * query run ID. If multiple requests arrive in quick succession, the latest
    * one wins. Requests for IDs that do not exist in the data are ignored.
    * Clearing the prop prevents a pending request from moving the viewport.
-   * A request given when the component mounts is executed once the data is ready.
+   * Each view only responds to new keys received after it subscribes.
+   * A request already present when a view mounts or remounts is ignored by that view.
    */
   focusRequest?: FocusRequest | null;
 }

@@ -2,8 +2,8 @@
 
 The Python package contains a command-line utility for you to quickly explore large text datasets with metadata.
 
-<img style="border-radius: 4px" class="light-only" src="/assets/embedding-atlas-light.png" loading="lazy">
-<img style="border-radius: 4px" class="dark-only" src="/assets/embedding-atlas-dark.png" loading="lazy">
+<img style="border-radius: 4px" class="light-only" src="/assets/embedding-atlas-light.avif" loading="lazy">
+<img style="border-radius: 4px" class="dark-only" src="/assets/embedding-atlas-dark.avif" loading="lazy">
 
 ## Installation
 
@@ -51,7 +51,7 @@ embedding-atlas huggingface_org/dataset_name
 
 The script will compute embedding vectors for the specified column containing the text, image, or audio data. By default, it uses [SentenceTransformers](https://sbert.net/) for text and [HuggingFace Transformers](https://huggingface.co/docs/transformers/) for images and audio. You can also use [LiteLLM](https://docs.litellm.ai/) for API-based embeddings via `--embedder litellm`. Use the `--model` option to specify an embedding model. If not specified, a default model will be used. The current defaults are `all-MiniLM-L6-v2` for text, `google/vit-base-patch16-224` for images, and `laion/clap-htsat-fused` for audio, but these are subject to change in future releases.
 
-After embedding vectors are computed, the script will then project the high-dimensional vectors to 2D with [UMAP](https://umap-learn.readthedocs.io/en/latest/index.html).
+After embedding vectors are computed, the script will then project the high-dimensional vectors to 2D with [UMAP](https://umap-learn.readthedocs.io/en/latest/index.html), using the umap-learn 0.6 pipeline (recursive initialization and the Adam optimizer), the same as the viewer.
 
 ::: tip
 Optionally, if you know what column your text data is in beforehand, you can specify which column to use with the `--text` flag, for example:

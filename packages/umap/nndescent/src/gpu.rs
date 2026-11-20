@@ -10,6 +10,13 @@ use ndarray::Array2;
 /// A filtered distance result from the GPU: (target_index, source_index, distance).
 pub type FilteredResult = (u32, u32, f32);
 
+/// Decode the flat `[target, source, distance bits, ...]` result triples of the GPU.
+pub fn result_triples(flat: &[u32]) -> impl Iterator<Item = FilteredResult> + '_ {
+    bytemuck::cast_slice::<u32, [u32; 3]>(flat)
+        .iter()
+        .map(|&[target, source, bits]| (target, source, f32::from_bits(bits)))
+}
+
 /// Uniform parameters passed to the distance compute shader.
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -92,7 +99,8 @@ pub struct GpuContext {
 /// so the callback fires before poll returns and no async yield is needed.
 /// On WASM/WebGPU, `device.poll` is a no-op; we yield to the browser event loop
 /// via the Pending→wake pattern so the internal JS mapAsync Promise can resolve.
-async fn map_buffer_read(
+#[doc(hidden)]
+pub async fn map_buffer_read(
     device: &wgpu::Device,
     buffer: &wgpu::Buffer,
     range: std::ops::Range<u64>,
@@ -550,48 +558,115 @@ impl GpuContext {
         Some(ctx)
     }
 
+    /// Largest number of pairs one dispatch can hold.
+    pub fn max_pairs_per_chunk(&self) -> usize {
+        self.max_pairs_per_chunk
+    }
+
     /// Compute distances for the given pairs, filtering by thresholds.
     ///
     /// `pairs` is a flat slice of `[p0, q0, p1, q1, ...]` indices.
     /// `thresholds` has length `n_points` — the max distance in each point's heap.
     ///
-    /// Automatically chunks into multiple dispatches if pairs exceed buffer limits.
+    /// Collects the results of all chunks. Prefer `compute_filtered_distances_each`
+    /// when the result set can be large.
     pub async fn compute_filtered_distances(
         &self,
         pairs: &[u32],
         thresholds: &[f32],
     ) -> Vec<FilteredResult> {
+        let mut all_results = Vec::new();
+        self.compute_filtered_distances_each(pairs, thresholds, |chunk| {
+            all_results.extend(result_triples(chunk))
+        })
+        .await;
+        all_results
+    }
+
+    /// Like `compute_filtered_distances`, but hands the results of each chunk to
+    /// `on_chunk` so that peak memory is bounded by one chunk.
+    ///
+    /// The results are flat `[target, source, distance bits, ...]` triples, see
+    /// `result_triples`. Automatically chunks into multiple dispatches if pairs
+    /// exceed buffer limits.
+    pub async fn compute_filtered_distances_each(
+        &self,
+        pairs: &[u32],
+        thresholds: &[f32],
+        mut on_chunk: impl FnMut(&[u32]),
+    ) {
         let total_pairs = pairs.len() / 2;
         if total_pairs == 0 {
-            return Vec::new();
+            return;
         }
 
         // Upload thresholds once (shared across all chunks)
         self.queue
             .write_buffer(&self.threshold_buffer, 0, bytemuck::cast_slice(thresholds));
 
-        // If fits in one chunk, dispatch directly
-        if total_pairs <= self.max_pairs_per_chunk {
-            return self.dispatch_chunk(pairs, total_pairs).await;
-        }
-
-        // Otherwise chunk
-        let mut all_results = Vec::new();
         for chunk_start in (0..total_pairs).step_by(self.max_pairs_per_chunk) {
             let chunk_end = (chunk_start + self.max_pairs_per_chunk).min(total_pairs);
             let chunk_pairs = &pairs[chunk_start * 2..chunk_end * 2];
-            let chunk_n = chunk_end - chunk_start;
-            let mut results = self.dispatch_chunk(chunk_pairs, chunk_n).await;
-            all_results.append(&mut results);
+            self.dispatch_chunk(
+                chunk_end - chunk_start,
+                || {
+                    self.queue.write_buffer(
+                        &self.pairs_buffer,
+                        0,
+                        bytemuck::cast_slice(chunk_pairs),
+                    )
+                },
+                &mut on_chunk,
+            )
+            .await;
         }
-        all_results
+    }
+
+    /// Compute one block of at most `max_pairs_per_chunk` pairs. `fill` writes the
+    /// flat `[p0, q0, p1, q1, ...]` pair list directly into the upload staging
+    /// memory, and `on_results` receives the flat result triples.
+    pub async fn compute_filtered_block(
+        &self,
+        n_pairs: usize,
+        thresholds: &[f32],
+        fill: impl FnOnce(&mut [u32]),
+        on_results: impl FnOnce(&[u32]),
+    ) {
+        assert!(n_pairs <= self.max_pairs_per_chunk);
+        if n_pairs == 0 {
+            return;
+        }
+        self.queue
+            .write_buffer(&self.threshold_buffer, 0, bytemuck::cast_slice(thresholds));
+        let size = wgpu::BufferSize::new(n_pairs as u64 * 8).unwrap();
+        self.dispatch_chunk(
+            n_pairs,
+            || {
+                if let Some(mut view) = self.queue.write_buffer_with(&self.pairs_buffer, 0, size) {
+                    if let Ok(slice) = bytemuck::try_cast_slice_mut(&mut view) {
+                        fill(slice);
+                        return;
+                    }
+                }
+                let mut pairs = vec![0u32; n_pairs * 2];
+                fill(&mut pairs);
+                self.queue
+                    .write_buffer(&self.pairs_buffer, 0, bytemuck::cast_slice(&pairs));
+            },
+            on_results,
+        )
+        .await;
     }
 
     /// Dispatch a single chunk of pairs (must fit within buffer limits).
-    async fn dispatch_chunk(&self, pairs: &[u32], n_pairs: usize) -> Vec<FilteredResult> {
-        // Upload pairs, reset counter, upload params
-        self.queue
-            .write_buffer(&self.pairs_buffer, 0, bytemuck::cast_slice(pairs));
+    /// `write_pairs` must fill the first `n_pairs` entries of `pairs_buffer`.
+    async fn dispatch_chunk(
+        &self,
+        n_pairs: usize,
+        write_pairs: impl FnOnce(),
+        on_results: impl FnOnce(&[u32]),
+    ) {
+        write_pairs();
         self.queue
             .write_buffer(&self.counter_buffer, 0, bytemuck::cast_slice(&[0u32]));
         let params = Params {
@@ -673,28 +748,18 @@ impl GpuContext {
         };
 
         if count == 0 {
-            return Vec::new();
+            return;
         }
 
         // Read output — data is already in staging from the single submission
         let read_bytes = (count as u64) * OUTPUT_ENTRY_BYTES;
         map_buffer_read(&self.device, &self.output_staging, 0..read_bytes).await;
-        let results = {
+        {
             let data = self.output_staging.slice(..read_bytes).get_mapped_range();
-            let u32_data: &[u32] = bytemuck::cast_slice(&data);
-            let mut results = Vec::with_capacity(count);
-            for i in 0..count {
-                let target = u32_data[i * 3];
-                let source = u32_data[i * 3 + 1];
-                let dist = f32::from_bits(u32_data[i * 3 + 2]);
-                results.push((target, source, dist));
-            }
+            on_results(bytemuck::cast_slice(&data));
             drop(data);
             self.output_staging.unmap();
-            results
-        };
-
-        results
+        }
     }
 
     /// Compute distances without threshold filtering — all distances are returned.
@@ -702,6 +767,13 @@ impl GpuContext {
     pub async fn compute_all_distances(&self, pairs: &[u32]) -> Vec<FilteredResult> {
         let thresholds = vec![f32::INFINITY; self.n_points as usize];
         self.compute_filtered_distances(pairs, &thresholds).await
+    }
+
+    /// Like `compute_all_distances`, but hands the results of each chunk to `on_chunk`.
+    pub async fn compute_all_distances_each(&self, pairs: &[u32], on_chunk: impl FnMut(&[u32])) {
+        let thresholds = vec![f32::INFINITY; self.n_points as usize];
+        self.compute_filtered_distances_each(pairs, &thresholds, on_chunk)
+            .await
     }
 
     /// Compute dot-product projections of points onto a hyperplane.
@@ -1021,7 +1093,8 @@ impl GpuContext {
 }
 
 /// Helper to create a storage buffer bind group layout entry.
-fn bgl_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
+#[doc(hidden)]
+pub fn bgl_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::COMPUTE,

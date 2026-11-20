@@ -6,17 +6,22 @@
     max?: number;
     step?: number | null | undefined;
     width?: number;
+    /** Fill the width of the container (`width` is ignored). */
+    fill?: boolean;
   }
 
-  let { value = $bindable(0), min = 0, max = 100, step = undefined, width = 100 }: Props = $props();
+  let { value = $bindable(0), min = 0, max = 100, step = undefined, width = 100, fill = false }: Props = $props();
 
   let height: number = 28;
 
   let trackHeight: number = 4;
   let knobSize: number = 15;
 
-  let scale = $derived((v: number) => ((v - min) / (max - min)) * (width - knobSize));
-  let inverseScale = $derived((x: number) => (x / (width - knobSize)) * (max - min) + min);
+  let measuredWidth = $state(0);
+  let effectiveWidth = $derived(fill ? Math.max(measuredWidth, knobSize + 1) : width);
+
+  let scale = $derived((v: number) => ((v - min) / (max - min)) * (effectiveWidth - knobSize));
+  let inverseScale = $derived((x: number) => (x / (effectiveWidth - knobSize)) * (max - min) + min);
 
   let knobLeft = $derived(scale(value));
 
@@ -55,7 +60,8 @@
 
 <div
   bind:this={container}
-  style:width="{width}px"
+  bind:clientWidth={measuredWidth}
+  style:width={fill ? "100%" : `${width}px`}
   style:height="{height}px"
   class="group relative"
   onmousedown={onMouseDown}
@@ -70,7 +76,7 @@
     class="bg-slate-400 dark:bg-slate-500 rounded-full absolute"
     style:left="0px"
     style:top="{(height - trackHeight) / 2}px"
-    style:width="{width}px"
+    style:width="{effectiveWidth}px"
     style:height="{trackHeight}px"
   ></div>
   <div

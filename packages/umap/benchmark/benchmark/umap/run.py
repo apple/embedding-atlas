@@ -17,6 +17,8 @@ from benchmark.common import (
     rust_binary_path,
 )
 from benchmark.html_report import generate_report
+from benchmark.umap.python_bench import read_f32_bin
+from benchmark.umap.quality import QualityEvaluator
 
 SIZES = [1_000, 2_000, 5_000, 10_000, 20_000, 50_000]
 METRICS = ["euclidean", "cosine"]
@@ -27,9 +29,14 @@ CSV_COLUMNS = [
     "dim",
     "metric",
     "gpu",
+    "layout",
     "threads",
     "time_s",
+    "trustworthiness",
+    "knn_recall",
 ]
+
+LAYOUTS = ["0.5", "0.6"]
 
 
 def generate_data(sizes):
@@ -37,6 +44,14 @@ def generate_data(sizes):
     from benchmark.umap.generate_data import generate
 
     generate(datasets_dir("umap"), sizes)
+
+
+def collect_with_quality(csv_out, quality, n, cmd, emb_path, desc, threads, timeout):
+    """Run one benchmark command and append its timing plus embedding quality."""
+    result = run_bench_and_collect(cmd, desc, threads, timeout)
+    if result:
+        result.update(quality.evaluate(read_f32_bin(emb_path, n, 2)))
+        csv_out.append(result)
 
 
 def run(
@@ -82,60 +97,92 @@ def run(
             label = f"[{completed}/{total}] n={n:,} metric={metric}"
             timeout = max(300, n // 100)
 
+            quality = QualityEvaluator(
+                read_f32_bin(os.path.join(data_dir, "data.bin"), n, 784), metric
+            )
+
             for threads in ["single", "multi"]:
                 tl = f"({threads}-thread)"
 
-                if run_rust:
-                    emb_path = os.path.join(
-                        data_dir, f"rust_{metric}_{threads}_embedding.bin"
+                for layout in LAYOUTS:
+                    suffix = "" if layout == "0.5" else "_v06"
+                    layout_args = (
+                        ["--no-compatibility-layout"] if layout == "0.6" else []
                     )
-                    cmd = [
-                        rust_binary_path("umap-bench"),
-                        data_dir,
-                        metric,
-                        "--embedding-path",
-                        emb_path,
-                    ]
-                    r = run_bench_and_collect(
-                        cmd, f"Rust {tl} {label}", threads, timeout
+                    rust_layout_args = (
+                        ["--compatibility-layout", "false"] if layout == "0.6" else []
                     )
-                    if r:
-                        csv_out.append(r)
 
-                if run_rust and gpu:
-                    emb_path = os.path.join(
-                        data_dir, f"rust_gpu_{metric}_{threads}_embedding.bin"
-                    )
-                    cmd = [
-                        rust_binary_path("umap-bench"),
-                        data_dir,
-                        metric,
-                        "--gpu",
-                        "--embedding-path",
-                        emb_path,
-                    ]
-                    r = run_bench_and_collect(
-                        cmd, f"Rust GPU {tl} {label}", threads, timeout
-                    )
-                    if r:
-                        csv_out.append(r)
+                    if run_rust:
+                        emb_path = os.path.join(
+                            data_dir, f"rust{suffix}_{metric}_{threads}_embedding.bin"
+                        )
+                        cmd = [
+                            rust_binary_path("umap-bench"),
+                            data_dir,
+                            metric,
+                            *rust_layout_args,
+                            "--embedding-path",
+                            emb_path,
+                        ]
+                        collect_with_quality(
+                            csv_out,
+                            quality,
+                            n,
+                            cmd,
+                            emb_path,
+                            f"Rust {layout} {tl} {label}",
+                            threads,
+                            timeout,
+                        )
 
-                if run_python:
-                    emb_path = os.path.join(
-                        data_dir, f"python_{metric}_{threads}_embedding.bin"
-                    )
-                    cmd = python_bench_cmd(
-                        "benchmark.umap.python_bench",
-                        data_dir,
-                        metric,
-                        "--embedding-path",
-                        emb_path,
-                    )
-                    r = run_bench_and_collect(
-                        cmd, f"Python {tl} {label}", threads, timeout
-                    )
-                    if r:
-                        csv_out.append(r)
+                    if run_rust and gpu:
+                        emb_path = os.path.join(
+                            data_dir,
+                            f"rust_gpu{suffix}_{metric}_{threads}_embedding.bin",
+                        )
+                        cmd = [
+                            rust_binary_path("umap-bench"),
+                            data_dir,
+                            metric,
+                            "--gpu",
+                            *rust_layout_args,
+                            "--embedding-path",
+                            emb_path,
+                        ]
+                        collect_with_quality(
+                            csv_out,
+                            quality,
+                            n,
+                            cmd,
+                            emb_path,
+                            f"Rust GPU {layout} {tl} {label}",
+                            threads,
+                            timeout,
+                        )
+
+                    if run_python:
+                        emb_path = os.path.join(
+                            data_dir, f"python{suffix}_{metric}_{threads}_embedding.bin"
+                        )
+                        cmd = python_bench_cmd(
+                            "benchmark.umap.python_bench",
+                            data_dir,
+                            metric,
+                            *layout_args,
+                            "--embedding-path",
+                            emb_path,
+                        )
+                        collect_with_quality(
+                            csv_out,
+                            quality,
+                            n,
+                            cmd,
+                            emb_path,
+                            f"Python {layout} {tl} {label}",
+                            threads,
+                            timeout,
+                        )
 
     csv_out.close()
 
@@ -170,44 +217,30 @@ def print_summary(csv_path):
     grouped = defaultdict(dict)
     for row in rows:
         impl_ = row["implementation"]
-        gpu_val = row.get("gpu", "false")
-        if impl_ == "rust" and gpu_val in ("true", "True"):
+        if impl_ == "rust" and row.get("gpu", "false") in ("true", "True"):
             impl_ = "rust-gpu"
-        key = (row["n_points"], row["metric"], row.get("threads", "multi"))
-        grouped[key][impl_] = row["time_s"]
+        key = (
+            row["n_points"],
+            row["metric"],
+            row.get("threads", "multi"),
+            row.get("layout") or "0.5",
+        )
+        grouped[key][impl_] = row
 
-    has_gpu = any("rust-gpu" in v for v in grouped.values())
-
-    hdr = f"{'n_points':>10} {'metric':>10} {'threads':>7} | {'Rust time':>11}"
-    if has_gpu:
-        hdr += f" {'GPU time':>11}"
-    hdr += f" | {'Python time':>11} | {'Speedup':>8}"
-    if has_gpu:
-        hdr += f" {'GPU spd':>8}"
+    hdr = (
+        f"{'n_points':>10} {'metric':>10} {'threads':>7} {'umap':>5} | "
+        f"{'implementation':>14} {'time_s':>9} {'trust':>7} {'recall':>7}"
+    )
     print(f"\n{hdr}")
     print("-" * len(hdr))
 
-    for key in sorted(grouped.keys(), key=lambda k: (int(k[0]), k[1], k[2])):
-        n, metric, threads = key
-        r_time = grouped[key].get("rust", "—")
-        g_time = grouped[key].get("rust-gpu", "—")
-        p_time = grouped[key].get("python", "—")
-
-        try:
-            speedup = f"{float(p_time) / float(r_time):.1f}x"
-        except (ValueError, ZeroDivisionError):
-            speedup = "—"
-        try:
-            gpu_speedup = f"{float(p_time) / float(g_time):.1f}x"
-        except (ValueError, ZeroDivisionError):
-            gpu_speedup = "—"
-
-        line = f"{n:>10} {metric:>10} {threads:>7} | {r_time:>11}"
-        if has_gpu:
-            line += f" {g_time:>11}"
-        line += f" | {p_time:>11} | {speedup:>8}"
-        if has_gpu:
-            line += f" {gpu_speedup:>8}"
-        print(line)
+    for key in sorted(grouped, key=lambda k: (int(k[0]), k[1], k[2], k[3])):
+        n, metric, threads, layout = key
+        for impl_, row in sorted(grouped[key].items()):
+            print(
+                f"{n:>10} {metric:>10} {threads:>7} {layout:>5} | "
+                f"{impl_:>14} {row['time_s']:>9} "
+                f"{row.get('trustworthiness') or '—':>7} {row.get('knn_recall') or '—':>7}"
+            )
 
     print(f"\nResults saved to: {csv_path}")

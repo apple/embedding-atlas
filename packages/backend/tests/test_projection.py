@@ -2,15 +2,17 @@
 
 """Tests for compute_projection using a placeholder embedder (no real models)."""
 
+import functools
 import io
 import shutil
+import warnings
 
 import numpy as np
 import pandas as pd
 import polars as pl
 import pytest
 from embedding_atlas.embedding import create_embedder
-from embedding_atlas.projection import compute_projection
+from embedding_atlas.projection import _run_umap, compute_projection
 from PIL import Image
 
 NUM_SAMPLES = 30
@@ -141,6 +143,58 @@ def test_vector_auto_modality(vector_df, cache_root):
         cache_root=cache_root,
     )
     assert len(result) == NUM_SAMPLES
+
+
+# ---------------------------------------------------------------------------
+# UMAP pipeline
+# ---------------------------------------------------------------------------
+
+
+def _spy_on_umap(monkeypatch) -> dict:
+    """Record the compatibility_layout that reaches nearest_neighbors and UMAP."""
+    import umap
+    import umap.umap_ as umap_module
+
+    seen: dict = {}
+    nearest_neighbors = umap_module.nearest_neighbors
+    umap_init = umap.UMAP.__init__
+
+    @functools.wraps(nearest_neighbors)
+    def spy_nearest_neighbors(*args, **kwargs):
+        seen["knn"] = kwargs.get("compatibility_layout")
+        return nearest_neighbors(*args, **kwargs)
+
+    @functools.wraps(umap_init)
+    def spy_init(self, *args, **kwargs):
+        seen["umap"] = kwargs.get("compatibility_layout")
+        return umap_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(umap_module, "nearest_neighbors", spy_nearest_neighbors)
+    monkeypatch.setattr(umap.UMAP, "__init__", spy_init)
+    return seen
+
+
+def _random_vectors() -> np.ndarray:
+    rng = np.random.RandomState(0)
+    return rng.randn(NUM_SAMPLES, EMBEDDING_DIM).astype(np.float32)
+
+
+def test_umap_defaults_to_the_0_6_pipeline(monkeypatch):
+    seen = _spy_on_umap(monkeypatch)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "error", message=".*compatibility_layout.*", category=FutureWarning
+        )
+        result = _run_umap(_random_vectors())
+    assert seen == {"knn": False, "umap": False}
+    assert result.projection.shape == (NUM_SAMPLES, 2)
+
+
+def test_umap_args_can_select_the_0_5_pipeline(monkeypatch):
+    seen = _spy_on_umap(monkeypatch)
+    result = _run_umap(_random_vectors(), umap_args={"compatibility_layout": True})
+    assert seen == {"knn": True, "umap": True}
+    assert result.projection.shape == (NUM_SAMPLES, 2)
 
 
 # ---------------------------------------------------------------------------

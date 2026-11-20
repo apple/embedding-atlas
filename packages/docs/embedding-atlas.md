@@ -93,6 +93,7 @@ In React or Svelte, pass these props alongside the viewer's data and coordinator
 `overlay` draws orange markers without changing the selection, filters, or Instances view.
 An empty `nodes` array hides the markers. Set `overlay` to `null` to restore the built-in search markers.
 Use a new `key` each time you want to move the viewport, including when the target ID stays the same.
+Send the key after the embedding view has mounted. A newly mounted view ignores the request already present while still showing the overlay.
 Omit `focusRequest` to update the markers without moving the viewport.
 
 ## State

@@ -4,11 +4,13 @@ export interface EmbeddingViewConfig {
   /** Color scheme. */
   colorScheme?: "light" | "dark" | null;
 
-  /** View mode. */
+  /** View mode. Ignored if the `layers` prop is specified. */
   mode?: "points" | "density" | null;
 
   /** Minimum average density for density contours to show up.
-   * The density is measured as number of points per square points (aka., px in CSS units). */
+   * The density is measured as number of points per square points (aka., px in CSS units).
+   * This sets the zoom level where the view transitions from density to points:
+   * it applies to all layers with `opacity: "auto"` (density fades out and points fade in as you zoom in). */
   minimumDensity?: number | null;
 
   /** Override the automatically calculated point size.
@@ -19,7 +21,8 @@ export interface EmbeddingViewConfig {
    * By default labels are generated automatically if the `labels` prop is not specified,
    * and a `text` column is specified in the Mosaic view,
    * or a `queryClusterLabels` callback is specified in the non-Mosaic view.
-   * Set this to `false` to disable automatic labels. */
+   * Set this to `false` to disable automatic labels.
+   * Ignored if the `layers` prop is specified. */
   autoLabelEnabled?: boolean | null;
 
   /** The density threshold to filter the clusters before generating automatic labels.

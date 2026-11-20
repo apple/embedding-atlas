@@ -32,6 +32,13 @@ export class FocusRequestTracker {
   private lastKey: string | number | null = null;
   private latestSeq = 0;
 
+  /** Records the request already present when the view subscribes. */
+  markHandled(request: FocusRequest | null): void {
+    if (request != null) {
+      this.lastKey = request.key;
+    }
+  }
+
   /**
    * Registers a focus request. Returns a sequence token if the request should
    * be acted upon, or `null` if it should be ignored (no request, or a request

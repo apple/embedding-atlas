@@ -6,7 +6,8 @@ dependencies = [
     "click",
     "numpy",
     "scikit-learn",
-    "umap-learn",
+    "umap-learn >= 0.6.0",
     "pynndescent",
     "pandas >= 3.0.0",
+    "scipy >= 1.17.1",
 ]

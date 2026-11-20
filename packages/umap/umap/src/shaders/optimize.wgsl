@@ -1,4 +1,4 @@
-// UMAP velocity-SGD optimization kernel with atomic gradient accumulation.
+// UMAP SGD optimization kernel with atomic gradient accumulation.
 //
 // Resident, self-scheduling design: the edge list and per-edge sampling schedule
 // counters live in GPU buffers across the whole run. Three entry points:
@@ -10,8 +10,7 @@
 //      i32 buffer (avoids lost updates from GPU write conflicts). A sub-batch
 //      processes edges in [edge_offset, edge_end).
 //   2. apply_grads: one thread per embedding element. Reads + clears the
-//      accumulated gradient and applies it. SGD clamps the summed delta;
-//      Momentum integrates velocity (which bounds its own step).
+//      accumulated gradient and applies the clamped summed delta.
 //   3. rebase_schedule: subtract a baseline from both counter buffers so the f32
 //      counters stay precise over indefinitely long runs.
 
@@ -30,8 +29,8 @@ struct OptimizeParams {
     apply_offset: u32,
     edge_offset: u32,
     edge_end: u32,
-    optimizer: u32,
-    beta: f32,
+    _padding0: u32,
+    _padding1: u32,
 }
 
 @group(0) @binding(0) var<storage, read_write> embedding: array<f32>;
@@ -41,7 +40,6 @@ struct OptimizeParams {
 @group(0) @binding(4) var<storage, read_write> eons: array<f32>;
 @group(0) @binding(5) var<storage, read_write> eonns: array<f32>;
 @group(0) @binding(6) var<storage, read_write> grad_accum: array<atomic<i32>>;
-@group(0) @binding(7) var<storage, read_write> velocity: array<f32>;
 @group(0) @binding(8) var<uniform> params: OptimizeParams;
 
 // Fixed-point scale for atomic gradient accumulation. Per-edge gradients are
@@ -145,8 +143,6 @@ fn accumulate_grads(@builtin(global_invocation_id) gid: vec3<u32>) {
 //
 // `g` is the summed SGD position delta. SGD applies `α·clamp(g, ±grad_clamp)`
 // (grad_clamp bounds the random-walk accumulation of ~7K per-edge contributions).
-// Momentum integrates `v = β·v + g; x += α·v` — velocity bounds the step, so no
-// clamp is applied on that path.
 @compute @workgroup_size(256)
 fn apply_grads(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idx = gid.x + params.apply_offset;
@@ -156,13 +152,7 @@ fn apply_grads(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 
     let g = from_fixed(atomicExchange(&grad_accum[idx], 0));
-    if (params.optimizer == 1u) {
-        let v = params.beta * velocity[idx] + g;
-        velocity[idx] = v;
-        embedding[idx] += params.alpha * v;
-    } else {
-        embedding[idx] += params.alpha * clamp(g, -params.grad_clamp, params.grad_clamp);
-    }
+    embedding[idx] += params.alpha * clamp(g, -params.grad_clamp, params.grad_clamp);
 }
 
 // Pass 3: subtract a baseline from both schedule counters (called when the f32

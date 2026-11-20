@@ -27,7 +27,7 @@ function extract(entrypoint) {
     print(result.decode("utf-8"))
   `);
   code = code.replaceAll('"', '\\"');
-  let helpCommand = `uv run python -c "${code}"`;
+  let helpCommand = `uv run --frozen python -c "${code}"`;
   let workDir = resolve("../../packages/backend");
   let result = execSync(helpCommand, { cwd: workDir, encoding: "utf-8" });
   return result;

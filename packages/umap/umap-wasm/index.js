@@ -1,5 +1,35 @@
 import { NNDescentBuilder, UMAPBuilder, UMAPFromKnnBuilder, default as init } from "./pkg/umap_wasm.js";
 
+/** Applies the options shared by both builders; each setter returns the next builder. */
+function applyLayoutOptions(builder, options) {
+  if (options.minDist != null) builder = builder.minDist(options.minDist);
+  if (options.spread != null) builder = builder.spread(options.spread);
+  if (options.nEpochs != null) builder = builder.nEpochs(options.nEpochs);
+  if (options.learningRate != null) builder = builder.learningRate(options.learningRate);
+  if (options.negativeSampleRate != null) builder = builder.negativeSampleRate(options.negativeSampleRate);
+  if (options.repulsionStrength != null) builder = builder.repulsionStrength(options.repulsionStrength);
+  if (options.localConnectivity != null) builder = builder.localConnectivity(options.localConnectivity);
+  if (options.mixRatio != null) builder = builder.mixRatio(options.mixRatio);
+  if (options.initializeMethod != null) builder = builder.initMethod(options.initializeMethod);
+  if (options.optimizer != null) builder = builder.optimizer(options.optimizer);
+  if (options.compatibilityLayout != null) builder = builder.compatibilityLayout(options.compatibilityLayout);
+  if (options.initScaleFactor != null) builder = builder.initScaleFactor(options.initScaleFactor);
+  if (options.initRescale != null) builder = builder.initRescale(options.initRescale);
+  if (options.a != null) builder = builder.a(options.a);
+  if (options.b != null) builder = builder.b(options.b);
+  if (options.disconnectionDistance != null) builder = builder.disconnectionDistance(options.disconnectionDistance);
+  if (options.negativeSelectionRange != null) builder = builder.negativeSelectionRange(options.negativeSelectionRange);
+  if (options.negativeSampleScale != null) builder = builder.negativeSampleScale(options.negativeSampleScale);
+  if (options.excludeGraphNeighbors != null) builder = builder.excludeGraphNeighbors(options.excludeGraphNeighbors);
+  if (options.negativeSampleScaleAdaptationSamples != null)
+    builder = builder.negativeSampleScaleAdaptationSamples(options.negativeSampleScaleAdaptationSamples);
+  if (options.recursiveInit != null) builder = builder.recursiveInit(options.recursiveInit);
+  if (options.seed != null) builder = builder.randomState(BigInt(options.seed));
+  if (options.progress != null) builder = builder.progress(options.progress);
+  if (options.gpu) builder = builder.gpu(true);
+  return builder;
+}
+
 /**
  * Initialize a UMAP instance.
  * @param {number} count the number of data points
@@ -16,19 +46,7 @@ export async function createUMAP(count, inputDim, outputDim, data, options = {})
 
   if (options.metric != null) builder = builder.metric(options.metric);
   if (options.nNeighbors != null) builder = builder.nNeighbors(options.nNeighbors);
-  if (options.minDist != null) builder = builder.minDist(options.minDist);
-  if (options.spread != null) builder = builder.spread(options.spread);
-  if (options.nEpochs != null) builder = builder.nEpochs(options.nEpochs);
-  if (options.learningRate != null) builder = builder.learningRate(options.learningRate);
-  if (options.negativeSampleRate != null) builder = builder.negativeSampleRate(options.negativeSampleRate);
-  if (options.repulsionStrength != null) builder = builder.repulsionStrength(options.repulsionStrength);
-  if (options.localConnectivity != null) builder = builder.localConnectivity(options.localConnectivity);
-  if (options.mixRatio != null) builder = builder.mixRatio(options.mixRatio);
-  if (options.initializeMethod != null) builder = builder.initMethod(options.initializeMethod);
-  if (options.optimizer != null) builder = builder.optimizer(options.optimizer);
-  if (options.seed != null) builder = builder.randomState(BigInt(options.seed));
-  if (options.progress != null) builder = builder.progress(options.progress);
-  if (options.gpu) builder = builder.gpu(true);
+  builder = applyLayoutOptions(builder, options);
 
   // Eager setup: builds the graph + initial embedding (so `embedding` is valid
   // immediately at epoch 0). `run`/`step` advance the layout from there.
@@ -62,19 +80,7 @@ export async function createUMAPFromKNN(count, outputDim, knnIndices, knnDistanc
 
   let builder = new UMAPFromKnnBuilder(knnIndices, knnDistances, count, outputDim);
 
-  if (options.minDist != null) builder = builder.minDist(options.minDist);
-  if (options.spread != null) builder = builder.spread(options.spread);
-  if (options.nEpochs != null) builder = builder.nEpochs(options.nEpochs);
-  if (options.learningRate != null) builder = builder.learningRate(options.learningRate);
-  if (options.negativeSampleRate != null) builder = builder.negativeSampleRate(options.negativeSampleRate);
-  if (options.repulsionStrength != null) builder = builder.repulsionStrength(options.repulsionStrength);
-  if (options.localConnectivity != null) builder = builder.localConnectivity(options.localConnectivity);
-  if (options.mixRatio != null) builder = builder.mixRatio(options.mixRatio);
-  if (options.initializeMethod != null) builder = builder.initMethod(options.initializeMethod);
-  if (options.optimizer != null) builder = builder.optimizer(options.optimizer);
-  if (options.seed != null) builder = builder.randomState(BigInt(options.seed));
-  if (options.progress != null) builder = builder.progress(options.progress);
-  if (options.gpu) builder = builder.gpu(true);
+  builder = applyLayoutOptions(builder, options);
 
   const umap = await builder.build();
 
@@ -219,9 +225,9 @@ function wrapUmap(umap, count, inputDim, outputDim) {
       if (destroyed) return;
       seq.runOrQueue("setOptimizer", () => umap.setOptimizer(optimizer));
     },
-    reset(method = "spectral") {
+    reset(method = "spectral", data = undefined) {
       if (destroyed) return;
-      seq.runOrQueue("reset", () => umap.reset(method));
+      seq.runOrQueue("reset", () => umap.reset(method, data));
     },
     destroy() {
       if (destroyed) return;

@@ -1,15 +1,15 @@
-/// Resident GPU context for UMAP velocity-SGD optimization (wgpu compute).
+/// Resident GPU context for UMAP SGD optimization (wgpu compute).
 ///
 /// All buffers (embedding, edge list, per-edge schedule counters, gradient
-/// accumulator, velocity) are uploaded once and live for the whole run. Each
-/// `run_epoch` dispatches the self-scheduling `accumulate_grads` shader (in
-/// sub-batches for SGD, a single round for Momentum) followed by `apply_grads`.
+/// accumulator) are uploaded once and live for the whole run. Each `run_epoch`
+/// dispatches the self-scheduling `accumulate_grads` shader in sub-batches, each
+/// followed by `apply_grads`.
 /// The CPU mirror is refreshed by `download_embedding` at the end of a step.
 ///
 /// Two-pass-per-sub-batch design: `accumulate_grads` atomicAdds per-edge
 /// gradients into a fixed-point i32 buffer (no lost updates from write
 /// conflicts); `apply_grads` reads/clears the accumulator and applies the step.
-use crate::optimize::{LiveParams, Optimizer};
+use crate::optimize::LiveParams;
 
 /// Uniform parameters passed to the optimize compute shaders. std140-compatible:
 /// 16 four-byte scalars = 64 bytes, every member naturally aligned.
@@ -32,9 +32,7 @@ struct OptimizeParams {
     /// Sub-batch edge range [edge_offset, edge_end) for accumulate_grads.
     edge_offset: u32,
     edge_end: u32,
-    /// 0 = Sgd, 1 = Momentum.
-    optimizer: u32,
-    beta: f32,
+    _padding: [u32; 2],
 }
 
 /// Holds resident wgpu state for the GPU optimization pipeline.
@@ -59,7 +57,6 @@ pub struct OptimizeGpuContext {
     eons_buffer: wgpu::Buffer,
     eonns_buffer: wgpu::Buffer,
     grad_accum_buffer: wgpu::Buffer,
-    velocity_buffer: wgpu::Buffer,
     params_buffer: wgpu::Buffer,
     embedding_staging: wgpu::Buffer,
     /// Initial epochs_per_sample (CPU copy), used to reset the schedule counters.
@@ -73,67 +70,18 @@ pub struct OptimizeGpuContext {
     max_workgroups_per_dim: u32,
 }
 
-/// Async helper: map a buffer for reading and wait for it to be available.
-async fn map_buffer_read(
-    device: &wgpu::Device,
-    buffer: &wgpu::Buffer,
-    range: std::ops::Range<u64>,
-) {
-    let slice = buffer.slice(range);
+pub(crate) use nndescent::gpu::{bgl_entry as storage_entry, map_buffer_read};
 
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        slice.map_async(wgpu::MapMode::Read, |r| r.unwrap());
-        device.poll(wgpu::Maintain::Wait);
-    }
-
+/// Report a GPU failure on stderr (native) or the console (wasm).
+pub(crate) fn report_gpu_error(message: &str) {
     #[cfg(target_arch = "wasm32")]
-    {
-        use std::cell::Cell;
-        use std::rc::Rc;
-
-        let state: Rc<(Cell<bool>, Cell<Option<std::task::Waker>>)> =
-            Rc::new((Cell::new(false), Cell::new(None)));
-        let state_cb = state.clone();
-
-        slice.map_async(wgpu::MapMode::Read, move |_| {
-            state_cb.0.set(true);
-            if let Some(waker) = state_cb.1.take() {
-                waker.wake();
-            }
-        });
-        device.poll(wgpu::Maintain::Wait);
-
-        if !state.0.get() {
-            std::future::poll_fn(|cx| {
-                if state.0.get() {
-                    std::task::Poll::Ready(())
-                } else {
-                    state.1.set(Some(cx.waker().clone()));
-                    std::task::Poll::Pending
-                }
-            })
-            .await;
-        }
-    }
-}
-
-/// Storage-buffer bind group layout entry.
-fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Storage { read_only },
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
-    }
+    web_sys::console::error_1(&message.into());
+    #[cfg(not(target_arch = "wasm32"))]
+    eprintln!("{message}");
 }
 
 /// Uniform-buffer bind group layout entry.
-fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+pub(crate) fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::COMPUTE,
@@ -146,7 +94,7 @@ fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     }
 }
 
-fn storage_buffer(device: &wgpu::Device, label: &str, size: u64) -> wgpu::Buffer {
+pub(crate) fn storage_buffer(device: &wgpu::Device, label: &str, size: u64) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
         size: size.max(4),
@@ -155,12 +103,67 @@ fn storage_buffer(device: &wgpu::Device, label: &str, size: u64) -> wgpu::Buffer
     })
 }
 
+/// Request a high-performance device with the adapter's full limits. Returns
+/// `None` if no suitable adapter is available.
+pub(crate) async fn request_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+    let backends = if cfg!(target_arch = "wasm32") {
+        wgpu::Backends::BROWSER_WEBGPU
+    } else {
+        wgpu::Backends::all()
+    };
+
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends,
+        ..Default::default()
+    });
+
+    let adapter = instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        })
+        .await?;
+
+    let adapter_limits = adapter.limits();
+    adapter
+        .request_device(
+            &wgpu::DeviceDescriptor {
+                label: Some("umap-optimize-gpu"),
+                required_features: wgpu::Features::empty(),
+                required_limits: adapter_limits,
+                memory_hints: wgpu::MemoryHints::Performance,
+            },
+            None,
+        )
+        .await
+        .ok()
+}
+
+/// Upper bound of the sub-batches per epoch.
+const MAX_SUB_BATCHES: usize = 128;
+
+/// Deterministic random permutation of the edge indices.
+fn shuffled_edge_order(n_edges: usize, rng_state: [i64; 3]) -> Vec<usize> {
+    let seed = rng_state
+        .iter()
+        .fold(0u64, |seed, &s| seed.rotate_left(21) ^ s as u64);
+    let mut rng = nndescent::rng::Xoshiro256StarStar::seed_from_u64(seed);
+    let mut order: Vec<usize> = (0..n_edges).collect();
+    for i in (1..n_edges).rev() {
+        order.swap(i, rng.random_range_i64(0, i as i64 + 1) as usize);
+    }
+    order
+}
+
 impl OptimizeGpuContext {
-    /// Create a resident GPU context. Returns `None` if no suitable adapter is
-    /// available, the buffers exceed device limits, or there are no edges (the
-    /// caller then uses the CPU path, which is a no-op for an empty edge list).
+    /// Create a resident GPU context on `device`. Returns `None` if the buffers
+    /// exceed device limits or there are no edges (the caller then uses the CPU
+    /// path, which is a no-op for an empty edge list).
     #[allow(clippy::too_many_arguments)]
-    pub async fn new(
+    pub fn new(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
         embedding: &[f32],
         head: &[u32],
         tail: &[u32],
@@ -175,39 +178,15 @@ impl OptimizeGpuContext {
         if n_edges == 0 || n_vertices == 0 || dim == 0 {
             return None;
         }
-
-        let backends = if cfg!(target_arch = "wasm32") {
-            wgpu::Backends::BROWSER_WEBGPU
-        } else {
-            wgpu::Backends::all()
-        };
-
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends,
-            ..Default::default()
-        });
-
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: None,
-                force_fallback_adapter: false,
-            })
-            .await?;
-
-        let adapter_limits = adapter.limits();
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("umap-optimize-gpu"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: adapter_limits.clone(),
-                    memory_hints: wgpu::MemoryHints::Performance,
-                },
-                None,
-            )
-            .await
-            .ok()?;
+        // Each sub-batch sums the gradients of its edges from frozen positions.
+        // Shuffled edges spread every vertex's edges over all sub-batches, as the
+        // sequential CPU updates do; edges in head order would give each vertex
+        // one large summed step per epoch, which overshoots at high learning rates.
+        let order = shuffled_edge_order(n_edges, rng_state);
+        let head: Vec<u32> = order.iter().map(|&e| head[e]).collect();
+        let tail: Vec<u32> = order.iter().map(|&e| tail[e]).collect();
+        let epochs_per_sample: Vec<f32> = order.iter().map(|&e| epochs_per_sample[e]).collect();
+        let (head, tail, epochs_per_sample) = (&head[..], &tail[..], &epochs_per_sample[..]);
 
         let limits = device.limits();
         let buffer_limit =
@@ -246,9 +225,6 @@ impl OptimizeGpuContext {
 
         let grad_accum_buffer = storage_buffer(&device, "grad_accum", grad_accum_bytes);
         queue.write_buffer(&grad_accum_buffer, 0, &vec![0u8; grad_accum_bytes as usize]);
-
-        let velocity_buffer = storage_buffer(&device, "velocity", grad_accum_bytes);
-        queue.write_buffer(&velocity_buffer, 0, &vec![0u8; grad_accum_bytes as usize]);
 
         let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("optimize_params"),
@@ -289,7 +265,6 @@ impl OptimizeGpuContext {
             entries: &[
                 storage_entry(0, false), // embedding rw
                 storage_entry(6, false), // grad_accum rw
-                storage_entry(7, false), // velocity rw
                 uniform_entry(8),        // params
             ],
         });
@@ -373,10 +348,6 @@ impl OptimizeGpuContext {
                     resource: grad_accum_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: velocity_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
                     binding: 8,
                     resource: params_buffer.as_entire_binding(),
                 },
@@ -423,7 +394,6 @@ impl OptimizeGpuContext {
             eons_buffer,
             eonns_buffer,
             grad_accum_buffer,
-            velocity_buffer,
             params_buffer,
             embedding_staging,
             eps: epochs_per_sample.to_vec(),
@@ -483,26 +453,16 @@ impl OptimizeGpuContext {
             .write_buffer(&self.embedding_buffer, 0, bytemuck::cast_slice(embedding));
     }
 
-    /// Zero the velocity buffer (on optimizer switch / reinit).
-    pub fn zero_velocity(&self) {
-        let bytes = (self.n_vertices as usize) * (self.dim as usize) * 4;
-        self.queue
-            .write_buffer(&self.velocity_buffer, 0, &vec![0u8; bytes]);
-    }
-
     fn zero_grad_accum(&self) {
         let bytes = (self.n_vertices as usize) * (self.dim as usize) * 4;
         self.queue
             .write_buffer(&self.grad_accum_buffer, 0, &vec![0u8; bytes]);
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn params_for(
         &self,
         epoch: u32,
         params: LiveParams,
-        beta: f32,
-        opt_flag: u32,
         apply_offset: u32,
         edge_offset: u32,
         edge_end: u32,
@@ -522,8 +482,7 @@ impl OptimizeGpuContext {
             apply_offset,
             edge_offset,
             edge_end,
-            optimizer: opt_flag,
-            beta,
+            _padding: [0; 2],
         }
     }
 
@@ -553,19 +512,17 @@ impl OptimizeGpuContext {
     ///
     /// SGD splits the epoch into `n_sub` accumulate→apply rounds so later
     /// sub-batches see partially-updated positions (emulating CPU Hogwild and
-    /// preventing full-batch overshoot). Momentum runs a single coherent round.
-    pub fn run_epoch(&self, epoch: u32, params: LiveParams, beta: f32, optimizer: Optimizer) {
+    /// preventing full-batch overshoot). Runs with few epochs (high learning
+    /// rates throughout) ask for at least `min_sub_batches` rounds.
+    pub fn run_epoch(&self, epoch: u32, params: LiveParams, min_sub_batches: usize) {
         if self.n_edges == 0 {
             return;
         }
 
-        let (n_sub, opt_flag) = match optimizer {
-            Optimizer::Sgd => {
-                let per_vertex = (2.0 + params.negative_sample_rate) * self.n_neighbors as f32;
-                ((per_vertex.sqrt().ceil() as usize).clamp(4, 32), 0u32)
-            }
-            Optimizer::Momentum => (1, 1u32),
-        };
+        let per_vertex = (2.0 + params.negative_sample_rate) * self.n_neighbors as f32;
+        let n_sub = (per_vertex.sqrt().ceil() as usize)
+            .clamp(4, 32)
+            .max(min_sub_batches.min(MAX_SUB_BATCHES));
 
         let max_invocations = self.max_workgroups_per_dim * 256;
         let sub_size = self.n_edges.div_ceil(n_sub);
@@ -578,7 +535,7 @@ impl OptimizeGpuContext {
             let end = sub_end as u32;
             while off < end {
                 let count = (end - off).min(max_invocations);
-                let p = self.params_for(epoch, params, beta, opt_flag, 0, off, off + count);
+                let p = self.params_for(epoch, params, 0, off, off + count);
                 self.queue
                     .write_buffer(&self.params_buffer, 0, bytemuck::cast_slice(&[p]));
                 self.dispatch(
@@ -595,7 +552,7 @@ impl OptimizeGpuContext {
             let mut base = 0u32;
             while base < total {
                 let chunk = (total - base).min(max_invocations);
-                let p = self.params_for(epoch, params, beta, opt_flag, base, 0, 0);
+                let p = self.params_for(epoch, params, base, 0, 0);
                 self.queue
                     .write_buffer(&self.params_buffer, 0, bytemuck::cast_slice(&[p]));
                 self.dispatch(
@@ -629,8 +586,6 @@ impl OptimizeGpuContext {
                     a: 1.0,
                     b: 1.0,
                 },
-                0.0,
-                0,
                 0,
                 off,
                 total,

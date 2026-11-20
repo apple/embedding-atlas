@@ -132,4 +132,12 @@ describe("FocusRequestTracker", () => {
     expect(first.accept(request)).toBe(null);
     expect(second.accept(request)).toBe(null);
   });
+
+  it("a newly mounted view skips the current key and accepts the next key", () => {
+    const request = { id: "A", key: "run-1" };
+    const tracker = new FocusRequestTracker();
+    tracker.markHandled(request);
+    expect(tracker.accept(request)).toBe(null);
+    expect(tracker.accept({ ...request, key: "run-2" })).toBe(1);
+  });
 });

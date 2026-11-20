@@ -1,10 +1,13 @@
 <!-- Copyright (c) 2025 Apple Inc. Licensed under MIT License. -->
 <script lang="ts">
   import EmbeddingViewDemo from "./EmbeddingViewDemo.svelte";
+  import EmbeddingViewLayersDemo from "./EmbeddingViewLayersDemo.svelte";
   import EmbeddingViewMosaicDemo from "./EmbeddingViewMosaicDemo.svelte";
   import ParallelCoordinatesViewDemo from "./ParallelCoordinatesViewDemo.svelte";
 
-  let testView: "EmbeddingView" | "EmbeddingViewMosaic" | "ParallelCoordinatesView" = $state("EmbeddingView");
+  type TestView = "EmbeddingView" | "EmbeddingViewLayers" | "EmbeddingViewMosaic" | "ParallelCoordinatesView";
+
+  let testView: TestView = $state((location.hash.slice(1) as TestView) || "EmbeddingView");
 </script>
 
 <div style="padding-bottom:8px">
@@ -12,6 +15,7 @@
     Component:
     <select bind:value={testView}>
       <option value="EmbeddingView">EmbeddingView</option>
+      <option value="EmbeddingViewLayers">EmbeddingView (Layers)</option>
       <option value="EmbeddingViewMosaic">EmbeddingViewMosaic</option>
       <option value="ParallelCoordinatesView">ParallelCoordinatesView</option>
     </select>
@@ -22,6 +26,8 @@
   <EmbeddingViewMosaicDemo />
 {:else if testView == "EmbeddingView"}
   <EmbeddingViewDemo />
+{:else if testView == "EmbeddingViewLayers"}
+  <EmbeddingViewLayersDemo />
 {:else if testView == "ParallelCoordinatesView"}
   <ParallelCoordinatesViewDemo />
 {/if}

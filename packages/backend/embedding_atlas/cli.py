@@ -16,7 +16,7 @@ import uvicorn
 
 from .cache import sha256_hexdigest
 from .data_source import DataSource
-from .options import make_embedding_atlas_props
+from .options import LABELS_KEYWORDS, make_embedding_atlas_props
 from .server import make_server
 from .utils import (
     apply_logging_config,
@@ -388,7 +388,9 @@ def import_modules(names: list[str]):
     "--labels",
     type=str,
     default=None,
-    help="Path to a file containing labels for the embedding view. The file should be a table with columns 'x', 'y', 'text', and optionally 'level' and 'priority'",
+    help="Labels for the embedding view: 'automatic' (default) to generate labels automatically, 'disabled' to disable automatic labels, "
+    "or a path to a file containing labels. The file should be a table with columns 'x', 'y', 'content' (the label text), and optionally 'level' and 'priority'; "
+    'the embedding view shows these labels instead of automatically generated labels. This determines the labels of embedding views without explicit layers, and of the default labels layer (e.g., in the layer presets); labels layers can refer to the provided labels as "$labels".',
 )
 @click.option(
     "--state",
@@ -583,7 +585,9 @@ def main(
         stop_words_resolved = stop_words_df["word"].to_list()
 
     labels_resolved = None
-    if labels is not None:
+    if labels in LABELS_KEYWORDS:
+        labels_resolved = labels
+    elif labels is not None:
         labels_df = load_pandas_data(labels)
         labels_resolved = labels_df.to_dict("records")
 

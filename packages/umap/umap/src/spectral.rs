@@ -1,6 +1,8 @@
 use ndarray::Array2;
 use nndescent::rng::Xoshiro256StarStar;
 
+use nndescent::distance::get_distance_func;
+
 use crate::graph::CsrMatrix;
 
 // ============================================================================
@@ -10,7 +12,7 @@ use crate::graph::CsrMatrix;
 /// Symmetric eigendecomposition via Jacobi rotations.
 /// Input: `a` is an m×m symmetric matrix in row-major flat layout.
 /// Returns (eigenvalues sorted ascending, eigenvectors as row-major m×m matrix).
-fn eigh_jacobi(a: &[f64], m: usize) -> (Vec<f64>, Vec<f64>) {
+pub(crate) fn eigh_jacobi(a: &[f64], m: usize) -> (Vec<f64>, Vec<f64>) {
     let mut a = a.to_vec();
     // V = identity (eigenvector accumulator)
     let mut v = vec![0.0; m * m];
@@ -85,7 +87,7 @@ fn eigh_jacobi(a: &[f64], m: usize) -> (Vec<f64>, Vec<f64>) {
 
     // Sort ascending
     let mut order: Vec<usize> = (0..m).collect();
-    order.sort_by(|&a, &b| eigenvalues[a].partial_cmp(&eigenvalues[b]).unwrap());
+    order.sort_by(|&a, &b| eigenvalues[a].total_cmp(&eigenvalues[b]));
 
     let sorted_vals: Vec<f64> = order.iter().map(|&i| eigenvalues[i]).collect();
     let mut sorted_vecs = vec![0.0; m * m];
@@ -267,15 +269,10 @@ impl Block {
             // Normalize
             let norm: f64 = self.cols[j].iter().map(|v| v * v).sum::<f64>().sqrt();
             if norm > eps {
-                for i in 0..n {
-                    self.cols[j][i] /= norm;
-                }
+                self.cols[j].iter_mut().for_each(|v| *v /= norm);
                 any_nonzero = true;
             } else {
-                // Near-zero column: set to zero
-                for i in 0..n {
-                    self.cols[j][i] = 0.0;
-                }
+                self.cols[j].fill(0.0);
             }
         }
         any_nonzero
@@ -400,6 +397,7 @@ fn assemble_gram(
 ///
 /// `constraint` is the trivial eigenvector that all search directions must
 /// remain orthogonal to.
+#[allow(clippy::too_many_arguments)]
 fn lobpcg_solve(
     graph: &CsrMatrix,
     inv_sqrt_deg: &[f32],
@@ -438,6 +436,13 @@ fn lobpcg_solve(
 
     // 1. Project out constraint and orthonormalize X
     project_out_constraint(&mut x);
+    for column in x.cols.iter_mut() {
+        let norm = column.iter().map(|v| v * v).sum::<f64>().sqrt();
+        if norm < 1e-10 {
+            column.fill_with(&mut rand_f64);
+        }
+    }
+    project_out_constraint(&mut x);
     if !x.orthonormalize_mgs() {
         return None;
     }
@@ -474,9 +479,7 @@ fn lobpcg_solve(
             } else {
                 // Replace converged residual with a random vector to prevent
                 // rank deficiency in the orthonormalization step.
-                for i in 0..n {
-                    r.cols[j][i] = rand_f64();
-                }
+                r.cols[j].fill_with(&mut rand_f64);
             }
         }
         // Project out the constraint from residuals before orthonormalization
@@ -619,22 +622,351 @@ fn lobpcg_solve(
     Some((lambda, x))
 }
 
+/// Starting block of `k` vectors: all ones and an alternating sign pattern.
+fn deterministic_start(k: usize, n: usize) -> Block {
+    let mut x0 = Block::new(k, n);
+    x0.cols[0].fill(1.0);
+    if k > 1 {
+        for (i, value) in x0.cols[1].iter_mut().enumerate() {
+            *value = if i % 2 == 0 { 1.0 } else { -1.0 };
+        }
+    }
+    x0
+}
+
+/// Starting block from a randomized truncated SVD of L: power iterations on a random
+/// block, a Rayleigh-Ritz rotation, then the dominant vectors after the first, which
+/// stands in for the trivial eigenvector.
+fn truncated_svd_start(
+    graph: &CsrMatrix,
+    inv_sqrt_deg: &[f32],
+    k: usize,
+    n: usize,
+    rng: &mut Xoshiro256StarStar,
+) -> Block {
+    const OVERSAMPLES: usize = 10;
+    const POWER_ITERATIONS: usize = 5;
+    let width = (k + 1 + OVERSAMPLES).min(n);
+
+    let mut block = Block::new(width, n);
+    for column in block.cols.iter_mut() {
+        column.fill_with(|| rng.random_f64() - 0.5);
+    }
+    block.orthonormalize_mgs();
+    for _ in 0..POWER_ITERATIONS {
+        block = apply_laplacian(graph, inv_sqrt_deg, &block);
+        block.orthonormalize_mgs();
+    }
+
+    let projected = block.gram(&apply_laplacian(graph, inv_sqrt_deg, &block));
+    let (_, rotation) = eigh_jacobi(&projected, width);
+    let descending: Vec<f64> = (0..width * width)
+        .map(|index| rotation[(index / width) * width + (width - 1 - index % width)])
+        .collect();
+    let mut dominant = block.mul_small(&descending, width);
+    Block {
+        cols: dominant.cols.drain(1..=k).collect(),
+    }
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
 
-/// Compute spectral embedding of the graph using the normalized Laplacian.
+/// Source data used to place the centroids of disconnected graph components.
+#[derive(Clone, Copy)]
+pub struct ComponentCentroids<'a> {
+    pub data: &'a Array2<f32>,
+    pub metric: &'a str,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum SolverStart {
+    Deterministic,
+    TruncatedSvd,
+}
+
+/// Spectral embedding of the graph from the eigenvectors of the normalized
+/// Laplacian L = I - D^{-1/2} A D^{-1/2}. A graph with several connected
+/// components is laid out component by component (see [`multi_component_layout`]).
 ///
-/// Uses LOBPCG (Locally Optimal Block Preconditioned Conjugate Gradient) to
-/// find the smallest eigenvectors of L = I - D^{-1/2} A D^{-1/2}, consistent
-/// with the reference Python UMAP implementation.
-///
+/// The smallest eigenvectors of L are the largest eigenvectors of D^{-1/2} A D^{-1/2}.
 /// Falls back to random initialization if the eigensolver fails.
 pub fn spectral_layout(graph: &CsrMatrix, dim: usize, rng: &mut Xoshiro256StarStar) -> Array2<f32> {
+    layout(graph, None, dim, rng, SolverStart::Deterministic)
+}
+
+/// Like [`spectral_layout`], placing disconnected components by their data centroids.
+pub fn spectral_layout_with_centroids(
+    graph: &CsrMatrix,
+    centroids: Option<ComponentCentroids>,
+    dim: usize,
+    rng: &mut Xoshiro256StarStar,
+) -> Array2<f32> {
+    layout(graph, centroids, dim, rng, SolverStart::Deterministic)
+}
+
+/// Spectral embedding whose eigensolver starts from a truncated SVD of the Laplacian
+/// (umap-learn's `tswspectral_layout`).
+pub fn tsw_spectral_layout(
+    graph: &CsrMatrix,
+    centroids: Option<ComponentCentroids>,
+    dim: usize,
+    rng: &mut Xoshiro256StarStar,
+) -> Array2<f32> {
+    layout(graph, centroids, dim, rng, SolverStart::TruncatedSvd)
+}
+
+fn layout(
+    graph: &CsrMatrix,
+    centroids: Option<ComponentCentroids>,
+    dim: usize,
+    rng: &mut Xoshiro256StarStar,
+    start: SolverStart,
+) -> Array2<f32> {
+    let (n_components, labels) = connected_components(graph);
+    if n_components > 1 {
+        multi_component_layout(graph, n_components, &labels, centroids, dim, rng)
+    } else {
+        connected_layout(graph, dim, rng, start)
+    }
+}
+
+/// Label every vertex with the index of its (weakly) connected component.
+/// Labels are assigned in order of the smallest vertex of each component.
+fn connected_components(graph: &CsrMatrix) -> (usize, Vec<usize>) {
+    let n = graph.nrows;
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    for i in 0..n {
+        for &j in &graph.indices[graph.indptr[i]..graph.indptr[i + 1]] {
+            let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+            if ri != rj {
+                parent[ri.max(rj)] = ri.min(rj);
+            }
+        }
+    }
+    let mut label_of_root = vec![usize::MAX; n];
+    let mut n_components = 0;
+    let labels = (0..n)
+        .map(|i| {
+            let root = find(&mut parent, i);
+            if label_of_root[root] == usize::MAX {
+                label_of_root[root] = n_components;
+                n_components += 1;
+            }
+            label_of_root[root]
+        })
+        .collect();
+    (n_components, labels)
+}
+
+/// Lay out each connected component separately. Component positions come from a
+/// spectral embedding of the component centroids (or fixed axis-aligned positions
+/// when there are at most `2 * dim` components); each component is then embedded on
+/// its own and scaled to fit half the distance to its nearest neighboring component.
+fn multi_component_layout(
+    graph: &CsrMatrix,
+    n_components: usize,
+    labels: &[usize],
+    centroids: Option<ComponentCentroids>,
+    dim: usize,
+    rng: &mut Xoshiro256StarStar,
+) -> Array2<f32> {
+    let meta_embedding = if n_components > 2 * dim {
+        component_layout(centroids, labels, n_components, dim, rng)
+    } else {
+        axis_aligned_layout(n_components, dim)
+    };
+
+    let mut members: Vec<Vec<usize>> = vec![Vec::new(); n_components];
+    let mut local_index = vec![0usize; graph.nrows];
+    for (vertex, &label) in labels.iter().enumerate() {
+        local_index[vertex] = members[label].len();
+        members[label].push(vertex);
+    }
+
+    let mut result = Array2::zeros((graph.nrows, dim));
+    for (label, vertices) in members.iter().enumerate() {
+        let center = meta_embedding.row(label);
+        let data_range = nearest_component_distance(&meta_embedding, label) / 2.0;
+        let size = vertices.len();
+
+        let mut component_embedding = if size < 2 * dim || size <= dim + 1 {
+            Array2::from_shape_fn((size, dim), |_| (rng.random_f32() * 2.0 - 1.0) * data_range)
+        } else {
+            let subgraph = induced_subgraph(graph, vertices, &local_index);
+            let mut embedding = connected_layout(&subgraph, dim, rng, SolverStart::Deterministic);
+            let max_abs = embedding.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+            if max_abs > 0.0 {
+                embedding *= data_range / max_abs;
+            }
+            embedding
+        };
+        component_embedding += &center;
+        for (row, &vertex) in vertices.iter().enumerate() {
+            result.row_mut(vertex).assign(&component_embedding.row(row));
+        }
+    }
+    result
+}
+
+fn induced_subgraph(graph: &CsrMatrix, vertices: &[usize], local_index: &[usize]) -> CsrMatrix {
+    let mut indptr = vec![0];
+    let mut indices = Vec::new();
+    let mut data = Vec::new();
+    for &vertex in vertices {
+        for idx in graph.indptr[vertex]..graph.indptr[vertex + 1] {
+            indices.push(local_index[graph.indices[idx]]);
+            data.push(graph.data[idx]);
+        }
+        indptr.push(indices.len());
+    }
+    CsrMatrix {
+        indptr,
+        indices,
+        data,
+        nrows: vertices.len(),
+        ncols: vertices.len(),
+    }
+}
+
+/// Distance from `label` to the closest other position (1 if there is none).
+fn nearest_component_distance(positions: &Array2<f32>, label: usize) -> f32 {
+    let nearest = (0..positions.nrows())
+        .map(|other| {
+            let difference = &positions.row(label) - &positions.row(other);
+            difference.dot(&difference).sqrt()
+        })
+        .filter(|&distance| distance > 0.0)
+        .fold(f32::INFINITY, f32::min);
+    if nearest.is_finite() {
+        nearest
+    } else {
+        1.0
+    }
+}
+
+/// Positions at `+e_i` and `-e_i` for up to `2 * dim` components.
+fn axis_aligned_layout(n_components: usize, dim: usize) -> Array2<f32> {
+    let half = n_components.div_ceil(2);
+    Array2::from_shape_fn((n_components, dim), |(component, axis)| {
+        let (sign, positive_axis) = if component < half {
+            (1.0, component)
+        } else {
+            (-1.0, component - half)
+        };
+        if positive_axis == axis {
+            sign
+        } else {
+            0.0
+        }
+    })
+}
+
+/// Spectral embedding of the component centroids using an affinity `exp(-d^2)`,
+/// normalized by the largest coordinate. Without data, random positions in `[0, 10]`.
+fn component_layout(
+    centroids: Option<ComponentCentroids>,
+    labels: &[usize],
+    n_components: usize,
+    dim: usize,
+    rng: &mut Xoshiro256StarStar,
+) -> Array2<f32> {
+    let Some(ComponentCentroids { data, metric }) = centroids else {
+        return Array2::from_shape_fn((n_components, dim), |_| rng.random_f32() * 10.0);
+    };
+    let Some(distance_func) = get_distance_func(metric) else {
+        return Array2::from_shape_fn((n_components, dim), |_| rng.random_f32() * 10.0);
+    };
+
+    let n_features = data.ncols();
+    let mut sums = vec![0.0f64; n_components * n_features];
+    let mut counts = vec![0usize; n_components];
+    for (row, &label) in data.rows().into_iter().zip(labels) {
+        counts[label] += 1;
+        for (sum, &value) in sums[label * n_features..(label + 1) * n_features]
+            .iter_mut()
+            .zip(row.iter())
+        {
+            *sum += value as f64;
+        }
+    }
+    let centroid_rows: Vec<Vec<f32>> = (0..n_components)
+        .map(|label| {
+            sums[label * n_features..(label + 1) * n_features]
+                .iter()
+                .map(|&sum| (sum / counts[label].max(1) as f64) as f32)
+                .collect()
+        })
+        .collect();
+
+    let mut indptr = vec![0];
+    let mut indices = Vec::new();
+    let mut weights = Vec::new();
+    for i in 0..n_components {
+        for j in (0..n_components).filter(|&j| j != i) {
+            let distance = distance_func(&centroid_rows[i], &centroid_rows[j]) as f64;
+            let affinity = (-distance * distance).exp() as f32;
+            if affinity > 0.0 {
+                indices.push(j);
+                weights.push(affinity);
+            }
+        }
+        indptr.push(indices.len());
+    }
+    let affinity_graph = CsrMatrix {
+        indptr,
+        indices,
+        data: weights,
+        nrows: n_components,
+        ncols: n_components,
+    };
+
+    let mut embedding = connected_layout(&affinity_graph, dim, rng, SolverStart::Deterministic);
+    let degrees = affinity_graph.row_sums();
+    for (mut row, degree) in embedding.rows_mut().into_iter().zip(degrees) {
+        if degree > 0.0 {
+            row /= degree.sqrt();
+        }
+    }
+    for mut column in embedding.columns_mut() {
+        let dominant = column
+            .iter()
+            .cloned()
+            .fold(0.0f32, |a, b| if b.abs() > a.abs() { b } else { a });
+        if dominant < 0.0 {
+            column.mapv_inplace(|x| -x);
+        }
+    }
+    let max = embedding.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    if max != 0.0 && max.is_finite() {
+        embedding /= max;
+    }
+    embedding
+}
+
+/// Spectral embedding of a connected graph.
+fn connected_layout(
+    graph: &CsrMatrix,
+    dim: usize,
+    rng: &mut Xoshiro256StarStar,
+    start: SolverStart,
+) -> Array2<f32> {
     let n = graph.nrows;
 
-    if n <= dim + 1 {
+    let k_tiny = dim + 1;
+    if n < k_tiny {
         return random_layout(n, dim, rng);
+    }
+    if n == k_tiny {
+        return dense_spectral_layout(graph, dim, rng);
     }
 
     let degrees = graph.row_sums();
@@ -653,17 +985,10 @@ pub fn spectral_layout(graph: &CsrMatrix, dim: usize, rng: &mut Xoshiro256StarSt
     let norm: f64 = sqrt_deg.iter().map(|x| x * x).sum::<f64>().sqrt();
     let constraint: Vec<f64> = sqrt_deg.iter().map(|x| x / norm).collect();
 
-    // Build initial guess with deterministic vectors (seed-independent).
-    // These will be orthogonalized against the constraint and each other by LOBPCG.
-    let mut x0 = Block::new(k, n);
-    for i in 0..n {
-        x0.cols[0][i] = 1.0;
-    }
-    if k > 1 {
-        for i in 0..n {
-            x0.cols[1][i] = if i % 2 == 0 { 1.0 } else { -1.0 };
-        }
-    }
+    let x0 = match start {
+        SolverStart::Deterministic => deterministic_start(k, n),
+        SolverStart::TruncatedSvd => truncated_svd_start(graph, &inv_sqrt_deg, k, n, rng),
+    };
 
     let tol = 1e-5;
     let max_iter = 200;
@@ -712,6 +1037,35 @@ pub fn spectral_layout(graph: &CsrMatrix, dim: usize, rng: &mut Xoshiro256StarSt
             random_layout(n, dim, rng)
         }
     }
+}
+
+/// Spectral embedding of a graph with exactly `dim + 1` nodes: dense
+/// eigendecomposition of L, using eigenvectors `1..=dim` in ascending eigenvalue order.
+fn dense_spectral_layout(
+    graph: &CsrMatrix,
+    dim: usize,
+    rng: &mut Xoshiro256StarStar,
+) -> Array2<f32> {
+    let n = graph.nrows;
+    let inv_sqrt_deg: Vec<f64> = graph
+        .row_sums()
+        .iter()
+        .map(|&d| 1.0 / (d as f64).sqrt())
+        .collect();
+    let mut laplacian = vec![0.0f64; n * n];
+    for i in 0..n {
+        laplacian[i * n + i] = 1.0;
+        for idx in graph.indptr[i]..graph.indptr[i + 1] {
+            let j = graph.indices[idx];
+            laplacian[i * n + j] -= graph.data[idx] as f64 * inv_sqrt_deg[i] * inv_sqrt_deg[j];
+        }
+    }
+    if laplacian.iter().any(|x| !x.is_finite()) {
+        return random_layout(n, dim, rng);
+    }
+
+    let (_, eigenvectors) = eigh_jacobi(&laplacian, n);
+    Array2::from_shape_fn((n, dim), |(i, d)| eigenvectors[i * n + d + 1] as f32)
 }
 
 /// Scale embedding coordinates and add noise to avoid local minima.
@@ -871,14 +1225,7 @@ mod tests {
         let norm: f64 = sqrt_deg.iter().map(|x| x * x).sum::<f64>().sqrt();
         let constraint: Vec<f64> = sqrt_deg.iter().map(|x| x / norm).collect();
 
-        // Deterministic initial vectors — same as production code
-        let mut x0 = Block::new(k, n);
-        for i in 0..n {
-            x0.cols[0][i] = 1.0;
-        }
-        for i in 0..n {
-            x0.cols[1][i] = if i % 2 == 0 { 1.0 } else { -1.0 };
-        }
+        let x0 = deterministic_start(k, n);
 
         let tol = 1e-5;
         let max_iter = 200;
@@ -911,5 +1258,228 @@ mod tests {
             "lambda_1 = {} (expected ~1.0 or ~1.1)",
             eigenvalues[1]
         );
+    }
+
+    fn complete_graph(n: usize) -> CsrMatrix {
+        let mut indptr = vec![0];
+        let mut indices = Vec::new();
+        for i in 0..n {
+            indices.extend((0..n).filter(|&j| j != i));
+            indptr.push(indices.len());
+        }
+        let data = vec![1.0f32; indices.len()];
+        CsrMatrix {
+            indptr,
+            indices,
+            data,
+            nrows: n,
+            ncols: n,
+        }
+    }
+
+    #[test]
+    fn test_spectral_layout_fewer_nodes_than_k_is_random() {
+        let mut rng = Xoshiro256StarStar::seed_from_u64(1);
+        let emb = spectral_layout(&complete_graph(2), 2, &mut rng);
+        assert_eq!(emb.dim(), (2, 2));
+        assert!(emb.iter().all(|x| (-10.0..=10.0).contains(x)));
+    }
+
+    #[test]
+    fn test_spectral_layout_exactly_k_nodes_uses_dense_eigenvectors() {
+        // K3 has L eigenvalues 0, 1.5, 1.5; eigenvectors 1 and 2 span the space
+        // orthogonal to sqrt(D), so every column sums to zero.
+        let mut rng = Xoshiro256StarStar::seed_from_u64(1);
+        let emb = spectral_layout(&complete_graph(3), 2, &mut rng);
+        assert_eq!(emb.dim(), (3, 2));
+        for d in 0..2 {
+            let sum: f32 = emb.column(d).sum();
+            let norm: f32 = emb.column(d).iter().map(|x| x * x).sum::<f32>().sqrt();
+            assert!(sum.abs() < 1e-5, "column {d} sum = {sum}");
+            assert!((norm - 1.0).abs() < 1e-5, "column {d} norm = {norm}");
+        }
+    }
+
+    /// Block-diagonal graph; each block is a ring where every vertex links to its
+    /// two nearest neighbors on both sides (a complete graph for blocks below 5).
+    fn block_ring_graph(sizes: &[usize]) -> CsrMatrix {
+        let n: usize = sizes.iter().sum();
+        let mut indptr = vec![0];
+        let mut indices = Vec::new();
+        let mut offset = 0;
+        for &size in sizes {
+            for i in 0..size {
+                let mut neighbors: Vec<usize> = if size < 5 {
+                    (0..size).filter(|&j| j != i).collect()
+                } else {
+                    [1, 2, size - 1, size - 2]
+                        .iter()
+                        .map(|d| (i + d) % size)
+                        .collect()
+                };
+                neighbors.sort();
+                indices.extend(neighbors.iter().map(|j| offset + j));
+                indptr.push(indices.len());
+            }
+            offset += size;
+        }
+        let data = vec![1.0f32; indices.len()];
+        CsrMatrix {
+            indptr,
+            indices,
+            data,
+            nrows: n,
+            ncols: n,
+        }
+    }
+
+    fn component_ranges(sizes: &[usize]) -> Vec<std::ops::Range<usize>> {
+        let mut start = 0;
+        sizes
+            .iter()
+            .map(|&size| {
+                start += size;
+                start - size..start
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_connected_components_labels_blocks() {
+        let sizes = [7, 1, 12];
+        let (n_components, labels) = connected_components(&block_ring_graph(&sizes));
+        assert_eq!(n_components, 3);
+        for (label, range) in component_ranges(&sizes).into_iter().enumerate() {
+            assert!(labels[range].iter().all(|&l| l == label));
+        }
+    }
+
+    /// Components are separated when every pair of component centers is farther apart
+    /// than the mean distance of the vertices to their own center.
+    fn assert_components_separated(emb: &Array2<f32>, sizes: &[usize]) {
+        assert!(emb.iter().all(|x| x.is_finite()));
+        let ranges = component_ranges(sizes);
+        let centers: Vec<_> = ranges
+            .iter()
+            .map(|range| {
+                emb.slice(ndarray::s![range.clone(), ..])
+                    .mean_axis(ndarray::Axis(0))
+                    .unwrap()
+            })
+            .collect();
+        let distance = |a: &ndarray::Array1<f32>, b: &ndarray::ArrayView1<f32>| {
+            let difference = a - b;
+            difference.dot(&difference).sqrt()
+        };
+        let largest_mean_radius = ranges
+            .iter()
+            .zip(&centers)
+            .map(|(range, center)| {
+                let total: f32 = range.clone().map(|v| distance(center, &emb.row(v))).sum();
+                total / range.len() as f32
+            })
+            .fold(0.0, f32::max);
+        for i in 0..centers.len() {
+            for j in (i + 1)..centers.len() {
+                let between = distance(&centers[i], &centers[j].view());
+                assert!(
+                    between > largest_mean_radius,
+                    "centers {i} and {j}: {between} <= {largest_mean_radius}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_spectral_layout_separates_three_components() {
+        let sizes = [30, 25, 40];
+        let graph = block_ring_graph(&sizes);
+        let data = Array2::from_shape_fn((95, 2), |(i, d)| {
+            let component = component_ranges(&sizes)
+                .iter()
+                .position(|r| r.contains(&i))
+                .unwrap();
+            [0.0, 2.0, 4.0][component] * (1 - d) as f32 + 0.01 * i as f32
+        });
+        let centroids = ComponentCentroids {
+            data: &data,
+            metric: "euclidean",
+        };
+        let mut rng = Xoshiro256StarStar::seed_from_u64(3);
+        let emb = spectral_layout_with_centroids(&graph, Some(centroids), 2, &mut rng);
+        assert_eq!(emb.dim(), (95, 2));
+        assert_components_separated(&emb, &sizes);
+    }
+
+    #[test]
+    fn test_spectral_layout_separates_many_components_by_centroid_embedding() {
+        let sizes = [20, 20, 20, 20, 20, 20];
+        let graph = block_ring_graph(&sizes);
+        let data = Array2::from_shape_fn((120, 2), |(i, d)| {
+            let component = (i / 20) as f32;
+            if d == 0 {
+                component * 1.5
+            } else {
+                (component % 2.0) * 1.5
+            }
+        });
+        let centroids = ComponentCentroids {
+            data: &data,
+            metric: "euclidean",
+        };
+        let mut rng = Xoshiro256StarStar::seed_from_u64(5);
+        let emb = spectral_layout_with_centroids(&graph, Some(centroids), 2, &mut rng);
+        assert_components_separated(&emb, &sizes);
+    }
+
+    #[test]
+    fn test_spectral_layout_without_data_separates_many_components() {
+        let sizes = [15, 15, 15, 15, 15];
+        let mut rng = Xoshiro256StarStar::seed_from_u64(9);
+        let emb = spectral_layout(&block_ring_graph(&sizes), 2, &mut rng);
+        assert_components_separated(&emb, &sizes);
+    }
+
+    #[test]
+    fn test_spectral_layout_handles_tiny_components() {
+        let sizes = [1, 2, 3, 30];
+        let mut rng = Xoshiro256StarStar::seed_from_u64(2);
+        let emb = spectral_layout(&block_ring_graph(&sizes), 2, &mut rng);
+        assert_eq!(emb.dim(), (36, 2));
+        assert!(emb.iter().all(|x| x.is_finite()));
+    }
+
+    #[test]
+    fn test_axis_aligned_layout_uses_signed_axes() {
+        let layout = axis_aligned_layout(3, 2);
+        assert_eq!(layout.row(0).to_vec(), vec![1.0, 0.0]);
+        assert_eq!(layout.row(1).to_vec(), vec![0.0, 1.0]);
+        assert_eq!(layout.row(2).to_vec(), vec![-1.0, 0.0]);
+    }
+
+    #[test]
+    fn test_tsw_spectral_layout_spans_spectral_subspace() {
+        let graph = block_ring_graph(&[80]);
+        let mut rng = Xoshiro256StarStar::seed_from_u64(4);
+        let spectral = spectral_layout(&graph, 2, &mut rng);
+        let tsw = tsw_spectral_layout(&graph, None, 2, &mut rng);
+        assert_eq!(tsw.dim(), (80, 2));
+        assert!(tsw.iter().all(|x| x.is_finite()));
+
+        let mut basis: Vec<ndarray::Array1<f32>> = vec![];
+        for column in spectral.columns() {
+            let mut vector = column.to_owned();
+            for earlier in &basis {
+                let overlap = vector.dot(earlier);
+                vector.scaled_add(-overlap, earlier);
+            }
+            let norm = vector.dot(&vector).sqrt();
+            basis.push(vector / norm);
+        }
+        for column in tsw.columns() {
+            let captured: f32 = basis.iter().map(|b| column.dot(b).powi(2)).sum();
+            let total = column.dot(&column);
+            assert!(captured / total > 0.99, "captured {captured} of {total}");
+        }
     }
 }

@@ -7,6 +7,7 @@ import { get } from "svelte/store";
 import { createEmbeddingProjector } from "../embedding/index.js";
 import { providerConfigs } from "../inference/model_config_store.js";
 import { inferProvider } from "../inference/resolve.js";
+import { withPipeline, type UMAPPipelineOptions } from "./umap_optimizer.js";
 
 /**
  * SQL page size — caps the working set extracted from DuckDB at a time, not
@@ -93,7 +94,7 @@ export async function computeProjection(options: {
   yColumn: string;
   type: "text" | "image";
   model: string;
-  umapOptions?: { minDist?: number; nNeighbors?: number; gpu?: boolean };
+  umapOptions?: { minDist?: number; nNeighbors?: number; gpu?: boolean } & UMAPPipelineOptions;
   callback?: (message: string, progress?: number) => void;
 }) {
   function progress(message: string, progress?: number) {
@@ -132,7 +133,7 @@ export async function computeProjection(options: {
   progress("UMAP...");
 
   let coordinates = await projector.umap({
-    ...options.umapOptions,
+    ...withPipeline(options.umapOptions),
     progress: (p: number, stage: string) => {
       progress(`UMAP: ${stage}...`, p * 100);
     },

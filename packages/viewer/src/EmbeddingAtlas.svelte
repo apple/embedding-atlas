@@ -110,9 +110,7 @@
     store.chartContext.highlight.set(highlightProp != null && highlightProp.length > 0 ? highlightProp : null);
   });
 
-  // Sync the external overlay prop. `undefined` is kept distinct from `null`:
-  // both mean "no external overlay", but only an object value (even an empty one)
-  // takes precedence over the internal overlay produced by search.
+  // Only an external overlay object takes precedence over the built-in search overlay.
   $effect.pre(() => {
     store.chartContext.externalOverlay.set(overlayProp ?? undefined);
   });

@@ -53,7 +53,7 @@ function extract(dtsContents) {
 
 function renderType(type) {
   while (true) {
-    let n = type.replaceAll(/_\d+($|(?=\ ))/g, ""); // remove _2, _3, ... suffix
+    let n = type.replaceAll(/_\d+(?=$|\W)/g, ""); // remove _2, _3, ... suffix
     if (type == n) {
       break;
     }

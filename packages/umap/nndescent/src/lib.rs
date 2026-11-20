@@ -15,6 +15,7 @@ pub mod search;
 pub mod utils;
 
 use std::fmt;
+use std::sync::Arc;
 
 use ndarray::Array2;
 
@@ -71,7 +72,7 @@ impl std::error::Error for NNDescentError {}
 /// let (indices, distances) = index.neighbor_graph().unwrap();
 /// ```
 pub struct NNDescentBuilder {
-    data: Array2<f32>,
+    data: Arc<Array2<f32>>,
     metric: String,
     n_neighbors: usize,
     random_state: Option<u64>,
@@ -389,7 +390,7 @@ pub struct NNDescent {
     max_rptree_depth: usize,
 
     // Built state
-    raw_data: Array2<f32>,
+    raw_data: Arc<Array2<f32>>,
     neighbor_graph: Option<(Array2<i32>, Array2<f32>)>,
     search_graph: Option<CsrGraph>,
     search_forest: Vec<FlatTree>,
@@ -411,6 +412,16 @@ impl NNDescent {
     /// * `metric` - Distance metric name (e.g., "euclidean", "cosine")
     /// * `n_neighbors` - Number of neighbors to find
     pub fn builder(data: Array2<f32>, metric: &str, n_neighbors: usize) -> NNDescentBuilder {
+        Self::builder_shared(Arc::new(data), metric, n_neighbors)
+    }
+
+    /// Like [`builder`](Self::builder), but shares the data instead of owning it, so a
+    /// caller that keeps a handle does not need a second copy of a large matrix.
+    pub fn builder_shared(
+        data: Arc<Array2<f32>>,
+        metric: &str,
+        n_neighbors: usize,
+    ) -> NNDescentBuilder {
         NNDescentBuilder {
             data,
             metric: metric.to_string(),
@@ -546,7 +557,7 @@ impl NNDescent {
             let old_i = vertex_order[new_i] as usize;
             new_data.row_mut(new_i).assign(&self.raw_data.row(old_i));
         }
-        self.raw_data = new_data;
+        self.raw_data = Arc::new(new_data);
 
         // Remap search graph: rebuild COO with remapped indices
         let mut remap_rows = Vec::new();

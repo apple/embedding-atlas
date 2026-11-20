@@ -3,9 +3,7 @@ use ndarray::Array2;
 use rayon::prelude::*;
 
 use crate::distance::DistanceFunc;
-use crate::heap::{
-    checked_flagged_heap_push, checked_heap_push, deheap_sort, make_heap, NeighborHeap,
-};
+use crate::heap::{checked_flagged_heap_push, deheap_sort, make_heap, NeighborHeap};
 use crate::rng::TauRng;
 use crate::{Logger, STAGE_NN_DESCENT, STAGE_SORTING};
 
@@ -134,13 +132,77 @@ pub fn init_random(
     }
 }
 
+/// Candidate flag bit in a packed reverse edge.
+const NEW_EDGE_BIT: u32 = 1 << 31;
+
+/// Rows of candidate lists that one parallel task builds.
+const CANDIDATE_ROWS_PER_TASK_MIN: usize = 1024;
+
+/// Reverse graph edges in CSR form. Row `v` lists the vertices that have `v`
+/// as a neighbor, each packed with `NEW_EDGE_BIT` when the edge is new.
+struct ReverseEdges {
+    offsets: Vec<usize>,
+    sources: Vec<u32>,
+}
+
+impl ReverseEdges {
+    fn build(indices: &Array2<i32>, flags: &Array2<u8>) -> Self {
+        let n_vertices = indices.nrows();
+        let mut offsets = vec![0usize; n_vertices + 1];
+        for (i, row) in indices.rows().into_iter().enumerate() {
+            for &target in row.iter() {
+                if target >= 0 && target as usize != i {
+                    offsets[target as usize + 1] += 1;
+                }
+            }
+        }
+        for v in 0..n_vertices {
+            offsets[v + 1] += offsets[v];
+        }
+        let mut sources = vec![0u32; offsets[n_vertices]];
+        let mut fill = offsets.clone();
+        for (i, (row, flag_row)) in indices.rows().into_iter().zip(flags.rows()).enumerate() {
+            for (&target, &flag) in row.iter().zip(flag_row.iter()) {
+                if target >= 0 && target as usize != i {
+                    let slot = &mut fill[target as usize];
+                    sources[*slot] = i as u32 | if flag != 0 { NEW_EDGE_BIT } else { 0 };
+                    *slot += 1;
+                }
+            }
+        }
+        ReverseEdges { offsets, sources }
+    }
+
+    fn row(&self, v: usize) -> &[u32] {
+        &self.sources[self.offsets[v]..self.offsets[v + 1]]
+    }
+}
+
+/// Uniform integer in `0..bound` from a 32-bit random draw.
+fn rand_below(rng: &mut TauRng, bound: usize) -> usize {
+    ((rng.tau_rand_int() as u32 as u64 * bound as u64) >> 32) as usize
+}
+
+/// Copy a uniform random sample of at most `out.len()` entries of `pool` into `out`.
+fn sample_into(pool: &mut [i32], out: &mut [i32], rng: &mut TauRng) {
+    let take = out.len().min(pool.len());
+    for t in 0..take {
+        if pool.len() > out.len() {
+            let r = t + rand_below(rng, pool.len() - t);
+            pool.swap(t, r);
+        }
+        out[t] = pool[t];
+    }
+}
+
 /// Build new and old candidate neighbor lists from the current graph.
 /// Returns (new_candidate_indices, old_candidate_indices), each shape (n_vertices, max_candidates).
 ///
-/// Phase 1: Each thread scans only its own block of graph rows, pushing candidates
-///           directly into its own candidate rows and buffering cross-block pushes.
-/// Phase 2: Cross-block pushes are applied in parallel (each thread applies to its own rows).
-/// Phase 3: Mark matched edges as old.
+/// A vertex's candidates are its graph neighbors and its reverse neighbors,
+/// split by edge flag. Each list is a uniform random sample of at most
+/// `max_candidates` distinct vertices. Edges whose neighbor became a new
+/// candidate are then marked old. Rows are independent, so they build in
+/// parallel without sharing mutable state.
 pub fn new_build_candidates(
     graph: &mut NeighborHeap,
     max_candidates: usize,
@@ -149,206 +211,79 @@ pub fn new_build_candidates(
     let n_vertices = graph.indices.nrows();
     let n_neighbors = graph.indices.ncols();
 
-    let mut new_candidate_indices = Array2::from_elem((n_vertices, max_candidates), -1i32);
-    let mut new_candidate_priority = Array2::from_elem((n_vertices, max_candidates), f32::INFINITY);
-    let mut old_candidate_indices = Array2::from_elem((n_vertices, max_candidates), -1i32);
-    let mut old_candidate_priority = Array2::from_elem((n_vertices, max_candidates), f32::INFINITY);
-
-    let n_threads = rayon::current_num_threads();
-    let block_size = n_vertices.div_ceil(n_threads);
-
-    // Capture base RNG state; each thread derives its own RNG from base_state + thread_id
     let base_state = rng.state;
-    // Advance the main RNG past this call so subsequent uses don't overlap
-    for _ in 0..(n_threads as i64) {
-        rng.tau_rand_int();
-    }
+    rng.tau_rand_int();
 
-    // SAFETY: Raw pointers cast to usize to cross the Send boundary into par_iter.
-    // Phase 1: each thread reads graph rows in its own block and writes candidate
-    // rows within that same block directly; cross-block pushes are buffered.
-    // Phase 2: each thread applies buffered cross-block pushes to its own rows only.
-    // Phase 3: each thread writes flags for its own row range only.
-    // No two threads write to the same row in any phase, so accesses are disjoint.
-    let new_idx_ptr = new_candidate_indices.as_mut_ptr() as usize;
-    let new_pri_ptr = new_candidate_priority.as_mut_ptr() as usize;
-    let old_idx_ptr = old_candidate_indices.as_mut_ptr() as usize;
-    let old_pri_ptr = old_candidate_priority.as_mut_ptr() as usize;
-    let graph_idx_ptr = graph.indices.as_ptr() as usize;
-    let graph_flags_ptr = graph.flags.as_ptr() as usize;
+    let reverse = ReverseEdges::build(&graph.indices, &graph.flags);
 
-    // Phase 1: Each thread scans only its own block, buffers cross-block pushes
-    // Each thread produces n_threads buckets of cross-block updates, keyed by target block
-    // Bucket entry: (target_row as i32, candidate_idx as i32, priority, is_new)
-    let cross_buckets: Vec<Vec<Vec<(i32, i32, f32, bool)>>> = (0..n_threads)
-        .into_par_iter()
-        .map(|t| {
-            let block_start = t * block_size;
-            let block_end = (block_start + block_size).min(n_vertices);
-            let mut buckets: Vec<Vec<(i32, i32, f32, bool)>> =
-                (0..n_threads).map(|_| Vec::new()).collect();
+    let mut new_candidates = Array2::from_elem((n_vertices, max_candidates), -1i32);
+    let mut old_candidates = Array2::from_elem((n_vertices, max_candidates), -1i32);
+    let rows_per_task = n_vertices
+        .div_ceil(rayon::current_num_threads() * 4)
+        .max(CANDIDATE_ROWS_PER_TASK_MIN);
 
-            let mut local_rng = TauRng::from_state([
-                base_state[0] + t as i64,
-                base_state[1] + t as i64,
-                base_state[2] + t as i64,
-            ]);
+    let indices = graph.indices.as_slice().unwrap();
+    let flags = graph.flags.as_slice_mut().unwrap();
+    let new_rows = new_candidates.as_slice_mut().unwrap();
+    let old_rows = old_candidates.as_slice_mut().unwrap();
 
-            for i in block_start..block_end {
-                for j in 0..n_neighbors {
-                    let idx = unsafe { *(graph_idx_ptr as *const i32).add(i * n_neighbors + j) };
-                    if idx < 0 {
-                        continue;
-                    }
+    new_rows
+        .par_chunks_mut(rows_per_task * max_candidates)
+        .zip(old_rows.par_chunks_mut(rows_per_task * max_candidates))
+        .zip(flags.par_chunks_mut(rows_per_task * n_neighbors))
+        .enumerate()
+        .for_each(|(task, ((new_task, old_task), flag_task))| {
+            let first_row = task * rows_per_task;
+            let t = task as i64;
+            let mut rng =
+                TauRng::from_state([base_state[0] + t, base_state[1] + t, base_state[2] + t]);
+            let mut seen_new = vec![0u32; n_vertices];
+            let mut seen_old = vec![0u32; n_vertices];
+            let mut new_pool: Vec<i32> = Vec::new();
+            let mut old_pool: Vec<i32> = Vec::new();
 
-                    let iu = idx as usize;
-                    let is_new =
-                        unsafe { *(graph_flags_ptr as *const u8).add(i * n_neighbors + j) } != 0;
-                    let d = local_rng.tau_rand();
-
-                    if is_new {
-                        // Push idx into row i (in our block - direct)
-                        let row_off = i * max_candidates;
-                        let pri = unsafe {
-                            std::slice::from_raw_parts_mut(
-                                (new_pri_ptr as *mut f32).add(row_off),
-                                max_candidates,
-                            )
-                        };
-                        let ind = unsafe {
-                            std::slice::from_raw_parts_mut(
-                                (new_idx_ptr as *mut i32).add(row_off),
-                                max_candidates,
-                            )
-                        };
-                        checked_heap_push(pri, ind, d, idx);
-
-                        // Push i into row idx (may be cross-block)
-                        if iu >= block_start && iu < block_end {
-                            let row_off = iu * max_candidates;
-                            let pri = unsafe {
-                                std::slice::from_raw_parts_mut(
-                                    (new_pri_ptr as *mut f32).add(row_off),
-                                    max_candidates,
-                                )
-                            };
-                            let ind = unsafe {
-                                std::slice::from_raw_parts_mut(
-                                    (new_idx_ptr as *mut i32).add(row_off),
-                                    max_candidates,
-                                )
-                            };
-                            checked_heap_push(pri, ind, d, i as i32);
-                        } else {
-                            let target_thread = iu / block_size;
-                            buckets[target_thread.min(n_threads - 1)]
-                                .push((idx, i as i32, d, true));
-                        }
+            let rows = new_task
+                .chunks_mut(max_candidates)
+                .zip(old_task.chunks_mut(max_candidates))
+                .zip(flag_task.chunks_mut(n_neighbors));
+            for (local, ((new_row, old_row), flag_row)) in rows.enumerate() {
+                let i = first_row + local;
+                let tag = i as u32 + 1;
+                new_pool.clear();
+                old_pool.clear();
+                let neighbors = &indices[i * n_neighbors..(i + 1) * n_neighbors];
+                let forward = neighbors
+                    .iter()
+                    .zip(flag_row.iter())
+                    .filter(|&(&v, _)| v >= 0 && v as usize != i)
+                    .map(|(&v, &flag)| (v, flag != 0));
+                let backward = reverse
+                    .row(i)
+                    .iter()
+                    .map(|&packed| ((packed & !NEW_EDGE_BIT) as i32, packed & NEW_EDGE_BIT != 0));
+                for (v, is_new) in forward.chain(backward) {
+                    let (seen, pool) = if is_new {
+                        (&mut seen_new, &mut new_pool)
                     } else {
-                        let row_off = i * max_candidates;
-                        let pri = unsafe {
-                            std::slice::from_raw_parts_mut(
-                                (old_pri_ptr as *mut f32).add(row_off),
-                                max_candidates,
-                            )
-                        };
-                        let ind = unsafe {
-                            std::slice::from_raw_parts_mut(
-                                (old_idx_ptr as *mut i32).add(row_off),
-                                max_candidates,
-                            )
-                        };
-                        checked_heap_push(pri, ind, d, idx);
+                        (&mut seen_old, &mut old_pool)
+                    };
+                    if seen[v as usize] != tag {
+                        seen[v as usize] = tag;
+                        pool.push(v);
+                    }
+                }
+                sample_into(&mut new_pool, new_row, &mut rng);
+                sample_into(&mut old_pool, old_row, &mut rng);
 
-                        if iu >= block_start && iu < block_end {
-                            let row_off = iu * max_candidates;
-                            let pri = unsafe {
-                                std::slice::from_raw_parts_mut(
-                                    (old_pri_ptr as *mut f32).add(row_off),
-                                    max_candidates,
-                                )
-                            };
-                            let ind = unsafe {
-                                std::slice::from_raw_parts_mut(
-                                    (old_idx_ptr as *mut i32).add(row_off),
-                                    max_candidates,
-                                )
-                            };
-                            checked_heap_push(pri, ind, d, i as i32);
-                        } else {
-                            let target_thread = iu / block_size;
-                            buckets[target_thread.min(n_threads - 1)]
-                                .push((idx, i as i32, d, false));
-                        }
+                for (&v, flag) in neighbors.iter().zip(flag_row.iter_mut()) {
+                    if *flag != 0 && new_row.contains(&v) {
+                        *flag = 0;
                     }
                 }
             }
-            buckets
-        })
-        .collect();
+        });
 
-    // Phase 2: Each thread applies cross-block updates from all source threads' buckets for its block
-    (0..n_threads).into_par_iter().for_each(|t| {
-        // Gather all updates targeting thread t's block from all source threads
-        for bucket in cross_buckets.iter().take(n_threads) {
-            for &(target, candidate, d, is_new) in &bucket[t] {
-                let tu = target as usize;
-                let row_off = tu * max_candidates;
-                if is_new {
-                    let pri = unsafe {
-                        std::slice::from_raw_parts_mut(
-                            (new_pri_ptr as *mut f32).add(row_off),
-                            max_candidates,
-                        )
-                    };
-                    let ind = unsafe {
-                        std::slice::from_raw_parts_mut(
-                            (new_idx_ptr as *mut i32).add(row_off),
-                            max_candidates,
-                        )
-                    };
-                    checked_heap_push(pri, ind, d, candidate);
-                } else {
-                    let pri = unsafe {
-                        std::slice::from_raw_parts_mut(
-                            (old_pri_ptr as *mut f32).add(row_off),
-                            max_candidates,
-                        )
-                    };
-                    let ind = unsafe {
-                        std::slice::from_raw_parts_mut(
-                            (old_idx_ptr as *mut i32).add(row_off),
-                            max_candidates,
-                        )
-                    };
-                    checked_heap_push(pri, ind, d, candidate);
-                }
-            }
-        }
-    });
-
-    // Phase 3: Mark matched edges as old (parallel per row)
-    let graph_flags_mut_ptr = graph.flags.as_mut_ptr() as usize;
-    let new_cand_ptr = new_candidate_indices.as_ptr() as usize;
-
-    (0..n_vertices).into_par_iter().for_each(|i| {
-        for j in 0..n_neighbors {
-            let idx = unsafe { *(graph_idx_ptr as *const i32).add(i * n_neighbors + j) };
-            if idx < 0 {
-                continue;
-            }
-            for k in 0..max_candidates {
-                if unsafe { *(new_cand_ptr as *const i32).add(i * max_candidates + k) } == idx {
-                    unsafe {
-                        *(graph_flags_mut_ptr as *mut u8).add(i * n_neighbors + j) = 0;
-                    }
-                    break;
-                }
-            }
-        }
-    });
-
-    (new_candidate_indices, old_candidate_indices)
+    (new_candidates, old_candidates)
 }
 
 /// Process candidates: fused distance computation and heap update.
