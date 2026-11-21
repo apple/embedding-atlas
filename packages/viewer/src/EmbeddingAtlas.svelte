@@ -39,6 +39,8 @@
     modelContext,
     cache,
     highlight: highlightProp = null,
+    overlay: overlayProp,
+    focusRequest: focusRequestProp = null,
   }: EmbeddingAtlasProps = $props();
 
   // svelte-ignore state_referenced_locally
@@ -106,6 +108,16 @@
   // Sync the external highlight prop with the internal highlight store.
   $effect.pre(() => {
     store.chartContext.highlight.set(highlightProp != null && highlightProp.length > 0 ? highlightProp : null);
+  });
+
+  // Only an external overlay object takes precedence over the built-in search overlay.
+  $effect.pre(() => {
+    store.chartContext.externalOverlay.set(overlayProp ?? undefined);
+  });
+
+  // Sync the external focus request prop.
+  $effect.pre(() => {
+    store.chartContext.focusRequest.set(focusRequestProp ?? null);
   });
 
   let mcpStatus = $state.raw<string | undefined>(undefined);

@@ -129,6 +129,8 @@ export class EmbeddingAtlasStore {
       },
       highlight: writable(null),
       overlay: writable(null),
+      externalOverlay: writable(undefined),
+      focusRequest: writable(null),
       textHighlight: writable(null),
       highlightScorer: writable(embeddingHighlightScorer()),
       embeddingViewConfig: options.embeddingViewConfig,

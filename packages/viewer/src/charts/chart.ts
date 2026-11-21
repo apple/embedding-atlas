@@ -106,6 +106,19 @@ export interface ChartContext {
   /** The current overlay. When this changes, supported views will render it as overlay. */
   overlay: Writable<Overlay | null>;
 
+  /**
+   * The overlay provided externally through the `overlay` prop of the viewer.
+   * `null` or `undefined` restores the internal overlay (e.g. produced by search).
+   * An external overlay object takes precedence, even if it has no nodes.
+   */
+  externalOverlay: Writable<Overlay | null | undefined>;
+
+  /**
+   * The latest focus request provided externally through the `focusRequest` prop of the viewer.
+   * Views animate the viewport to the requested point when a request with a new `key` arrives.
+   */
+  focusRequest: Writable<FocusRequest | null>;
+
   /** Highlight texts with a text query. */
   textHighlight: Writable<string | null>;
 
@@ -185,6 +198,21 @@ export interface ChartDelegate {
 export interface Overlay {
   nodes?: RowID[];
   edges?: { start: RowID; end: RowID }[];
+}
+
+/**
+ * A request to move the viewport of the embedding view to a single point.
+ * The `key` distinguishes successive requests: a new request is only acted upon
+ * when its `key` differs from the previously handled request, so requesting the
+ * same point again (e.g. after the user moved the viewport) is done by
+ * providing a new `key`.
+ */
+export interface FocusRequest {
+  /** The row ID of the point to focus on. Requests for unknown IDs are ignored. */
+  id: RowID;
+
+  /** An identifier that distinguishes this request from previous ones. */
+  key: string | number;
 }
 
 export type { ChartBuilderDescription } from "./builder/builder_description.js";

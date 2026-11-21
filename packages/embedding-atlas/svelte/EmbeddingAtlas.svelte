@@ -10,11 +10,13 @@
   /** @type {HTMLElement} */
   let container;
 
+  let viewerProps = $derived({ ...props, overlay: props.overlay, focusRequest: props.focusRequest });
+
   onMount(() => {
     let component = new Component(container, props);
 
     $effect(() => {
-      component.update(props);
+      component.update(viewerProps);
     });
 
     return () => {

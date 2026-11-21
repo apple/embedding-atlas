@@ -6,5 +6,7 @@ export type {
   Cache,
   EmbeddingAtlasProps,
   EmbeddingAtlasState,
+  FocusRequest,
+  Overlay,
   Searcher,
 } from "@embedding-atlas/viewer";
