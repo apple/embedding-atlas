@@ -13,6 +13,7 @@
   import { IconClose } from "../assets/icons.js";
 
   import type { EmbeddingAtlasProps, EmbeddingAtlasState } from "../api.js";
+  import { createBrowserCache, createMemoryCache, datasetCacheNamespace } from "../utils/browser_cache.js";
   import { systemColorScheme } from "../utils/color_scheme.js";
   import { initializeDatabase } from "../utils/database.js";
   import { downloadBuffer } from "../utils/download.js";
@@ -32,6 +33,7 @@
   let props = $state<Omit<EmbeddingAtlasProps, "coordinator"> | undefined>(undefined);
   let describe: { column_name: string; column_type: string }[] = $state.raw([]);
   let hashParams = $state.raw<{ data?: string; settings?: any; state?: any }>({});
+  let loadedInputs: (File | { url: string })[] = [];
 
   async function loadHashParams() {
     hashParams = {
@@ -85,6 +87,7 @@
       setQueryPayload("data", inputs[0].url, "text");
     }
 
+    loadedInputs = inputs;
     stage = "columns";
 
     if (hashParams.settings != undefined) {
@@ -130,6 +133,12 @@
         projectionColumns = { x, y };
       }
 
+      const hasPrecomputedEmbedding = spec.embedding != null && "precomputed" in spec.embedding;
+      const cache =
+        hasPrecomputedEmbedding && loadedInputs.length > 0
+          ? createBrowserCache(datasetCacheNamespace(loadedInputs))
+          : createMemoryCache();
+
       props = {
         data: {
           table: "dataset",
@@ -139,6 +148,7 @@
           neighbors: neighborsColumn,
         },
         initialState: hashParams.state,
+        cache,
       };
     } catch (e: unknown) {
       logger.exception(e);
