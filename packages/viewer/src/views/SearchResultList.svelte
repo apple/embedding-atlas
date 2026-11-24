@@ -2,6 +2,7 @@
 <script lang="ts">
   import { fuzzyHighlightScorer, highlight as highlightText } from "../highlight/index.js";
 
+  import Button from "../widgets/Button.svelte";
   import Paginator from "../widgets/Paginator.svelte";
   import TooltipContent from "./TooltipContent.svelte";
 
@@ -17,9 +18,10 @@
     columnStyles?: Record<string, ColumnStyle>;
     onClick?: (item: SearchResultItem) => void;
     onClose?: () => void;
+    onSelectResults?: (items: SearchResultItem[]) => void;
   }
 
-  let { items, label, highlight, limit = 100, columnStyles, onClick, onClose }: Props = $props();
+  let { items, label, highlight, limit = 100, columnStyles, onClick, onClose, onSelectResults }: Props = $props();
 
   // Shared scorer so every result item coalesces into one batched match call.
   const fuzzyScorer = fuzzyHighlightScorer();
@@ -45,6 +47,14 @@
         {resultCountText}
       </div>
     </div>
+    {#if onSelectResults}
+      <Button
+        label="Select results"
+        title="Select all returned search results while keeping current filters"
+        disabled={items.length === 0}
+        onClick={() => onSelectResults(items)}
+      />
+    {/if}
     <div class="flex-none">
       <button
         class="block hover:text-slate-500 dark:hover:text-slate-400"
