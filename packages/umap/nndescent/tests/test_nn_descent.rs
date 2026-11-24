@@ -209,6 +209,72 @@ fn test_nn_descent_query_accuracy_angular() {
     );
 }
 
+/// Cosine builds normalize in place when the data is uniquely owned and fall
+/// back to the norm-computing distance when it is shared. Both paths must return
+/// true cosine distances, and the normalized index must normalize queries too.
+#[test]
+fn test_cosine_owned_and_shared_paths_agree() {
+    use std::sync::Arc;
+
+    let data = make_nn_data();
+    let k = 10;
+    let true_indices = brute_force_knn(&data, k, distance::cosine);
+    let is_zero = |i: i32| data.row(i as usize).iter().all(|&v| v == 0.0);
+
+    let shared = Arc::new(data.clone());
+    let shared_nnd = NNDescent::builder_shared(Arc::clone(&shared), "cosine", k)
+        .random_state(42)
+        .build()
+        .unwrap();
+    assert_eq!(*shared, data, "shared data must not be modified");
+    let mut owned_nnd = NNDescent::builder(data.clone(), "cosine", k)
+        .random_state(42)
+        .build()
+        .unwrap();
+
+    for (name, nnd) in [("shared", &shared_nnd), ("owned", &owned_nnd)] {
+        let (indices, distances) = nnd.neighbor_graph().unwrap();
+        let recall = compute_recall(&true_indices, &indices);
+        assert!(recall >= 0.98, "{name} cosine recall {recall:.4} < 0.98");
+        for i in 0..indices.nrows() {
+            for j in 1..k {
+                let nb = indices[[i, j]];
+                if nb < 0 || (is_zero(i as i32) && is_zero(nb)) {
+                    continue;
+                }
+                let expected = distance::cosine(
+                    data.row(i).as_slice().unwrap(),
+                    data.row(nb as usize).as_slice().unwrap(),
+                );
+                let got = distances[[i, j]];
+                assert!(
+                    (got - expected).abs() < 1e-4,
+                    "{name} ({i},{nb}): {got} vs {expected}"
+                );
+            }
+        }
+    }
+
+    // Unnormalized queries against the normalized index: distances must still be
+    // cosine distances to the original rows.
+    let query = data.slice(ndarray::s![..50, ..]).mapv(|v| 3.0 * v - 0.5);
+    let (q_indices, q_distances) = owned_nnd.query(&query, k, 0.2);
+    for i in 0..query.nrows() {
+        for j in 0..k {
+            let nb = q_indices[[i, j]];
+            let expected = distance::cosine(
+                query.row(i).as_slice().unwrap(),
+                data.row(nb as usize).as_slice().unwrap(),
+            );
+            let got = q_distances[[i, j]];
+            assert!(
+                (got - expected).abs() < 1e-4,
+                "query ({i},{nb}): {got} vs {expected}"
+            );
+        }
+    }
+}
+
 /// Test determinism: same seed produces identical results.
 #[test]
 fn test_deterministic() {
