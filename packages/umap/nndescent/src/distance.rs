@@ -1,6 +1,5 @@
-/// Distance metric implementations based on PyNNDescent (https://github.com/lmcinnes/pynndescent).
-/// All functions take two `&[f32]` slices and return `f32`.
-use wide::f32x4;
+//! Distance metric implementations based on PyNNDescent (https://github.com/lmcinnes/pynndescent).
+//! All functions take two `&[f32]` slices and return `f32`.
 
 pub const FLOAT32_EPS: f32 = f32::EPSILON;
 pub const FLOAT32_MAX: f32 = f32::MAX;
@@ -15,30 +14,7 @@ pub fn euclidean(x: &[f32], y: &[f32]) -> f32 {
 }
 
 pub fn squared_euclidean(x: &[f32], y: &[f32]) -> f32 {
-    assert_eq!(x.len(), y.len());
-    let n = x.len();
-    let mut acc0 = f32x4::ZERO;
-    let mut acc1 = f32x4::ZERO;
-    let end4 = n - (n % 8);
-    let mut i = 0;
-    while i < end4 {
-        let xv0 = f32x4::new([x[i], x[i + 1], x[i + 2], x[i + 3]]);
-        let yv0 = f32x4::new([y[i], y[i + 1], y[i + 2], y[i + 3]]);
-        let d0 = xv0 - yv0;
-        acc0 = d0.mul_add(d0, acc0);
-        let xv1 = f32x4::new([x[i + 4], x[i + 5], x[i + 6], x[i + 7]]);
-        let yv1 = f32x4::new([y[i + 4], y[i + 5], y[i + 6], y[i + 7]]);
-        let d1 = xv1 - yv1;
-        acc1 = d1.mul_add(d1, acc1);
-        i += 8;
-    }
-    let mut scalar = (acc0 + acc1).reduce_add();
-    while i < n {
-        let d = x[i] - y[i];
-        scalar += d * d;
-        i += 1;
-    }
-    scalar
+    kernel::squared_euclidean(x, y)
 }
 
 pub fn manhattan(x: &[f32], y: &[f32]) -> f32 {
@@ -70,38 +46,7 @@ pub fn minkowski_p(x: &[f32], y: &[f32], p: f32) -> f32 {
 }
 
 pub fn cosine(x: &[f32], y: &[f32]) -> f32 {
-    assert_eq!(x.len(), y.len());
-    let n = x.len();
-    let mut dot_acc0 = f32x4::ZERO;
-    let mut dot_acc1 = f32x4::ZERO;
-    let mut nx_acc0 = f32x4::ZERO;
-    let mut nx_acc1 = f32x4::ZERO;
-    let mut ny_acc0 = f32x4::ZERO;
-    let mut ny_acc1 = f32x4::ZERO;
-    let end4 = n - (n % 8);
-    let mut i = 0;
-    while i < end4 {
-        let xv0 = f32x4::new([x[i], x[i + 1], x[i + 2], x[i + 3]]);
-        let yv0 = f32x4::new([y[i], y[i + 1], y[i + 2], y[i + 3]]);
-        dot_acc0 = xv0.mul_add(yv0, dot_acc0);
-        nx_acc0 = xv0.mul_add(xv0, nx_acc0);
-        ny_acc0 = yv0.mul_add(yv0, ny_acc0);
-        let xv1 = f32x4::new([x[i + 4], x[i + 5], x[i + 6], x[i + 7]]);
-        let yv1 = f32x4::new([y[i + 4], y[i + 5], y[i + 6], y[i + 7]]);
-        dot_acc1 = xv1.mul_add(yv1, dot_acc1);
-        nx_acc1 = xv1.mul_add(xv1, nx_acc1);
-        ny_acc1 = yv1.mul_add(yv1, ny_acc1);
-        i += 8;
-    }
-    let mut dot = (dot_acc0 + dot_acc1).reduce_add();
-    let mut norm_x = (nx_acc0 + nx_acc1).reduce_add();
-    let mut norm_y = (ny_acc0 + ny_acc1).reduce_add();
-    while i < n {
-        dot += x[i] * y[i];
-        norm_x += x[i] * x[i];
-        norm_y += y[i] * y[i];
-        i += 1;
-    }
+    let (dot, norm_x, norm_y) = kernel::dot_norms(x, y);
     if norm_x == 0.0 && norm_y == 0.0 {
         0.0
     } else if norm_x == 0.0 || norm_y == 0.0 {
@@ -112,38 +57,7 @@ pub fn cosine(x: &[f32], y: &[f32]) -> f32 {
 }
 
 pub fn alternative_cosine(x: &[f32], y: &[f32]) -> f32 {
-    assert_eq!(x.len(), y.len());
-    let n = x.len();
-    let mut dot_acc0 = f32x4::ZERO;
-    let mut dot_acc1 = f32x4::ZERO;
-    let mut nx_acc0 = f32x4::ZERO;
-    let mut nx_acc1 = f32x4::ZERO;
-    let mut ny_acc0 = f32x4::ZERO;
-    let mut ny_acc1 = f32x4::ZERO;
-    let end4 = n - (n % 8);
-    let mut i = 0;
-    while i < end4 {
-        let xv0 = f32x4::new([x[i], x[i + 1], x[i + 2], x[i + 3]]);
-        let yv0 = f32x4::new([y[i], y[i + 1], y[i + 2], y[i + 3]]);
-        dot_acc0 = xv0.mul_add(yv0, dot_acc0);
-        nx_acc0 = xv0.mul_add(xv0, nx_acc0);
-        ny_acc0 = yv0.mul_add(yv0, ny_acc0);
-        let xv1 = f32x4::new([x[i + 4], x[i + 5], x[i + 6], x[i + 7]]);
-        let yv1 = f32x4::new([y[i + 4], y[i + 5], y[i + 6], y[i + 7]]);
-        dot_acc1 = xv1.mul_add(yv1, dot_acc1);
-        nx_acc1 = xv1.mul_add(xv1, nx_acc1);
-        ny_acc1 = yv1.mul_add(yv1, ny_acc1);
-        i += 8;
-    }
-    let mut dot = (dot_acc0 + dot_acc1).reduce_add();
-    let mut norm_x = (nx_acc0 + nx_acc1).reduce_add();
-    let mut norm_y = (ny_acc0 + ny_acc1).reduce_add();
-    while i < n {
-        dot += x[i] * y[i];
-        norm_x += x[i] * x[i];
-        norm_y += y[i] * y[i];
-        i += 1;
-    }
+    let (dot, norm_x, norm_y) = kernel::dot_norms(x, y);
     if norm_x == 0.0 && norm_y == 0.0 {
         0.0
     } else if norm_x == 0.0 || norm_y == 0.0 || dot <= 0.0 {
@@ -151,6 +65,19 @@ pub fn alternative_cosine(x: &[f32], y: &[f32]) -> f32 {
     } else {
         let ratio = (norm_x * norm_y).sqrt() / dot;
         ratio.log2()
+    }
+}
+
+/// `-log2(<x, y>)`, the fast cosine proxy for rows that are already
+/// L2-normalized (PyNNDescent's `alternative_dot`). Corrected with
+/// [`correct_alternative_cosine`]. Clamped at 0 because rounding can push the
+/// dot product of near-identical unit vectors slightly above 1.
+pub fn alternative_dot(x: &[f32], y: &[f32]) -> f32 {
+    let dot = kernel::dot(x, y);
+    if dot <= 0.0 {
+        FLOAT32_MAX
+    } else {
+        (-dot.log2()).max(0.0)
     }
 }
 
@@ -547,6 +474,16 @@ pub fn get_fast_alternative(name: &str) -> Option<(DistanceFunc, CorrectionFunc)
     }
 }
 
+/// Fast alternative for metrics that can run on L2-normalized rows instead
+/// (`cosine`, `dot`). Only valid if the data, and any query vectors, have been
+/// normalized first; otherwise use [`get_fast_alternative`].
+pub fn get_normalized_fast_alternative(name: &str) -> Option<(DistanceFunc, CorrectionFunc)> {
+    match name {
+        "cosine" | "dot" => Some((alternative_dot, correct_alternative_cosine)),
+        _ => None,
+    }
+}
+
 /// Whether the metric uses angular (rather than euclidean) RP tree splitting
 pub fn is_angular_metric(name: &str) -> bool {
     matches!(
@@ -586,6 +523,195 @@ pub fn normalize_vector(vec: &mut [f32]) -> f32 {
         }
     }
     n
+}
+
+/// Inner-loop primitives shared by the float distances. On wasm32 with
+/// simd128 these use direct `v128` loads and four independent accumulators
+/// per sum (16 floats per step); elsewhere a portable `wide` implementation.
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+mod kernel {
+    use core::arch::wasm32::*;
+
+    /// # Safety
+    /// `p.add(i)..p.add(i + 4)` must be in bounds.
+    #[inline(always)]
+    unsafe fn load(p: *const f32, i: usize) -> v128 {
+        // `v128_load` permits unaligned addresses.
+        v128_load(p.add(i) as *const v128)
+    }
+
+    #[inline(always)]
+    fn reduce(a: [v128; 4]) -> f32 {
+        let v = f32x4_add(f32x4_add(a[0], a[1]), f32x4_add(a[2], a[3]));
+        f32x4_extract_lane::<0>(v)
+            + f32x4_extract_lane::<1>(v)
+            + f32x4_extract_lane::<2>(v)
+            + f32x4_extract_lane::<3>(v)
+    }
+
+    #[inline]
+    pub fn squared_euclidean(x: &[f32], y: &[f32]) -> f32 {
+        assert_eq!(x.len(), y.len());
+        let n = x.len();
+        let end = n - n % 16;
+        let (px, py) = (x.as_ptr(), y.as_ptr());
+        let mut acc = [f32x4_splat(0.0); 4];
+        let mut i = 0;
+        while i < end {
+            for (l, a) in acc.iter_mut().enumerate() {
+                // SAFETY: i + 16 <= end <= n == x.len() == y.len().
+                let d = unsafe { f32x4_sub(load(px, i + 4 * l), load(py, i + 4 * l)) };
+                *a = f32x4_add(*a, f32x4_mul(d, d));
+            }
+            i += 16;
+        }
+        let mut r = reduce(acc);
+        for j in end..n {
+            let d = x[j] - y[j];
+            r += d * d;
+        }
+        r
+    }
+
+    #[inline]
+    pub fn dot(x: &[f32], y: &[f32]) -> f32 {
+        assert_eq!(x.len(), y.len());
+        let n = x.len();
+        let end = n - n % 16;
+        let (px, py) = (x.as_ptr(), y.as_ptr());
+        let mut acc = [f32x4_splat(0.0); 4];
+        let mut i = 0;
+        while i < end {
+            for (l, a) in acc.iter_mut().enumerate() {
+                // SAFETY: i + 16 <= end <= n == x.len() == y.len().
+                let p = unsafe { f32x4_mul(load(px, i + 4 * l), load(py, i + 4 * l)) };
+                *a = f32x4_add(*a, p);
+            }
+            i += 16;
+        }
+        let mut r = reduce(acc);
+        for j in end..n {
+            r += x[j] * y[j];
+        }
+        r
+    }
+
+    /// Returns `(<x, y>, |x|^2, |y|^2)`.
+    #[inline]
+    pub fn dot_norms(x: &[f32], y: &[f32]) -> (f32, f32, f32) {
+        assert_eq!(x.len(), y.len());
+        let n = x.len();
+        let end = n - n % 16;
+        let (px, py) = (x.as_ptr(), y.as_ptr());
+        let z = f32x4_splat(0.0);
+        let (mut d, mut nx, mut ny) = ([z; 4], [z; 4], [z; 4]);
+        let mut i = 0;
+        while i < end {
+            for l in 0..4 {
+                // SAFETY: i + 16 <= end <= n == x.len() == y.len().
+                let (a, b) = unsafe { (load(px, i + 4 * l), load(py, i + 4 * l)) };
+                d[l] = f32x4_add(d[l], f32x4_mul(a, b));
+                nx[l] = f32x4_add(nx[l], f32x4_mul(a, a));
+                ny[l] = f32x4_add(ny[l], f32x4_mul(b, b));
+            }
+            i += 16;
+        }
+        let (mut dot, mut norm_x, mut norm_y) = (reduce(d), reduce(nx), reduce(ny));
+        for j in end..n {
+            dot += x[j] * y[j];
+            norm_x += x[j] * x[j];
+            norm_y += y[j] * y[j];
+        }
+        (dot, norm_x, norm_y)
+    }
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+mod kernel {
+    use wide::f32x4;
+
+    #[inline(always)]
+    fn load(v: &[f32], i: usize) -> f32x4 {
+        f32x4::new([v[i], v[i + 1], v[i + 2], v[i + 3]])
+    }
+
+    #[inline]
+    pub fn squared_euclidean(x: &[f32], y: &[f32]) -> f32 {
+        assert_eq!(x.len(), y.len());
+        let n = x.len();
+        let mut acc0 = f32x4::ZERO;
+        let mut acc1 = f32x4::ZERO;
+        let end = n - n % 8;
+        let mut i = 0;
+        while i < end {
+            let d0 = load(x, i) - load(y, i);
+            acc0 = d0.mul_add(d0, acc0);
+            let d1 = load(x, i + 4) - load(y, i + 4);
+            acc1 = d1.mul_add(d1, acc1);
+            i += 8;
+        }
+        let mut r = (acc0 + acc1).reduce_add();
+        while i < n {
+            let d = x[i] - y[i];
+            r += d * d;
+            i += 1;
+        }
+        r
+    }
+
+    #[inline]
+    pub fn dot(x: &[f32], y: &[f32]) -> f32 {
+        assert_eq!(x.len(), y.len());
+        let n = x.len();
+        let mut acc0 = f32x4::ZERO;
+        let mut acc1 = f32x4::ZERO;
+        let end = n - n % 8;
+        let mut i = 0;
+        while i < end {
+            acc0 = load(x, i).mul_add(load(y, i), acc0);
+            acc1 = load(x, i + 4).mul_add(load(y, i + 4), acc1);
+            i += 8;
+        }
+        let mut r = (acc0 + acc1).reduce_add();
+        while i < n {
+            r += x[i] * y[i];
+            i += 1;
+        }
+        r
+    }
+
+    /// Returns `(<x, y>, |x|^2, |y|^2)`.
+    #[inline]
+    pub fn dot_norms(x: &[f32], y: &[f32]) -> (f32, f32, f32) {
+        assert_eq!(x.len(), y.len());
+        let n = x.len();
+        let (mut d0, mut d1) = (f32x4::ZERO, f32x4::ZERO);
+        let (mut nx0, mut nx1) = (f32x4::ZERO, f32x4::ZERO);
+        let (mut ny0, mut ny1) = (f32x4::ZERO, f32x4::ZERO);
+        let end = n - n % 8;
+        let mut i = 0;
+        while i < end {
+            let (xv0, yv0) = (load(x, i), load(y, i));
+            d0 = xv0.mul_add(yv0, d0);
+            nx0 = xv0.mul_add(xv0, nx0);
+            ny0 = yv0.mul_add(yv0, ny0);
+            let (xv1, yv1) = (load(x, i + 4), load(y, i + 4));
+            d1 = xv1.mul_add(yv1, d1);
+            nx1 = xv1.mul_add(xv1, nx1);
+            ny1 = yv1.mul_add(yv1, ny1);
+            i += 8;
+        }
+        let mut dot = (d0 + d1).reduce_add();
+        let mut norm_x = (nx0 + nx1).reduce_add();
+        let mut norm_y = (ny0 + ny1).reduce_add();
+        while i < n {
+            dot += x[i] * y[i];
+            norm_x += x[i] * x[i];
+            norm_y += y[i] * y[i];
+            i += 1;
+        }
+        (dot, norm_x, norm_y)
+    }
 }
 
 #[cfg(test)]

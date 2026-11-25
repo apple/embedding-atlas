@@ -230,26 +230,39 @@ impl NNDescentBuilder {
             rng.random_range_i64(INT32_MIN as i64, INT32_MAX as i64),
         ];
 
-        // Get distance function
+        // Get distance function. For cosine/dot, normalizing the rows once lets every
+        // distance be a single dot product. Only do it in place when the data is not
+        // shared, so callers using `builder_shared` never pay for a second copy.
         let angular_trees = distance::is_angular_metric(&self.metric);
-        let (distance_func, distance_correction) =
-            if let Some((fast_fn, correction)) = distance::get_fast_alternative(&self.metric) {
-                (fast_fn, Some(correction))
-            } else if let Some(fn_) = distance::get_distance_func(&self.metric) {
-                (fn_, None)
-            } else {
-                return Err(NNDescentError::InvalidParameter(format!(
-                    "unknown metric: {}",
-                    self.metric
-                )));
-            };
+        let mut data = self.data;
+        let normalized_alternative = distance::get_normalized_fast_alternative(&self.metric)
+            .and_then(|alt| Arc::get_mut(&mut data).map(|d| (alt, d)))
+            .map(|(alt, d)| {
+                normalize_rows(d);
+                alt
+            });
+        let normalize_queries = normalized_alternative.is_some();
+        let (distance_func, distance_correction) = if let Some((fast_fn, correction)) =
+            normalized_alternative
+        {
+            (fast_fn, Some(correction))
+        } else if let Some((fast_fn, correction)) = distance::get_fast_alternative(&self.metric) {
+            (fast_fn, Some(correction))
+        } else if let Some(fn_) = distance::get_distance_func(&self.metric) {
+            (fn_, None)
+        } else {
+            return Err(NNDescentError::InvalidParameter(format!(
+                "unknown metric: {}",
+                self.metric
+            )));
+        };
 
         let tree_init = self.tree_init && n_trees > 0;
 
         // Initialize GPU context if requested (before forest so we can use GPU projections)
         #[cfg(feature = "gpu")]
         let gpu_ctx = if self.gpu {
-            match gpu::GpuContext::new(&self.data, &self.metric).await {
+            match gpu::GpuContext::new(&data, &self.metric).await {
                 Some(ctx) => Some(ctx),
                 None => {
                     if self.verbose {
@@ -274,7 +287,7 @@ impl NNDescentBuilder {
             #[cfg(feature = "gpu")]
             let forest = if let Some(ref gpu) = gpu_ctx {
                 rp_trees::make_forest_gpu(
-                    &self.data,
+                    &data,
                     self.n_neighbors,
                     n_trees,
                     self.leaf_size,
@@ -286,7 +299,7 @@ impl NNDescentBuilder {
                 .await
             } else {
                 rp_trees::make_forest(
-                    &self.data,
+                    &data,
                     self.n_neighbors,
                     n_trees,
                     self.leaf_size,
@@ -297,7 +310,7 @@ impl NNDescentBuilder {
             };
             #[cfg(not(feature = "gpu"))]
             let forest = rp_trees::make_forest(
-                &self.data,
+                &data,
                 self.n_neighbors,
                 n_trees,
                 self.leaf_size,
@@ -319,7 +332,7 @@ impl NNDescentBuilder {
         // Run NN-descent
         let mut rng = TauRng::from_state(rng_state);
         let (indices, distances) = nn_descent::nn_descent(
-            &self.data,
+            &data,
             self.n_neighbors,
             &mut rng,
             effective_max_candidates,
@@ -348,7 +361,7 @@ impl NNDescentBuilder {
             leaf_size: self.leaf_size,
             diversify_prob: self.diversify_prob,
             max_rptree_depth: self.max_rptree_depth,
-            raw_data: self.data,
+            raw_data: data,
             neighbor_graph: Some((indices, distances)),
             search_graph: None,
             search_forest: Vec::new(),
@@ -358,6 +371,7 @@ impl NNDescentBuilder {
             distance_func,
             distance_correction,
             angular_trees,
+            normalize_queries,
             min_distance: FLOAT32_EPS,
             is_prepared: false,
         })
@@ -400,6 +414,8 @@ pub struct NNDescent {
     distance_func: DistanceFunc,
     distance_correction: Option<CorrectionFunc>,
     angular_trees: bool,
+    /// `raw_data` rows were L2-normalized at build time, so queries must be too.
+    normalize_queries: bool,
     min_distance: f32,
     is_prepared: bool,
 }
@@ -417,6 +433,11 @@ impl NNDescent {
 
     /// Like [`builder`](Self::builder), but shares the data instead of owning it, so a
     /// caller that keeps a handle does not need a second copy of a large matrix.
+    ///
+    /// For `cosine` and `dot`, an unshared `Arc` lets the build L2-normalize the
+    /// rows in place and use a cheaper dot-product distance. If the `Arc` is still
+    /// shared at build time, the data is left untouched and the slower
+    /// norm-computing distance is used instead.
     pub fn builder_shared(
         data: Arc<Array2<f32>>,
         metric: &str,
@@ -609,6 +630,16 @@ impl NNDescent {
     ) -> (Array2<i32>, Array2<f32>) {
         self.prepare();
 
+        let normalized_query;
+        let query_data = if self.normalize_queries {
+            let mut q = query_data.to_owned();
+            normalize_rows(&mut q);
+            normalized_query = q;
+            &normalized_query
+        } else {
+            query_data
+        };
+
         let search_graph = self.search_graph.as_ref().unwrap();
         let (indices, distances) = batch_search(
             query_data,
@@ -636,6 +667,16 @@ impl NNDescent {
             (remapped, distances)
         } else {
             (indices, distances)
+        }
+    }
+}
+
+/// L2-normalize each row in place; all-zero rows are left as zero.
+fn normalize_rows(data: &mut Array2<f32>) {
+    for mut row in data.rows_mut() {
+        let norm = row.iter().map(|v| v * v).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            row.mapv_inplace(|v| v / norm);
         }
     }
 }

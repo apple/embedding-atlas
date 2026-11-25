@@ -310,6 +310,62 @@ fn test_alternative_distances() {
             &format!("sq_euclidean correction ({},{})", i, j),
         );
     }
+
+    // Test alternative dot on normalized vectors, corrected back to cosine
+    for i in 0..50 {
+        let j = i + 50;
+        let true_dist = cosine(&vectors[i], &vectors[j]);
+        let (mut a, mut b) = (vectors[i].clone(), vectors[j].clone());
+        normalize_vector(&mut a);
+        normalize_vector(&mut b);
+        let corrected = correct_alternative_cosine(alternative_dot(&a, &b));
+        assert_approx_eq(
+            corrected,
+            true_dist,
+            1e-5,
+            &format!("alt_dot correction ({},{})", i, j),
+        );
+    }
+    let mut v = vectors[0].clone();
+    normalize_vector(&mut v);
+    assert!(alternative_dot(&v, &v) >= 0.0);
+}
+
+/// The SIMD kernels process 8 or 16 floats per step; check them against a
+/// scalar f64 reference on lengths that exercise every remainder.
+#[test]
+fn test_vector_kernels_match_scalar_reference() {
+    use nndescent::rng::TauRng;
+    let mut rng = TauRng::new(7);
+    for n in (1..=40).chain([767, 768, 769]) {
+        let x: Vec<f32> = (0..n).map(|_| rng.tau_rand() - 0.5).collect();
+        let y: Vec<f32> = (0..n).map(|_| rng.tau_rand() - 0.5).collect();
+        let (mut dot, mut nx, mut ny, mut sq) = (0f64, 0f64, 0f64, 0f64);
+        for (&a, &b) in x.iter().zip(&y) {
+            let (a, b) = (a as f64, b as f64);
+            dot += a * b;
+            nx += a * a;
+            ny += b * b;
+            sq += (a - b) * (a - b);
+        }
+        assert_approx_eq(
+            squared_euclidean(&x, &y),
+            sq as f32,
+            1e-4,
+            &format!("sqeuclidean n={n}"),
+        );
+        let cos = 1.0 - dot / (nx * ny).sqrt();
+        assert_approx_eq(cosine(&x, &y), cos as f32, 1e-4, &format!("cosine n={n}"));
+        if dot > 0.0 {
+            let alt = ((nx * ny).sqrt() / dot).log2();
+            assert_approx_eq(
+                correct_alternative_cosine(alternative_cosine(&x, &y)),
+                correct_alternative_cosine(alt as f32),
+                1e-4,
+                &format!("alternative_cosine n={n}"),
+            );
+        }
+    }
 }
 
 /// Test the distance registry.
