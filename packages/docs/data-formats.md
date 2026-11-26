@@ -8,6 +8,8 @@ Embedding Atlas supports loading data from the following file formats:
 - **JSONL** (`.jsonl`) — one JSON object per line
 - **CSV** (`.csv`)
 
+Compressed files, such as `data.csv.gz` or `data.jsonl.gz`, are also supported. The format is detected from the extension before the compression extension (`.gz`, `.bz2`, `.zip`, `.xz` or `.zst`).
+
 When using the [Python Notebook Widget](./widget.md) or [Streamlit Component](./streamlit.md), you can pass a **pandas DataFrame** directly.
 
 ## Column Display Types
