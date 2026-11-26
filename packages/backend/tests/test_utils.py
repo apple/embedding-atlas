@@ -33,3 +33,17 @@ def test_load_pandas_data_url_with_query_string(monkeypatch, url, reader):
     load_pandas_data(url)
 
     assert calls == [(reader, url)]
+
+
+@pytest.mark.parametrize(
+    "filename,lines",
+    [("data.jsonl.gz", True), ("data.ndjson.bz2", True), ("data.json.gz", False)],
+)
+def test_load_pandas_data_compressed_json(tmp_path, filename, lines):
+    path = tmp_path / filename
+    expected = pd.DataFrame({"a": [1, 2], "b": ["x, y", "z"]})
+    expected.to_json(path, orient="records", lines=lines)
+
+    df = load_pandas_data(str(path))
+
+    assert df.equals(expected)

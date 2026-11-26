@@ -18,8 +18,12 @@ logger = logging.getLogger("embedding-atlas")
 
 def load_pandas_data(url: str) -> pd.DataFrame:
     # Ignore the query string of remote URLs, such as signed or download links.
-    path = urlparse(url).path if "://" in url else url
-    suffix = Path(path).suffix.lower()
+    path = Path(urlparse(url).path if "://" in url else url)
+    suffix = path.suffix.lower()
+    # pandas decompresses files such as data.jsonl.gz based on the compression
+    # extension, so pick the reader from the extension before it.
+    if suffix in (".gz", ".bz2", ".zip", ".xz", ".zst"):
+        suffix = Path(path.stem).suffix.lower()
 
     if suffix == ".parquet":
         df = pd.read_parquet(url)
