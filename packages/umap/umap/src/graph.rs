@@ -1,4 +1,4 @@
-use ndarray::Array2;
+use ndarray::{Array2, Axis};
 use rayon::prelude::*;
 
 const SMOOTH_K_TOLERANCE: f64 = 1e-5;
@@ -63,27 +63,64 @@ impl SparseMatrix {
     /// symmetric, so for each stored edge (i,j) the value at (j,i) is identical;
     /// we emit the transpose entry only when A has no (j,i) of its own.
     pub fn symmetrize(&self, set_op_mix_ratio: f32) -> SparseMatrix {
+        // Linear time: a counting-sort transpose, then a merge of each row of A with
+        // the same row of A^T (both column-sorted). Each output value is computed from
+        // the same operands, in the same order, as the entry-by-entry definition
+        // (see `reference::symmetrize` in the tests), so results are bit-identical.
         let mix = set_op_mix_ratio as f64;
         let n = self.shape.0;
-        let mut triples: Vec<(usize, usize, f32)> = Vec::with_capacity(self.data.len() * 2);
+        assert_eq!(n, self.shape.1, "symmetrize needs a square matrix");
+        let nnz = self.data.len();
+
+        let mut t_indptr = vec![0usize; n + 1];
+        for &c in &self.indices {
+            t_indptr[c + 1] += 1;
+        }
+        for c in 0..n {
+            t_indptr[c + 1] += t_indptr[c];
+        }
+        let mut next = t_indptr[..n].to_vec();
+        let mut t_rows = vec![0usize; nnz];
+        let mut t_data = vec![0f32; nnz];
         for i in 0..n {
             for p in self.indptr[i]..self.indptr[i + 1] {
-                let j = self.indices[p];
-                let a_ij = self.data[p] as f64;
-                let a_ji = self.get(j, i) as f64;
-                let prod = a_ij * a_ji;
-                let val = mix * (a_ij + a_ji - prod) + (1.0 - mix) * prod;
-                if val > 0.0 {
-                    triples.push((i, j, val as f32));
-                    // The reverse edge isn't in A, so it won't be visited on its
-                    // own pass — emit it here to keep the result symmetric.
-                    if a_ji == 0.0 {
-                        triples.push((j, i, val as f32));
-                    }
-                }
+                let c = self.indices[p];
+                let q = next[c];
+                t_rows[q] = i;
+                t_data[q] = self.data[p];
+                next[c] = q + 1;
             }
         }
-        SparseMatrix::from_coo(n, self.shape.1, triples)
+        drop(next);
+
+        let a = (
+            self.indptr.as_slice(),
+            self.indices.as_slice(),
+            self.data.as_slice(),
+        );
+        let t = (t_indptr.as_slice(), t_rows.as_slice(), t_data.as_slice());
+        // Size the output exactly first (merges are cheap; the graph can be large).
+        let mut total = 0usize;
+        for i in 0..n {
+            merge_union_row(i, a, t, mix, |_, _| total += 1);
+        }
+        let mut indptr = Vec::with_capacity(n + 1);
+        let mut indices = Vec::with_capacity(total);
+        let mut data = Vec::with_capacity(total);
+        indptr.push(0);
+        for i in 0..n {
+            merge_union_row(i, a, t, mix, |c, v| {
+                indices.push(c);
+                data.push(v);
+            });
+            indptr.push(indices.len());
+        }
+        SparseMatrix {
+            indptr,
+            indices,
+            data,
+            shape: self.shape,
+        }
     }
 
     /// Remove entries below threshold.
@@ -144,6 +181,40 @@ impl SparseMatrix {
             }
         }
         (heads, tails, weights)
+    }
+}
+
+type CsrParts<'a> = (&'a [usize], &'a [usize], &'a [f32]);
+
+/// Fuzzy union of row `i` of A and of A^T (column-sorted CSR parts): calls `emit`
+/// with each column and positive `mix*(a + b - ab) + (1-mix)*ab`, where a present
+/// edge is the first operand and an absent one is 0.
+#[inline]
+fn merge_union_row(i: usize, a: CsrParts, t: CsrParts, mix: f64, mut emit: impl FnMut(usize, f32)) {
+    let union = |x: f32, y: f32| {
+        let (x, y) = (x as f64, y as f64);
+        let prod = x * y;
+        mix * (x + y - prod) + (1.0 - mix) * prod
+    };
+    let (mut p, pe) = (a.0[i], a.0[i + 1]);
+    let (mut q, qe) = (t.0[i], t.0[i + 1]);
+    while p < pe || q < qe {
+        let ca = if p < pe { a.1[p] } else { usize::MAX };
+        let ct = if q < qe { t.1[q] } else { usize::MAX };
+        let (col, val) = if ca < ct {
+            p += 1;
+            (ca, union(a.2[p - 1], 0.0))
+        } else if ct < ca {
+            q += 1;
+            (ct, union(t.2[q - 1], 0.0))
+        } else {
+            p += 1;
+            q += 1;
+            (ca, union(a.2[p - 1], t.2[q - 1]))
+        };
+        if val > 0.0 {
+            emit(col, val as f32);
+        }
     }
 }
 
@@ -222,36 +293,46 @@ pub fn smooth_knn_dist(
         0.0
     };
 
+    let lc_index = local_connectivity.floor() as usize;
+    let interpolation = local_connectivity - lc_index as f32;
+
     let results: Vec<(f32, f32)> = (0..n_samples)
         .into_par_iter()
         .map(|i| {
-            // Collect non-zero distances (sorted, since kNN distances are sorted)
-            let non_zero_dists: Vec<f32> = (0..n_neighbors)
-                .filter_map(|j| {
-                    let d = distances[[i, j]];
-                    if d.is_finite() && d > 0.0 {
-                        Some(d)
-                    } else {
-                        None
+            let row = distances.row(i);
+            // The non-zero finite distances (sorted, since kNN distances are sorted):
+            // their count, first and last, and those at local_connectivity's index.
+            let (mut count, mut first, mut last, mut below, mut at) =
+                (0usize, 0.0f32, 0.0f32, 0.0f32, 0.0f32);
+            for &d in row.iter() {
+                if d.is_finite() && d > 0.0 {
+                    if count == 0 {
+                        first = d;
                     }
-                })
-                .collect();
+                    if lc_index > 0 && count == lc_index - 1 {
+                        below = d;
+                    }
+                    if count == lc_index {
+                        at = d;
+                    }
+                    last = d;
+                    count += 1;
+                }
+            }
 
             // Compute rho: distance to the local_connectivity-th nearest neighbor
             let mut rho = 0.0f32;
-            if non_zero_dists.len() as f32 >= local_connectivity {
-                let index = local_connectivity.floor() as usize;
-                let interpolation = local_connectivity - index as f32;
-                if index > 0 {
-                    rho = non_zero_dists[index - 1];
+            if count as f32 >= local_connectivity {
+                if lc_index > 0 {
+                    rho = below;
                     if interpolation > SMOOTH_K_TOLERANCE as f32 {
-                        rho += interpolation * (non_zero_dists[index] - non_zero_dists[index - 1]);
+                        rho += interpolation * (at - below);
                     }
                 } else {
-                    rho = interpolation * non_zero_dists[0];
+                    rho = interpolation * first;
                 }
-            } else if !non_zero_dists.is_empty() {
-                rho = *non_zero_dists.last().unwrap();
+            } else if count > 0 {
+                rho = last;
             }
 
             // Binary search for sigma
@@ -265,7 +346,7 @@ pub fn smooth_knn_dist(
                 // Start at j=1 to skip the self-neighbor at position 0,
                 // consistent with the reference UMAP implementation.
                 for j in 1..n_neighbors {
-                    let d = distances[[i, j]] as f64 - rho_i;
+                    let d = row[j] as f64 - rho_i;
                     if d > 0.0 {
                         psum += (-d / mid).exp();
                     } else {
@@ -294,13 +375,8 @@ pub fn smooth_knn_dist(
 
             // Apply minimum distance scale
             if rho > 0.0 {
-                let finite_row: Vec<f32> = distances
-                    .row(i)
-                    .iter()
-                    .copied()
-                    .filter(|d| d.is_finite())
-                    .collect();
-                let mean_ith = finite_row.iter().sum::<f32>() / finite_row.len() as f32;
+                let finite = row.iter().copied().filter(|d| d.is_finite());
+                let mean_ith = finite.clone().sum::<f32>() / finite.count() as f32;
                 if sigma < MIN_K_DIST_SCALE * mean_ith {
                     sigma = MIN_K_DIST_SCALE * mean_ith;
                 }
@@ -328,10 +404,16 @@ pub fn compute_membership_strengths(
     let n_samples = knn_indices.nrows();
     let n_neighbors = knn_indices.ncols();
 
-    let triples: Vec<Vec<(usize, usize, f32)>> = (0..n_samples)
-        .into_par_iter()
-        .map(|i| {
-            let mut local = Vec::new();
+    // Each row's entries are computed (in parallel) into its own k-slot block,
+    // column-sorted with duplicates collapsed (max weight, as `from_coo` does),
+    // then the blocks are compacted into CSR — no global sort of COO triples.
+    let width = n_neighbors.max(1);
+    let mut blocks = vec![(0usize, 0.0f32); n_samples * width];
+    let counts: Vec<usize> = blocks
+        .par_chunks_mut(width)
+        .enumerate()
+        .map(|(i, block)| {
+            let mut len = 0;
             for j in 0..n_neighbors {
                 let idx = knn_indices[[i, j]];
                 if idx < 0 {
@@ -351,18 +433,48 @@ pub fn compute_membership_strengths(
                 };
 
                 if val > 0.0 {
-                    local.push((i, idx, val));
+                    block[len] = (idx, val);
+                    len += 1;
                 }
             }
-            local
+            let entries = &mut block[..len];
+            entries.sort_unstable_by_key(|&(c, _)| c);
+            let mut out = 0;
+            let mut t = 0;
+            while t < len {
+                let (c, mut v) = entries[t];
+                t += 1;
+                while t < len && entries[t].0 == c {
+                    v = v.max(entries[t].1);
+                    t += 1;
+                }
+                entries[out] = (c, v);
+                out += 1;
+            }
+            out
         })
         .collect();
 
-    SparseMatrix::from_coo(
-        n_samples,
-        n_samples,
-        triples.into_iter().flatten().collect(),
-    )
+    let mut indptr = Vec::with_capacity(n_samples + 1);
+    indptr.push(0);
+    for &c in &counts {
+        indptr.push(indptr[indptr.len() - 1] + c);
+    }
+    let nnz = indptr[n_samples];
+    let mut indices = Vec::with_capacity(nnz);
+    let mut data = Vec::with_capacity(nnz);
+    for (i, &c) in counts.iter().enumerate() {
+        for &(col, val) in &blocks[i * width..i * width + c] {
+            indices.push(col);
+            data.push(val);
+        }
+    }
+    SparseMatrix {
+        indptr,
+        indices,
+        data,
+        shape: (n_samples, n_samples),
+    }
 }
 
 /// Build the fuzzy simplicial set from kNN data.
@@ -450,56 +562,465 @@ pub fn normalize_knn_self_column(
     indices: &Array2<i32>,
     distances: &Array2<f32>,
 ) -> (Array2<i32>, Array2<f32>) {
+    if let Some(canonical) = canonical_copy(indices, distances) {
+        return canonical;
+    }
     let n_samples = indices.nrows();
-    let n_neighbors = indices.ncols();
 
     // Per row: real neighbors (idx >= 0, idx != self), sorted by ascending distance.
-    let per_row: Vec<Vec<(i32, f32)>> = (0..n_samples)
-        .map(|i| {
-            let mut neighbors: Vec<(i32, f32)> = (0..n_neighbors)
-                .filter_map(|j| {
-                    let idx = indices[[i, j]];
-                    if idx >= 0 && idx as usize != i {
-                        Some((idx, distances[[i, j]]))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            // Sort by (distance, index): the index tiebreak gives a deterministic
-            // order for equal distances. Distances are assumed finite per the
-            // contract; a NaN compares as Equal and would sort arbitrarily.
-            neighbors.sort_by(|a, b| {
-                a.1.partial_cmp(&b.1)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then(a.0.cmp(&b.0))
-            });
-            neighbors
-        })
-        .collect();
+    let is_real = |i: usize, idx: i32| idx >= 0 && idx as usize != i;
 
     // m = the largest neighbor count keepable for every row without padding.
-    let m = per_row.iter().map(|r| r.len()).min().unwrap_or(0);
+    let m = (0..n_samples)
+        .into_par_iter()
+        .map(|i| {
+            indices
+                .row(i)
+                .iter()
+                .filter(|&&idx| is_real(i, idx))
+                .count()
+        })
+        .min()
+        .unwrap_or(0);
 
     let out_cols = m + 1;
     let mut out_indices = Array2::<i32>::zeros((n_samples, out_cols));
     let mut out_distances = Array2::<f32>::zeros((n_samples, out_cols));
-    for (i, row) in per_row.iter().enumerate() {
-        out_indices[[i, 0]] = i as i32;
-        out_distances[[i, 0]] = 0.0;
-        for (col, &(idx, dist)) in row.iter().take(m).enumerate() {
-            out_indices[[i, col + 1]] = idx;
-            out_distances[[i, col + 1]] = dist;
-        }
-    }
+    out_indices
+        .axis_iter_mut(Axis(0))
+        .into_par_iter()
+        .zip(out_distances.axis_iter_mut(Axis(0)))
+        .enumerate()
+        .for_each_init(
+            Vec::new,
+            |neighbors: &mut Vec<(i32, f32)>, (i, (mut oi, mut od))| {
+                neighbors.clear();
+                neighbors.extend(
+                    indices
+                        .row(i)
+                        .iter()
+                        .zip(distances.row(i).iter())
+                        .filter(|(&idx, _)| is_real(i, idx))
+                        .map(|(&idx, &d)| (idx, d)),
+                );
+                // Sort by (distance, index): the index tiebreak gives a deterministic
+                // order for equal distances. Distances are assumed finite per the
+                // contract; a NaN compares as Equal and would sort arbitrarily.
+                neighbors.sort_by(|a, b| {
+                    a.1.partial_cmp(&b.1)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then(a.0.cmp(&b.0))
+                });
+                oi[0] = i as i32;
+                od[0] = 0.0;
+                for (col, &(idx, dist)) in neighbors.iter().take(m).enumerate() {
+                    oi[col + 1] = idx;
+                    od[col + 1] = dist;
+                }
+            },
+        );
 
     (out_indices, out_distances)
+}
+
+/// The input itself if it is already canonical — every row is `(i, 0.0)` followed
+/// by valid, distinct-from-`i` neighbours sorted by `(distance, index)` — which is
+/// what [`normalize_knn_self_column`] would return for it (as from umap-learn or
+/// pynndescent). `None` otherwise.
+fn canonical_copy(
+    indices: &Array2<i32>,
+    distances: &Array2<f32>,
+) -> Option<(Array2<i32>, Array2<f32>)> {
+    let n_samples = indices.nrows();
+    if n_samples == 0 || indices.ncols() == 0 {
+        return None;
+    }
+    let canonical = (0..n_samples).into_par_iter().all(|i| {
+        let (idx, dist) = (indices.row(i), distances.row(i));
+        if idx[0] != i as i32 || dist[0].to_bits() != 0.0f32.to_bits() {
+            return false;
+        }
+        for j in 1..idx.len() {
+            if idx[j] < 0 || idx[j] == i as i32 || !dist[j].is_finite() {
+                return false;
+            }
+            if j > 1 && !(dist[j - 1] < dist[j] || (dist[j - 1] == dist[j] && idx[j - 1] < idx[j]))
+            {
+                return false;
+            }
+        }
+        true
+    });
+    canonical.then(|| (indices.clone(), distances.clone()))
+}
+
+/// The original (sort-based) implementations, kept to check the linear-time
+/// versions produce bit-identical output.
+#[cfg(test)]
+pub(crate) mod reference {
+    #![allow(clippy::needless_range_loop)]
+    use super::*;
+
+    pub fn symmetrize(m: &SparseMatrix, set_op_mix_ratio: f32) -> SparseMatrix {
+        let mix = set_op_mix_ratio as f64;
+        let n = m.shape.0;
+        let mut triples: Vec<(usize, usize, f32)> = Vec::with_capacity(m.data.len() * 2);
+        for i in 0..n {
+            for p in m.indptr[i]..m.indptr[i + 1] {
+                let j = m.indices[p];
+                let a_ij = m.data[p] as f64;
+                let a_ji = m.get(j, i) as f64;
+                let prod = a_ij * a_ji;
+                let val = mix * (a_ij + a_ji - prod) + (1.0 - mix) * prod;
+                if val > 0.0 {
+                    triples.push((i, j, val as f32));
+                    // The reverse edge isn't in A, so it won't be visited on its
+                    // own pass — emit it here to keep the result symmetric.
+                    if a_ji == 0.0 {
+                        triples.push((j, i, val as f32));
+                    }
+                }
+            }
+        }
+        SparseMatrix::from_coo(n, m.shape.1, triples)
+    }
+
+    pub fn smooth_knn_dist(
+        distances: &Array2<f32>,
+        k: f32,
+        n_iter: usize,
+        local_connectivity: f32,
+        bandwidth: f32,
+    ) -> (Vec<f32>, Vec<f32>) {
+        let target = (k.ln() / 2.0f32.ln()) * bandwidth; // log2(k) * bandwidth
+        let n_samples = distances.nrows();
+        let n_neighbors = distances.ncols();
+
+        let finite_count = distances.iter().filter(|d| d.is_finite()).count();
+        let mean_distances: f32 = if finite_count > 0 {
+            distances.iter().filter(|d| d.is_finite()).sum::<f32>() / finite_count as f32
+        } else {
+            0.0
+        };
+
+        let results: Vec<(f32, f32)> = (0..n_samples)
+            .into_par_iter()
+            .map(|i| {
+                // Collect non-zero distances (sorted, since kNN distances are sorted)
+                let non_zero_dists: Vec<f32> = (0..n_neighbors)
+                    .filter_map(|j| {
+                        let d = distances[[i, j]];
+                        if d.is_finite() && d > 0.0 {
+                            Some(d)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                // Compute rho: distance to the local_connectivity-th nearest neighbor
+                let mut rho = 0.0f32;
+                if non_zero_dists.len() as f32 >= local_connectivity {
+                    let index = local_connectivity.floor() as usize;
+                    let interpolation = local_connectivity - index as f32;
+                    if index > 0 {
+                        rho = non_zero_dists[index - 1];
+                        if interpolation > SMOOTH_K_TOLERANCE as f32 {
+                            rho +=
+                                interpolation * (non_zero_dists[index] - non_zero_dists[index - 1]);
+                        }
+                    } else {
+                        rho = interpolation * non_zero_dists[0];
+                    }
+                } else if !non_zero_dists.is_empty() {
+                    rho = *non_zero_dists.last().unwrap();
+                }
+
+                // Binary search for sigma
+                let mut lo = 0.0f64;
+                let mut hi = f32::MAX as f64;
+                let mut mid = 1.0f64;
+                let rho_i = rho as f64;
+
+                for _ in 0..n_iter {
+                    let mut psum = 0.0f64;
+                    // Start at j=1 to skip the self-neighbor at position 0,
+                    // consistent with the reference UMAP implementation.
+                    for j in 1..n_neighbors {
+                        let d = distances[[i, j]] as f64 - rho_i;
+                        if d > 0.0 {
+                            psum += (-d / mid).exp();
+                        } else {
+                            psum += 1.0;
+                        }
+                    }
+
+                    if (psum - target as f64).abs() < SMOOTH_K_TOLERANCE {
+                        break;
+                    }
+
+                    if psum > target as f64 {
+                        hi = mid;
+                        mid = (lo + hi) / 2.0;
+                    } else {
+                        lo = mid;
+                        if hi >= f32::MAX as f64 {
+                            mid *= 2.0;
+                        } else {
+                            mid = (lo + hi) / 2.0;
+                        }
+                    }
+                }
+
+                let mut sigma = mid as f32;
+
+                // Apply minimum distance scale
+                if rho > 0.0 {
+                    let finite_row: Vec<f32> = distances
+                        .row(i)
+                        .iter()
+                        .copied()
+                        .filter(|d| d.is_finite())
+                        .collect();
+                    let mean_ith = finite_row.iter().sum::<f32>() / finite_row.len() as f32;
+                    if sigma < MIN_K_DIST_SCALE * mean_ith {
+                        sigma = MIN_K_DIST_SCALE * mean_ith;
+                    }
+                } else if sigma < MIN_K_DIST_SCALE * mean_distances {
+                    sigma = MIN_K_DIST_SCALE * mean_distances;
+                }
+
+                (sigma, rho)
+            })
+            .collect();
+
+        let sigmas: Vec<f32> = results.iter().map(|r| r.0).collect();
+        let rhos: Vec<f32> = results.iter().map(|r| r.1).collect();
+
+        (sigmas, rhos)
+    }
+
+    pub fn compute_membership_strengths(
+        knn_indices: &Array2<i32>,
+        knn_dists: &Array2<f32>,
+        sigmas: &[f32],
+        rhos: &[f32],
+    ) -> SparseMatrix {
+        let n_samples = knn_indices.nrows();
+        let n_neighbors = knn_indices.ncols();
+
+        let triples: Vec<Vec<(usize, usize, f32)>> = (0..n_samples)
+            .into_par_iter()
+            .map(|i| {
+                let mut local = Vec::new();
+                for j in 0..n_neighbors {
+                    let idx = knn_indices[[i, j]];
+                    if idx < 0 {
+                        continue;
+                    }
+                    let idx = idx as usize;
+
+                    // Self-loops get weight 0
+                    if idx == i {
+                        continue;
+                    }
+
+                    let val = if knn_dists[[i, j]] - rhos[i] <= 0.0 || sigmas[i] == 0.0 {
+                        1.0
+                    } else {
+                        (-(knn_dists[[i, j]] - rhos[i]) / sigmas[i]).exp()
+                    };
+
+                    if val > 0.0 {
+                        local.push((i, idx, val));
+                    }
+                }
+                local
+            })
+            .collect();
+
+        SparseMatrix::from_coo(
+            n_samples,
+            n_samples,
+            triples.into_iter().flatten().collect(),
+        )
+    }
+
+    pub fn normalize_knn_self_column(
+        indices: &Array2<i32>,
+        distances: &Array2<f32>,
+    ) -> (Array2<i32>, Array2<f32>) {
+        let n_samples = indices.nrows();
+        let n_neighbors = indices.ncols();
+
+        // Per row: real neighbors (idx >= 0, idx != self), sorted by ascending distance.
+        let per_row: Vec<Vec<(i32, f32)>> = (0..n_samples)
+            .map(|i| {
+                let mut neighbors: Vec<(i32, f32)> = (0..n_neighbors)
+                    .filter_map(|j| {
+                        let idx = indices[[i, j]];
+                        if idx >= 0 && idx as usize != i {
+                            Some((idx, distances[[i, j]]))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                // Sort by (distance, index): the index tiebreak gives a deterministic
+                // order for equal distances. Distances are assumed finite per the
+                // contract; a NaN compares as Equal and would sort arbitrarily.
+                neighbors.sort_by(|a, b| {
+                    a.1.partial_cmp(&b.1)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then(a.0.cmp(&b.0))
+                });
+                neighbors
+            })
+            .collect();
+
+        // m = the largest neighbor count keepable for every row without padding.
+        let m = per_row.iter().map(|r| r.len()).min().unwrap_or(0);
+
+        let out_cols = m + 1;
+        let mut out_indices = Array2::<i32>::zeros((n_samples, out_cols));
+        let mut out_distances = Array2::<f32>::zeros((n_samples, out_cols));
+        for (i, row) in per_row.iter().enumerate() {
+            out_indices[[i, 0]] = i as i32;
+            out_distances[[i, 0]] = 0.0;
+            for (col, &(idx, dist)) in row.iter().take(m).enumerate() {
+                out_indices[[i, col + 1]] = idx;
+                out_distances[[i, col + 1]] = dist;
+            }
+        }
+
+        (out_indices, out_distances)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use ndarray::arr2;
+
+    /// Small deterministic LCG for test graphs.
+    struct Lcg(u64);
+    impl Lcg {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            self.0 >> 33
+        }
+        fn below(&mut self, n: usize) -> usize {
+            (self.next() % n as u64) as usize
+        }
+    }
+
+    /// A kNN-like graph: self first, then sorted random distances, with some
+    /// duplicate neighbours and (optionally) missing (-1) entries.
+    fn random_knn(n: usize, k: usize, seed: u64, missing: bool) -> (Array2<i32>, Array2<f32>) {
+        let mut rng = Lcg(seed);
+        let mut idx = Array2::<i32>::zeros((n, k));
+        let mut dist = Array2::<f32>::zeros((n, k));
+        for i in 0..n {
+            idx[[i, 0]] = i as i32;
+            let mut d = 0.0f32;
+            for j in 1..k {
+                // Mostly nearby indices (realistic overlap / reciprocity), some far.
+                let near = (i + 1 + rng.below(12)) % n;
+                idx[[i, j]] = if rng.below(4) == 0 {
+                    rng.below(n) as i32
+                } else {
+                    near as i32
+                };
+                if idx[[i, j]] == i as i32 {
+                    idx[[i, j]] = ((i + 1) % n) as i32;
+                }
+                if missing && rng.below(50) == 0 {
+                    idx[[i, j]] = -1;
+                }
+                // Occasional exact ties.
+                if rng.below(8) != 0 {
+                    d += (rng.below(1000) as f32 + 1.0) / 997.0;
+                }
+                dist[[i, j]] = d;
+            }
+        }
+        (idx, dist)
+    }
+
+    fn assert_same(a: &SparseMatrix, b: &SparseMatrix) {
+        assert_eq!(a.shape, b.shape);
+        assert_eq!(a.indptr, b.indptr);
+        assert_eq!(a.indices, b.indices);
+        let bits = |m: &SparseMatrix| m.data.iter().map(|v| v.to_bits()).collect::<Vec<_>>();
+        assert_eq!(bits(a), bits(b));
+    }
+
+    #[test]
+    fn linear_time_pipeline_matches_reference_bit_for_bit() {
+        for (seed, missing, lc) in [
+            (1, false, 1.0),
+            (2, true, 1.0),
+            (3, false, 1.5),
+            (4, true, 0.5),
+        ] {
+            let (idx, dist) = random_knn(700, 9, seed, missing);
+            let (sigmas, rhos) = smooth_knn_dist(&dist, 9.0, 64, lc, 1.0);
+            let (ref_sigmas, ref_rhos) = reference::smooth_knn_dist(&dist, 9.0, 64, lc, 1.0);
+            let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+            assert_eq!(bits(&sigmas), bits(&ref_sigmas));
+            assert_eq!(bits(&rhos), bits(&ref_rhos));
+
+            let graph = compute_membership_strengths(&idx, &dist, &sigmas, &rhos);
+            assert_same(
+                &graph,
+                &reference::compute_membership_strengths(&idx, &dist, &sigmas, &rhos),
+            );
+            for mix in [1.0, 0.5, 0.0] {
+                assert_same(&graph.symmetrize(mix), &reference::symmetrize(&graph, mix));
+            }
+        }
+    }
+
+    #[test]
+    fn symmetrize_matches_reference_with_explicit_zero_entries() {
+        let triples = vec![
+            (0, 1, 0.5),
+            (1, 0, 0.0),
+            (1, 2, 0.25),
+            (2, 0, 1.0),
+            (2, 2, 0.75),
+        ];
+        let m = SparseMatrix::from_coo(3, 3, triples);
+        for mix in [1.0, 0.3] {
+            assert_same(&m.symmetrize(mix), &reference::symmetrize(&m, mix));
+        }
+    }
+
+    #[test]
+    fn normalize_matches_reference_canonical_and_not() {
+        let (idx, dist) = random_knn(300, 7, 5, false);
+        // Make rows canonical: unique neighbours sorted by (distance, index).
+        let (canon_idx, canon_dist) = reference::normalize_knn_self_column(&idx, &dist);
+        assert_eq!(
+            normalize_knn_self_column(&canon_idx, &canon_dist),
+            reference::normalize_knn_self_column(&canon_idx, &canon_dist)
+        );
+        // Not canonical: self missing from some rows, shuffled columns.
+        let mut shuffled_idx = idx.clone();
+        let mut shuffled_dist = dist.clone();
+        for i in (0..300).step_by(3) {
+            shuffled_idx.row_mut(i).swap(0, 4);
+            shuffled_dist.row_mut(i).swap(0, 4);
+        }
+        shuffled_idx[[7, 0]] = 8;
+        assert_eq!(
+            normalize_knn_self_column(&shuffled_idx, &shuffled_dist),
+            reference::normalize_knn_self_column(&shuffled_idx, &shuffled_dist)
+        );
+    }
 
     #[test]
     fn normalize_passthrough_when_already_canonical() {
